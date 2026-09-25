@@ -66,7 +66,7 @@ class OverworldRenderer:
         style.draw_panel(surface, header, alpha=200)
 
         title = self.font_large.render(
-            f"Act {overworld.act_index + 1}: {lore['lore_name']}", True, style.TEXT,
+            f"Layer {overworld.act_index + 1}: {lore['lore_name']}", True, style.TEXT,
         )
         surface.blit(title, (config.SCREEN_WIDTH // 2 - title.get_width() // 2, 16))
 
