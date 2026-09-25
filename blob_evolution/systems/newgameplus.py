@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Dict
 
+from blob_evolution.data.lore import VICTORY_NG_PLUS_LINE
 from blob_evolution.systems.savefile import SaveSection
 
 
@@ -34,7 +35,7 @@ class NewGamePlus:
             self.best_map_reached = max(self.best_map_reached, maps_cleared - 1)
             self.ng_plus_level += 1
             self._apply_bonuses()
-            return f"New Game Plus {self.ng_plus_level} unlocked!"
+            return VICTORY_NG_PLUS_LINE.format(n=self.ng_plus_level)
         self.best_map_reached = max(self.best_map_reached, maps_cleared)
         return f"Best progress: Layer {maps_cleared + 1}"
 

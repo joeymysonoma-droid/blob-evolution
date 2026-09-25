@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from blob_evolution.data.lore import VICTORY_NG_PLUS_LINE
 from blob_evolution.systems.newgameplus import NewGamePlus
 
 
@@ -44,9 +45,11 @@ def test_full_clear_records_layer_10() -> None:
     assert ng.ng_plus_level == 2
 
 
-def test_full_clear_message_unchanged() -> None:
-    """The victory notification text is not part of this task."""
-    assert NewGamePlus().complete_run(10) == "New Game Plus 1 unlocked!"
+def test_full_clear_message_matches_victory_panel() -> None:
+    """The victory notification uses the same NG+ line as the victory panel."""
+    ng = NewGamePlus()
+    assert ng.complete_run(10) == VICTORY_NG_PLUS_LINE.format(n=1)
+    assert ng.complete_run(10) == "New Game Plus 2 unlocked. The Lattice remembers."
 
 
 def test_ng_plus_save_with_low_best_loads_as_layer_10(fixture_data) -> None:
