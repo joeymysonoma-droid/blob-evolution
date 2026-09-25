@@ -67,6 +67,44 @@ def test_ng_plus_zero_save_loads_unchanged(fixture_data) -> None:
     assert ng.to_dict() == data
 
 
+def _ng_section(fixture_data, **overrides) -> dict:
+    """Copy of the fixture's ng_plus section with some fields replaced."""
+    return {**json.loads(json.dumps(fixture_data["ng_plus"])), **overrides}
+
+
+def test_ng_plus_one_save_with_low_best_raised_to_layer_10(fixture_data) -> None:
+    """An NG+ 1 save with a low best loads with best Layer 10."""
+    data = _ng_section(fixture_data, ng_plus_level=1, best_map_reached=2)
+    ng = NewGamePlus()
+    ng.from_dict(json.loads(json.dumps(data)))
+    assert ng.to_dict() == {**data, "best_map_reached": 9}
+
+
+def test_ng_plus_save_with_best_above_9_is_kept(fixture_data) -> None:
+    """An NG+ 1+ save whose best is already above 9 is never lowered."""
+    for level in (1, 2):
+        data = _ng_section(fixture_data, ng_plus_level=level, best_map_reached=12)
+        ng = NewGamePlus()
+        ng.from_dict(json.loads(json.dumps(data)))
+        assert ng.to_dict() == data
+
+
+def test_string_ng_plus_level_loads_without_clamp(make_game, isolated_save, fixture_data) -> None:
+    """BUG-019: "ng_plus_level": "2" loads without a TypeError; values stay as saved."""
+    save = {**fixture_data, "ng_plus": _ng_section(fixture_data, ng_plus_level="2")}
+    isolated_save.write_text(json.dumps(save), encoding="utf-8")
+    game = make_game()
+    assert game.ng_plus.to_dict() == save["ng_plus"]
+
+
+def test_null_best_at_ng_plus_2_loads_without_clamp(make_game, isolated_save, fixture_data) -> None:
+    """BUG-019: "best_map_reached": null at NG+ 2 loads without a TypeError; values stay as saved."""
+    save = {**fixture_data, "ng_plus": _ng_section(fixture_data, ng_plus_level=2, best_map_reached=None)}
+    isolated_save.write_text(json.dumps(save), encoding="utf-8")
+    game = make_game()
+    assert game.ng_plus.to_dict() == save["ng_plus"]
+
+
 def test_game_over_captures_best_before_complete_run(make_game, isolated_save) -> None:
     """_trigger_game_over stores the best layer from before this run updates it."""
     game = make_game()

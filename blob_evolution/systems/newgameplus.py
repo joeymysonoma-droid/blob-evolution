@@ -7,6 +7,11 @@ from typing import Dict
 from blob_evolution.systems.savefile import SaveSection
 
 
+def _is_number(value: object) -> bool:
+    """True for int/float save values (bool excluded)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 class NewGamePlus:
     """Manages loop progression with permanent bonuses."""
 
@@ -60,7 +65,8 @@ class NewGamePlus:
         self.total_runs = section.number("total_runs", 0)
         self.best_map_reached = section.number("best_map_reached", 0)
         self.permanent_bonuses = section.number_dict("permanent_bonuses", self.permanent_bonuses)
-        if self.ng_plus_level >= 1:
+        if _is_number(self.ng_plus_level) and _is_number(self.best_map_reached) and self.ng_plus_level >= 1:
             # Pre-TASK-013c full clears never recorded Layer 10 (index 9) as best.
+            # Malformed values skip the clamp and load as they always did.
             self.best_map_reached = max(self.best_map_reached, 9)
         return section.valid
