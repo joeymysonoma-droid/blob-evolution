@@ -5,13 +5,29 @@ A top-down roguelike where you control a blob that grows by absorbing smaller cr
 ## Requirements
 
 - Python 3.10+
-- pygame 2.5+
+- pygame-ce 2.5+ (installed by `requirements.txt`)
 
 ## Install & Run
 
 ```bash
 pip install -r requirements.txt
 python -m blob_evolution.main
+```
+
+## Development
+
+Install the runtime and test dependencies (pytest), then run the tests from the repo root:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+To run the game or tests without a display or sound device (CI, servers), set SDL's dummy drivers:
+
+```bash
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy pytest
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python -m blob_evolution.main
 ```
 
 ## Controls
