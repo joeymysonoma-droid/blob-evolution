@@ -13,9 +13,12 @@ from blob_evolution.data.lore import (
     ARCHIVE_TABS,
     ENDING_SUBTITLES,
     ENDING_TITLES,
+    GAME_OVER_DEEPEST_LINE,
     GAME_OVER_EPILOGUE,
+    GAME_OVER_PROGRESS_LINE,
     OPENING_BLURB,
     TAGLINE,
+    VICTORY_NG_PLUS_LINE,
     archive_entries_for_tab,
     get_ending_epilogue,
     wrap_text,
@@ -23,6 +26,17 @@ from blob_evolution.data.lore import (
 from blob_evolution.ui import style
 from blob_evolution.utils.enums import Difficulty
 from blob_evolution.utils.graphics import draw_blob
+
+
+def game_over_progress(stats: dict) -> Tuple[str, bool]:
+    """Return the game-over progress line and whether it is a new (or tied) best."""
+    reached = min(stats.get("maps_cleared", 0) + 1, len(config.MAP_THEMES))
+    best_before = stats.get("best_layer_before", reached)
+    new_best = reached >= best_before
+    best = max(best_before, reached)
+    if new_best:
+        return GAME_OVER_DEEPEST_LINE.format(reached=reached), True
+    return GAME_OVER_PROGRESS_LINE.format(reached=reached, best=best), False
 
 
 class MenuRenderer:
@@ -67,6 +81,24 @@ class MenuRenderer:
             surface.blit(rendered, (config.SCREEN_WIDTH // 2 - rendered.get_width() // 2, y))
             y += line_height
         return y
+
+    def _draw_panel_footer(
+        self,
+        surface: pygame.Surface,
+        panel: pygame.Rect,
+        text: str,
+        color: Tuple[int, int, int],
+        inset: int,
+        divider_up: int,
+        text_up: int,
+    ) -> None:
+        """Draw a divider and one centered line near a panel's bottom (tiny_font if too wide)."""
+        divider_y = panel.bottom - divider_up
+        pygame.draw.line(surface, style.PANEL_EDGE, (panel.x + inset, divider_y), (panel.right - inset, divider_y), 1)
+        rendered = self.small_font.render(text, True, color)
+        if rendered.get_width() > panel.width - 48:
+            rendered = self.tiny_font.render(text, True, color)
+        surface.blit(rendered, (panel.centerx - rendered.get_width() // 2, panel.bottom - text_up))
 
     def draw_main_menu(self, surface: pygame.Surface, selected: int, difficulty: Difficulty) -> None:
         """Draw main menu."""
@@ -204,7 +236,7 @@ class MenuRenderer:
         stat_lines = [
             ("Level", str(stats.get("level", 1))),
             ("Kills", str(stats.get("kills", 0))),
-            ("Maps", str(stats.get("maps_cleared", 0))),
+            ("Layers cleared", str(stats.get("maps_cleared", 0))),
             ("XP", str(stats.get("total_xp", 0))),
             ("Essence", str(stats.get("essence", 0))),
         ]
@@ -215,6 +247,12 @@ class MenuRenderer:
             surface.blit(lab, (panel.x + 48, y + 4))
             surface.blit(val, (panel.x + 280, y))
             y += 36
+
+        progress, new_best = game_over_progress(stats)
+        self._draw_panel_footer(
+            surface, panel, progress, style.ACCENT if new_best else style.TEXT,
+            inset=48, divider_up=64, text_up=48,
+        )
 
         self._draw_wrapped(
             surface, GAME_OVER_EPILOGUE, self.small_font, style.TEXT_DIM,
@@ -257,20 +295,24 @@ class MenuRenderer:
             y=50, color=accent,
         )
 
-        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 240, 175, 480, 220)
+        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 260, 175, 520, 232)
         style.draw_panel(surface, panel)
         stat_lines = [
             f"Final Level  {stats.get('level', 1)}",
             f"Total Kills  {stats.get('kills', 0)}",
             f"Essence  {stats.get('essence', 0)}",
             f"Artifacts  {stats.get('artifacts', 0)}",
-            f"NG+ Level  {ng_plus}",
         ]
         y = panel.y + 24
         for line in stat_lines:
             text = self.small_font.render(line, True, style.TEXT)
             surface.blit(text, (config.SCREEN_WIDTH // 2 - text.get_width() // 2, y))
             y += 34
+
+        self._draw_panel_footer(
+            surface, panel, VICTORY_NG_PLUS_LINE.format(n=ng_plus), accent,
+            inset=40, divider_up=52, text_up=38,
+        )
 
         y = self._draw_wrapped(
             surface, get_ending_epilogue(ending), self.small_font, style.TEXT_DIM,

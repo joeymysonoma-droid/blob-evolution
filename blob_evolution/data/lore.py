@@ -65,6 +65,11 @@ GAME_OVER_EPILOGUE = (
     "Somewhere, a new Seedling wakes — and the pilgrimage begins again."
 )
 
+# End-of-run lines (TASK-013): formatted in ui/menus.py
+GAME_OVER_PROGRESS_LINE = "Reached Layer {reached}  ·  Best: Layer {best}"
+GAME_OVER_DEEPEST_LINE = "Reached Layer {reached}, your deepest yet"
+VICTORY_NG_PLUS_LINE = "New Game Plus {n} unlocked. The Lattice remembers."
+
 ENDING_TITLES = {
     "reopen": "THE DIVIDE REOPENS",
     "merge": "ETERNAL STILLNESS",
