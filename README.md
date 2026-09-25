@@ -45,7 +45,7 @@ The game runs until it is closed or killed, so a headless run needs a time limit
 | Left Click | Shoot at cursor |
 | Right Click | Dash |
 | TAB | Skills menu |
-| 1-6 | Quick skill upgrade |
+| 1-9 | Quick skill upgrade |
 | P / ESC | Pause |
 | M | Toggle minimap |
 | F3 | Toggle FPS |
@@ -58,7 +58,7 @@ The game runs until it is closed or killed, so a headless run needs a time limit
 - **Act-unique bosses** — Each Warden has distinct movement and attack patterns with multi-phase fights
 - **Branching overworld map** — Choose your path after each encounter: fights, elites, rest, shops, events, blacksmith, mini-bosses
 - **Shards** — Permanent currency for meta upgrades and blob skins (main menu → Upgrades)
-- **6 upgradeable skills** (Speed, Size, Damage, Health, Regen, Projectile)
+- **9 upgradeable skills** (Speed, Size, Damage, Health, Regen, Projectile, Armor, Magnetism, Lifesteal)
 - **20+ artifacts** with rarity tiers and blacksmith upgrades
 - **Random events** with boons and curses
 - **10 themed acts** with procedural backgrounds and dream journals at rest sites
