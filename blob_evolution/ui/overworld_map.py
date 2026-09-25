@@ -39,6 +39,11 @@ NODE_ICONS = {
 }
 
 
+def star_center(x: int, y: int, radius: int) -> Tuple[int, int]:
+    """Return the elite/miniboss star center for a node drawn at (x, y) with radius."""
+    return x - radius - 22, y
+
+
 class OverworldRenderer:
     """Renders the branching overworld map."""
 
@@ -187,7 +192,7 @@ class OverworldRenderer:
         surface.blit(icon_text, (x - icon_text.get_width() // 2, y - icon_text.get_height() // 2))
 
         if node.is_elite_marked and not node.completed:
-            sx, sy = x + radius + 1, y - radius + 1
+            sx, sy = star_center(x, y, radius)
             draw_star(surface, (sx, sy), 8, 3.6, style.BG_DEEP)  # dark backing, (8,14,24)
             draw_star(surface, (sx, sy), 6, 2.6, style.SELECT)  # (255,214,110)
 
