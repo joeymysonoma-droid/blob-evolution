@@ -447,6 +447,24 @@ def _draw_theme_details(
             )
 
 
+def draw_star(
+    surface: pygame.Surface,
+    center: Tuple[float, float],
+    outer: float,
+    inner: float,
+    color: Color,
+    points: int = 5,
+) -> None:
+    """Draw a filled star polygon (font-independent marker)."""
+    cx, cy = center
+    pts = []
+    for k in range(points * 2):
+        r = outer if k % 2 == 0 else inner
+        a = -math.pi / 2 + k * math.pi / points
+        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    pygame.draw.polygon(surface, color, pts)
+
+
 def world_to_screen(
     world_pos: Vector2,
     camera: Vector2,

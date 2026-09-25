@@ -11,6 +11,7 @@ from blob_evolution.data.lore import get_act_lore, wrap_text
 from blob_evolution.systems.overworld import OverworldMap, OverworldNode
 from blob_evolution.ui import style
 from blob_evolution.utils.enums import NodeType
+from blob_evolution.utils.graphics import draw_star
 
 
 NODE_COLORS = {
@@ -186,8 +187,9 @@ class OverworldRenderer:
         surface.blit(icon_text, (x - icon_text.get_width() // 2, y - icon_text.get_height() // 2))
 
         if node.is_elite_marked and not node.completed:
-            star = self.font_small.render("★", True, style.SELECT)
-            surface.blit(star, (x + radius - 4, y - radius - 6))
+            sx, sy = x + radius + 1, y - radius + 1
+            draw_star(surface, (sx, sy), 8, 3.6, style.BG_DEEP)  # dark backing, (8,14,24)
+            draw_star(surface, (sx, sy), 6, 2.6, style.SELECT)  # (255,214,110)
 
         if node.available or node.completed:
             label = self.font_small.render(node.label, True, style.TEXT_DIM)
