@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
+from blob_evolution.systems.savefile import SaveSection
+
 PERMANENT_UPGRADES: List[dict] = [
     {"id": "perm_damage", "name": "Eternal Fury", "description": "+5% base damage",
      "cost_base": 30, "cost_scale": 1.5, "max_level": 5, "stat": "damage", "value": 0.05, "bonus_type": "mult"},
@@ -238,16 +240,18 @@ class PermanentProgress:
             "endings_seen": self.endings_seen,
         }
 
-    def from_dict(self, data: dict) -> None:
-        """Load permanent progress."""
-        self.shards = data.get("shards", 0)
-        self.total_shards_earned = data.get("total_shards_earned", 0)
-        for key, level in data.get("upgrade_levels", {}).items():
+    def from_dict(self, data: object) -> bool:
+        """Load permanent progress; bad fields use defaults. Returns False if any were bad."""
+        section = SaveSection(data)
+        self.shards = section.number("shards", 0)
+        self.total_shards_earned = section.number("total_shards_earned", 0)
+        for key, level in section.number_dict("upgrade_levels", {}).items():
             if key not in self.upgrade_levels:
                 self.upgrade_levels[key] = 0
             self.upgrade_levels[key] = level
-        self.unlocked_skins = data.get("unlocked_skins", ["default"])
-        self.equipped_skin = data.get("equipped_skin", "default")
-        self.unlocked_wardens = list(data.get("unlocked_wardens", []))
-        self.unlocked_artifacts = list(data.get("unlocked_artifacts", []))
-        self.endings_seen = list(data.get("endings_seen", []))
+        self.unlocked_skins = section.str_list("unlocked_skins", ["default"])
+        self.equipped_skin = section.text("equipped_skin", "default")
+        self.unlocked_wardens = section.str_list("unlocked_wardens", [])
+        self.unlocked_artifacts = section.str_list("unlocked_artifacts", [])
+        self.endings_seen = section.str_list("endings_seen", [])
+        return section.valid

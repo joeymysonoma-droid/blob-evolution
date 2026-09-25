@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Dict
 
+from blob_evolution.systems.savefile import SaveSection
+
 
 class NewGamePlus:
     """Manages loop progression with permanent bonuses."""
@@ -49,9 +51,11 @@ class NewGamePlus:
             "permanent_bonuses": self.permanent_bonuses,
         }
 
-    def from_dict(self, data: dict) -> None:
-        """Load NG+ state."""
-        self.ng_plus_level = data.get("ng_plus_level", 0)
-        self.total_runs = data.get("total_runs", 0)
-        self.best_map_reached = data.get("best_map_reached", 0)
-        self.permanent_bonuses = data.get("permanent_bonuses", self.permanent_bonuses)
+    def from_dict(self, data: object) -> bool:
+        """Load NG+ state; bad fields use defaults. Returns False if any were bad."""
+        section = SaveSection(data)
+        self.ng_plus_level = section.number("ng_plus_level", 0)
+        self.total_runs = section.number("total_runs", 0)
+        self.best_map_reached = section.number("best_map_reached", 0)
+        self.permanent_bonuses = section.number_dict("permanent_bonuses", self.permanent_bonuses)
+        return section.valid
