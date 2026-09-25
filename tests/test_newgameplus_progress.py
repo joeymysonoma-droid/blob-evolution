@@ -49,11 +49,22 @@ def test_full_clear_message_unchanged() -> None:
     assert NewGamePlus().complete_run(10) == "New Game Plus 1 unlocked!"
 
 
-def test_old_ng_plus_section_loads_unchanged(fixture_data) -> None:
-    """An old save's ng_plus section loads and re-serializes with the same keys and values."""
+def test_ng_plus_save_with_low_best_loads_as_layer_10(fixture_data) -> None:
+    """The QA fixture (NG+ 2, best Layer 2) loads as best Layer 10; nothing else changes."""
+    data = json.loads(json.dumps(fixture_data["ng_plus"]))
+    assert data["ng_plus_level"] == 2 and data["best_map_reached"] == 1
     ng = NewGamePlus()
-    ng.from_dict(json.loads(json.dumps(fixture_data["ng_plus"])))
-    assert ng.to_dict() == fixture_data["ng_plus"]
+    ng.from_dict(data)
+    assert _best_layer(ng) == 10
+    assert ng.to_dict() == {**fixture_data["ng_plus"], "best_map_reached": 9}
+
+
+def test_ng_plus_zero_save_loads_unchanged(fixture_data) -> None:
+    """A save that never cleared the game keeps its stored best exactly."""
+    data = {**json.loads(json.dumps(fixture_data["ng_plus"])), "ng_plus_level": 0, "best_map_reached": 3}
+    ng = NewGamePlus()
+    ng.from_dict(json.loads(json.dumps(data)))
+    assert ng.to_dict() == data
 
 
 def test_game_over_captures_best_before_complete_run(make_game, isolated_save) -> None:
