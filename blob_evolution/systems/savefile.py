@@ -2,10 +2,79 @@
 
 from __future__ import annotations
 
+import json
 import math
-from typing import Dict, List, TypeVar
+import os
+import sys
+from typing import Dict, List, Optional, TypeVar
+
+from blob_evolution import config
 
 T = TypeVar("T")
+
+
+def warn(message: str) -> None:
+    """Print a save-system warning to stderr."""
+    print(f"[save] {message}", file=sys.stderr)
+
+
+def read_save(path: str) -> Optional[dict]:
+    """Return the parsed save, {} if the file doesn't exist, or None if it's unreadable."""
+    try:
+        with open(path, "rb") as f:
+            data = json.loads(f.read().decode("utf-8-sig"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError, RecursionError) as exc:
+        warn(f"could not read {path} ({type(exc).__name__}); using defaults")
+        return None
+    if not isinstance(data, dict):
+        warn(f"{path} is not a JSON object; using defaults")
+        return None
+    return data
+
+
+def backup_paths(path: str) -> List[str]:
+    """Backup slots in order: <save>.bak, <save>.bak.1, ..."""
+    base = path + config.SAVE_BACKUP_SUFFIX
+    return [base] + [f"{base}.{n}" for n in range(1, config.SAVE_BACKUP_LIMIT)]
+
+
+def backup_save(path: str) -> bool:
+    """Copy a bad save into a free backup slot; True if the save may now be overwritten."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return True
+    except OSError as exc:
+        warn(f"could not back up {path} ({type(exc).__name__}); progress will not be saved")
+        return False
+    for candidate in backup_paths(path):
+        try:
+            with open(candidate, "rb") as f:
+                if f.read() == raw:
+                    warn(f"{path} is already backed up as {candidate}")
+                    return True
+            continue
+        except FileNotFoundError:
+            pass
+        except OSError:
+            continue
+        try:
+            with open(candidate, "xb") as f:
+                f.write(raw)
+                f.flush()
+                os.fsync(f.fileno())
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            warn(f"could not back up {path} ({type(exc).__name__}); progress will not be saved")
+            return False
+        warn(f"backed up {path} to {candidate}")
+        return True
+    warn(f"all {config.SAVE_BACKUP_LIMIT} backup slots for {path} are full; progress will not be saved")
+    return False
 
 
 def _is_number(value: object) -> bool:

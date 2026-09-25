@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import random
 from typing import List, Optional
 
@@ -35,6 +34,7 @@ from blob_evolution.entities.pickups import XPOrb
 from blob_evolution.entities.player import Player
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.maps.generator import MapGenerator
+from blob_evolution.systems import savefile
 from blob_evolution.systems.artifacts import ARTIFACT_DEFINITIONS, ArtifactManager
 from blob_evolution.systems.audio import get_audio
 from blob_evolution.systems.economy import EconomyManager, SHOP_ITEMS
@@ -118,25 +118,30 @@ class Game:
         self._load_save()
 
     def _load_save(self) -> None:
-        """Load persistent save data."""
-        path = config.SAVE_FILE
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    data = json.load(f)
-                self.ng_plus.from_dict(data.get("ng_plus", {}))
-                self.permanent.from_dict(data.get("permanent", {}))
-                eco = data.get("economy", {})
-                self.economy.total_earned = eco.get("total_earned", 0)
-                if "audio_enabled" in data:
-                    self.audio.set_enabled(bool(data["audio_enabled"]))
-                    if self.audio.enabled:
-                        self.audio.play_menu_music()
-            except (json.JSONDecodeError, IOError):
-                pass
+        """Load persistent save data; back up the file first if any of it is unusable."""
+        self._save_blocked = False
+        data = savefile.read_save(config.SAVE_FILE)
+        readable = data is not None
+        data = data if readable else {}
+        ng_ok = self.ng_plus.from_dict(data.get("ng_plus", {}))
+        perm_ok = self.permanent.from_dict(data.get("permanent", {}))
+        eco = savefile.SaveSection(data.get("economy", {}))
+        self.economy.total_earned = eco.number("total_earned", 0)
+        if "audio_enabled" in data:
+            self.audio.set_enabled(bool(data["audio_enabled"]))
+            if self.audio.enabled:
+                self.audio.play_menu_music()
+        if not (readable and ng_ok and perm_ok and eco.valid):
+            if readable:
+                savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
+            self._save_blocked = not savefile.backup_save(config.SAVE_FILE)
 
     def _save_game(self) -> None:
-        """Save persistent progress."""
+        """Save persistent progress, unless an unreadable save couldn't be backed up."""
+        if self._save_blocked:
+            if not savefile.backup_save(config.SAVE_FILE):
+                return
+            self._save_blocked = False
         data = {
             "ng_plus": self.ng_plus.to_dict(),
             "permanent": self.permanent.to_dict(),
