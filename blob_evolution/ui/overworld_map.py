@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 import pygame
 
@@ -45,7 +45,8 @@ class OverworldRenderer:
         self.font = pygame.font.SysFont("segoeui", 14)
         self.font_large = pygame.font.SysFont("segoeui", 22, bold=True)
         self.font_small = pygame.font.SysFont("segoeui", 12)
-        self.node_rects: List[Tuple[str, pygame.Rect]] = []
+        self.node_rects: List[Tuple[str, pygame.Rect]] = []  # draw order: later entries are on top
+        self.available_ids: Set[str] = set()
         self.hovered_node: Optional[str] = None
 
     def draw(
@@ -58,6 +59,7 @@ class OverworldRenderer:
     ) -> None:
         """Draw the full overworld map."""
         self.node_rects.clear()
+        self.available_ids = {n.id for n in overworld.nodes.values() if n.available}
         theme = config.MAP_THEMES[overworld.act_index % len(config.MAP_THEMES)]
         style.draw_ambient_bg(surface, seed_offset=overworld.act_index, accent=theme["accent"])
 
@@ -74,8 +76,13 @@ class OverworldRenderer:
                 if target:
                     self._draw_connection(surface, node, target)
 
+        # Selected node last so no neighbour paints over its ring
+        sel = overworld.nodes.get(selected_node_id) if selected_node_id else None
         for node in overworld.nodes.values():
-            self._draw_node(surface, node, overworld.current_node_id, selected_node_id)
+            if node is not sel:
+                self._draw_node(surface, node, overworld.current_node_id, selected_node_id)
+        if sel is not None:
+            self._draw_node(surface, sel, overworld.current_node_id, selected_node_id)
 
         # Header after nodes so it always draws on top
         lore = get_act_lore(overworld.act_index)
@@ -190,11 +197,13 @@ class OverworldRenderer:
         self.node_rects.append((node.id, rect))
 
     def hit_test(self, pos: tuple) -> Optional[str]:
-        """Return node id at screen position."""
-        for nid, rect in self.node_rects:
-            if rect.collidepoint(pos):
-                return nid
-        return None
+        """Return the node at pos: available nodes win overlaps, then the one drawn on top."""
+        hits = [
+            (nid in self.available_ids, i, nid)  # i = draw order, so a higher i is on top
+            for i, (nid, rect) in enumerate(self.node_rects)
+            if rect.collidepoint(pos)
+        ]
+        return max(hits)[2] if hits else None
 
     def get_available_index(self, overworld: OverworldMap, selected: int) -> Optional[str]:
         """Get node id by selection index among available nodes."""
