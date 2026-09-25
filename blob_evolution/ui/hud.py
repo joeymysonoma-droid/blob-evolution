@@ -7,6 +7,7 @@ from typing import List, Tuple
 import pygame
 
 from blob_evolution import config
+from blob_evolution.data.lore import SKILL_MAX_LABEL
 from blob_evolution.entities.boss import Boss
 from blob_evolution.entities.creature import Creature
 from blob_evolution.entities.pickups import XPOrb
@@ -110,7 +111,8 @@ class HUD:
             surface.blit(key_text, (row.x + 16, row.y + 8))
             desc = self.font_small.render(skill["description"], True, style.TEXT_DIM)
             surface.blit(desc, (row.x + 16, row.y + 31))
-            cost_text = self.font_small.render(f"{skill['cost']} SP", True, style.SELECT_DIM)
+            cost_label = SKILL_MAX_LABEL if skill["maxed"] else f"{skill['cost']} SP"
+            cost_text = self.font_small.render(cost_label, True, style.SELECT_DIM)
             surface.blit(cost_text, (row.right - cost_text.get_width() - 16, row.y + 10))
 
         evo_text = self.font_small.render(

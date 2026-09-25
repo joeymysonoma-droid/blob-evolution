@@ -85,6 +85,10 @@ class SkillManager:
         per_level = SKILL_DEFINITIONS[skill]["multiplier_per_level"]
         return 1.0 + level * per_level
 
+    def is_maxed(self, skill: str) -> bool:
+        """Check if a skill is at the max level."""
+        return self.get_level(skill) >= config.MAX_SKILL_LEVEL
+
     def get_upgrade_cost(self, skill: str) -> int:
         """Calculate cost to upgrade a skill."""
         level = self.get_level(skill)
@@ -120,6 +124,7 @@ class SkillManager:
                 "description": defn["description"],
                 "level": self.get_level(key),
                 "max_level": config.MAX_SKILL_LEVEL,
+                "maxed": self.is_maxed(key),
                 "cost": self.get_upgrade_cost(key),
             })
         return result

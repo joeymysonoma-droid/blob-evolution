@@ -70,6 +70,9 @@ GAME_OVER_PROGRESS_LINE = "Reached Layer {reached}  ·  Best: Layer {best}"
 GAME_OVER_DEEPEST_LINE = "Reached Layer {reached}, your deepest yet"
 VICTORY_NG_PLUS_LINE = "New Game Plus {n} unlocked. The Lattice remembers."
 
+# Skills overlay (TASK-018): shown instead of a cost once a skill is at max level
+SKILL_MAX_LABEL = "MAX"
+
 ENDING_TITLES = {
     "reopen": "THE DIVIDE REOPENS",
     "merge": "ETERNAL STILLNESS",
