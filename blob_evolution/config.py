@@ -54,6 +54,12 @@ COLOR_ESSENCE = (168, 85, 247)
 MINIMAP_SIZE = 200
 MINIMAP_PADDING = 10
 
+# Overworld map layout
+OVERWORLD_HEADER_RECT = (60, 8, SCREEN_WIDTH - 120, 88)  # x, y, w, h; bottom edge at y=96
+OVERWORLD_NODE_TOP_REACH = 33  # boss radius 22 + selected ring max (5 + 3 pulse + 3)
+OVERWORLD_MAP_TOP = OVERWORLD_HEADER_RECT[1] + OVERWORLD_HEADER_RECT[3] + OVERWORLD_NODE_TOP_REACH + 8  # = 137
+OVERWORLD_MAP_BOTTOM = SCREEN_HEIGHT - 70  # 730
+
 # Difficulty multipliers
 DIFFICULTY_SETTINGS = {
     "easy": {"hp": 0.7, "damage": 0.7, "speed": 0.8, "xp": 1.2, "elite_chance": 0.0},

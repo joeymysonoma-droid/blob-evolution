@@ -61,8 +61,25 @@ class OverworldRenderer:
         theme = config.MAP_THEMES[overworld.act_index % len(config.MAP_THEMES)]
         style.draw_ambient_bg(surface, seed_offset=overworld.act_index, accent=theme["accent"])
 
+        style.draw_stat_chip(surface, self.font, "Shards", str(shards), 80, config.SCREEN_HEIGHT - 48, style.SHARD)
+        style.draw_stat_chip(
+            surface, self.font, "Essence", str(essence),
+            config.SCREEN_WIDTH - 200, config.SCREEN_HEIGHT - 48, style.ESSENCE,
+        )
+
+        # Draw connections under nodes
+        for node in overworld.nodes.values():
+            for conn_id in node.connections:
+                target = overworld.nodes.get(conn_id)
+                if target:
+                    self._draw_connection(surface, node, target)
+
+        for node in overworld.nodes.values():
+            self._draw_node(surface, node, overworld.current_node_id, selected_node_id)
+
+        # Header after nodes so it always draws on top
         lore = get_act_lore(overworld.act_index)
-        header = pygame.Rect(60, 8, config.SCREEN_WIDTH - 120, 88)
+        header = pygame.Rect(*config.OVERWORLD_HEADER_RECT)
         style.draw_panel(surface, header, alpha=200)
 
         title = self.font_large.render(
@@ -81,22 +98,6 @@ class OverworldRenderer:
             f"{overworld.encounter_rows} encounters to {lore['warden']}", True, style.TEXT_MUTED,
         )
         surface.blit(rounds_text, (config.SCREEN_WIDTH // 2 - rounds_text.get_width() // 2, intro_y + 2))
-
-        style.draw_stat_chip(surface, self.font, "Shards", str(shards), 80, config.SCREEN_HEIGHT - 48, style.SHARD)
-        style.draw_stat_chip(
-            surface, self.font, "Essence", str(essence),
-            config.SCREEN_WIDTH - 200, config.SCREEN_HEIGHT - 48, style.ESSENCE,
-        )
-
-        # Draw connections under nodes
-        for node in overworld.nodes.values():
-            for conn_id in node.connections:
-                target = overworld.nodes.get(conn_id)
-                if target:
-                    self._draw_connection(surface, node, target)
-
-        for node in overworld.nodes.values():
-            self._draw_node(surface, node, overworld.current_node_id, selected_node_id)
 
         style.draw_hint(
             surface, self.font_small,

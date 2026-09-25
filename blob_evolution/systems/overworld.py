@@ -220,8 +220,8 @@ class OverworldMap:
     def _layout_nodes(self, layers: List[List[str]]) -> None:
         """Assign screen positions for drawing."""
         from blob_evolution import config
-        map_top = 70
-        map_bottom = config.SCREEN_HEIGHT - 70
+        map_top = config.OVERWORLD_MAP_TOP
+        map_bottom = config.OVERWORLD_MAP_BOTTOM
         num_layers = len(layers)
         layer_height = (map_bottom - map_top) / max(1, num_layers - 1)
 
