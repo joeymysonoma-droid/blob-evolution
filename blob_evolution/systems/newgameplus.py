@@ -25,6 +25,8 @@ class NewGamePlus:
         """Record a completed run and apply NG+ bonuses."""
         self.total_runs += 1
         if maps_cleared >= 10:
+            # Full clear: the deepest layer reached is the last one cleared (Layer 10 = index 9).
+            self.best_map_reached = max(self.best_map_reached, maps_cleared - 1)
             self.ng_plus_level += 1
             self._apply_bonuses()
             return f"New Game Plus {self.ng_plus_level} unlocked!"

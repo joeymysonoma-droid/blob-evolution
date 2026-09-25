@@ -1407,6 +1407,7 @@ class Game:
             "maps_cleared": self.maps_cleared,
             "total_xp": self.player.total_xp,
             "essence": self.economy.essence,
+            "best_layer_before": self.ng_plus.best_map_reached + 1,
         }
         self.ng_plus.complete_run(self.maps_cleared)
         self.permanent.add_shards(max(5, self.run_shards_earned // 2))
