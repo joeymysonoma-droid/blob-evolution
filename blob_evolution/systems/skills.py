@@ -89,26 +89,24 @@ class SkillManager:
         """Check if a skill is at the max level."""
         return self.get_level(skill) >= config.MAX_SKILL_LEVEL
 
-    def get_upgrade_cost(self, skill: str) -> int:
-        """Calculate cost to upgrade a skill."""
-        level = self.get_level(skill)
-        if level >= config.MAX_SKILL_LEVEL:
-            return 999
+    def get_upgrade_cost(self, skill: str) -> Optional[int]:
+        """Calculate cost to upgrade a skill; None once it is at max level (nothing to buy)."""
+        if self.is_maxed(skill):
+            return None
         base = SKILL_DEFINITIONS[skill]["base_cost"]
-        return base + level
+        return base + self.get_level(skill)
 
     def can_upgrade(self, skill: str, skill_points: int) -> bool:
-        """Check if skill can be upgraded."""
-        return (
-            skill in SKILL_DEFINITIONS
-            and self.get_level(skill) < config.MAX_SKILL_LEVEL
-            and skill_points >= self.get_upgrade_cost(skill)
-        )
+        """Check if skill can be upgraded (known, below max level, affordable)."""
+        if skill not in SKILL_DEFINITIONS:
+            return False
+        cost = self.get_upgrade_cost(skill)
+        return cost is not None and skill_points >= cost
 
     def upgrade(self, skill: str) -> int:
-        """Upgrade skill and return cost. Returns -1 if failed."""
-        cost = self.get_upgrade_cost(skill)
-        if self.get_level(skill) >= config.MAX_SKILL_LEVEL:
+        """Upgrade skill and return cost. Returns -1 if failed (unknown or already max level)."""
+        cost = self.get_upgrade_cost(skill) if skill in SKILL_DEFINITIONS else None
+        if cost is None:
             return -1
         self.levels[skill] += 1
         return cost
