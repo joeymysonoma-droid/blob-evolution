@@ -15,6 +15,7 @@ from blob_evolution.data.lore import (
     BLACKSMITH_TITLE,
     REST_SUBTITLE,
     REST_TITLE,
+    SAVE_NOTICES,
     archive_entries_for_tab,
     build_act_descent_pages,
     build_boss_intro_pages,
@@ -119,6 +120,7 @@ class Game:
     def _load_save(self) -> None:
         """Load persistent save data; back up the file first if any of it is unusable."""
         self._save_blocked = False
+        self.save_notice: Optional[str] = None  # "recovered" / "saving_paused" until dismissed
         data = savefile.read_save(config.SAVE_FILE)
         readable = data is not None
         data = data if readable else {}
@@ -134,6 +136,7 @@ class Game:
             if readable:
                 savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
             self._save_blocked = not savefile.backup_save(config.SAVE_FILE)
+            self.save_notice = "saving_paused" if self._save_blocked else "recovered"
 
     def _save_game(self) -> None:
         """Save persistent progress, unless an unreadable save couldn't be backed up."""
@@ -345,6 +348,9 @@ class Game:
 
     def _handle_event(self, event: pygame.event.Event) -> None:
         """Route events based on game state."""
+        if self.save_notice:
+            self._handle_save_notice_event(event)
+            return
         if event.type == pygame.KEYDOWN:
             if self.state == GameState.MAIN_MENU:
                 self._handle_main_menu_key(event.key)
@@ -416,6 +422,13 @@ class Game:
 
         if event.type == pygame.MOUSEMOTION:
             self._handle_menu_hover(event.pos)
+
+    def _handle_save_notice_event(self, event: pygame.event.Event) -> None:
+        """While the save notice is up, only SPACE/ENTER/ESC or its button dismiss it."""
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE):
+            self.save_notice = None
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.menu.save_notice_hit_test(event.pos):
+            self.save_notice = None
 
     @staticmethod
     def _is_menu_up(key: int) -> bool:
@@ -1455,6 +1468,8 @@ class Game:
         """Render current frame."""
         if self.state == GameState.MAIN_MENU:
             self.menu.draw_main_menu(self.screen, self.menu_selected, self.difficulty)
+            if self.save_notice:
+                self.menu.draw_save_notice(self.screen, self.save_notice, **SAVE_NOTICES[self.save_notice])
         elif self.state == GameState.STORY and self.story:
             self.cinematic.draw(self.screen, self.story)
         elif self.state == GameState.OVERWORLD and self.overworld:
