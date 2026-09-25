@@ -46,7 +46,7 @@ SKINS: List[dict] = [
      "color": (50, 130, 220), "core": (120, 180, 255),
      "require_warden": "warden_2",
      "lock_hint": "Remember the Warden of Echoes",
-     "lore": "Memory Vault echo — cool with archived light."},
+     "lore": "Memory Vaults echo — cool with archived light."},
     {"id": "golden", "name": "Golden", "cost": 150,
      "color": (220, 180, 40), "core": (255, 230, 120),
      "require_warden": "warden_8",

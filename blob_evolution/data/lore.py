@@ -267,7 +267,7 @@ ACT_LORE: List[dict] = [
         "intro": "The wardens convene. Each layer you crossed was a verdict they could not agree on.",
         "warden": "Warden of Ascent",
         "warden_quote": "You climbed through our judgments. We still cannot let you pass.",
-        "triad_names": ["Warden of Ascent", "Warden of Echo", "Warden of Stillness"],
+        "triad_names": ["Warden of Ascent", "Warden of Echoes", "Warden of Stillness"],
         "fragment": (
             "Three verdicts in one membrane: climb, remember, freeze. "
             "They argued for ages. Your arrival was the only motion they could not vote down."
@@ -340,7 +340,7 @@ COSMOLOGY_ENTRIES: List[dict] = [
         "id": "cosmo_seedling",
         "title": "The Seedling",
         "body": (
-            "You. Untyped protoplasm dropped at the Rim after a Great Division cracked the membrane. "
+            "You. Untyped protoplasm dropped at the Rim after the First Divide cracked the membrane. "
             "You can absorb traits other castes cannot. That makes you a pilgrim — and a threat."
         ),
     },
