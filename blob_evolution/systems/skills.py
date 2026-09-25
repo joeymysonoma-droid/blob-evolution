@@ -40,7 +40,7 @@ SKILL_DEFINITIONS: Dict[str, dict] = {
     },
     "projectile": {
         "name": "Projectile",
-        "description": "Faster shots and larger magnet radius",
+        "description": "Faster fire rate and shot speed",
         "multiplier_per_level": 0.0,
         "base_cost": 1,
     },

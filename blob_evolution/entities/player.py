@@ -101,8 +101,7 @@ class Player:
         self.hp = min(self.hp, self.max_hp)
         self.shoot_rate = max(0.06, 0.25 - self.skills.get_level("projectile") * 0.02)
         self.shoot_rate /= self.artifacts.get_multiplier("fire_rate")
-        self.magnet_radius = (80 + self.skills.get_level("projectile") * 10
-                              + self.skills.get_level("magnet") * 15)
+        self.magnet_radius = 80 + self.skills.get_level("magnet") * 15
         self.magnet_radius *= self.perm_bonuses.get("magnet", 1.0)
         self.magnet_radius *= self.artifacts.get_multiplier("magnet")
 
