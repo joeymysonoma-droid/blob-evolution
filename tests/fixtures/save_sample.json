@@ -1,0 +1,56 @@
+{
+  "ng_plus": {
+    "ng_plus_level": 2,
+    "total_runs": 8,
+    "best_map_reached": 1,
+    "permanent_bonuses": {
+      "damage": 0.1,
+      "health": 0.1,
+      "speed": 0.06,
+      "essence": 0.2
+    }
+  },
+  "permanent": {
+    "shards": 72,
+    "total_shards_earned": 72,
+    "upgrade_levels": {
+      "perm_damage": 0,
+      "perm_health": 0,
+      "perm_speed": 0,
+      "perm_xp": 0,
+      "perm_magnet": 0,
+      "perm_armor": 0,
+      "perm_lifesteal": 0,
+      "perm_crit": 0,
+      "perm_luck": 0,
+      "perm_essence": 0,
+      "perm_shards": 0,
+      "perm_start_sp": 0,
+      "perm_start_essence": 0
+    },
+    "unlocked_skins": [
+      "default"
+    ],
+    "equipped_skin": "default",
+    "unlocked_wardens": [
+      "warden_0"
+    ],
+    "unlocked_artifacts": [
+      "quantum_split",
+      "time_dilation",
+      "magnetic_field",
+      "regenerative_matrix",
+      "thick_skin",
+      "xp_chain",
+      "reality_tear",
+      "perfect_absorption"
+    ],
+    "endings_seen": []
+  },
+  "economy": {
+    "essence": 0,
+    "total_earned": 1721782,
+    "run_damage_boost": 0.0
+  },
+  "audio_enabled": true
+}

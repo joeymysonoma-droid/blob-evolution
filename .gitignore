@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Local player save (use tests/fixtures/ for save-compatibility samples)
+blob_evolution_save.json
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
