@@ -32,7 +32,7 @@ def test_fixture_values_survive_load(make_game, isolated_save, fixture_bytes, fi
     ng = fixture_data["ng_plus"]
     assert game.ng_plus.ng_plus_level == ng["ng_plus_level"]
     assert game.ng_plus.total_runs == ng["total_runs"]
-    assert game.ng_plus.best_map_reached == ng["best_map_reached"]
+    assert game.ng_plus.best_map_reached == 9  # TASK-013c: NG+ saves load with best Layer 10 (index 9)
     assert game.ng_plus.permanent_bonuses == ng["permanent_bonuses"]
 
     perm = fixture_data["permanent"]
@@ -57,6 +57,8 @@ def test_fixture_round_trips_through_save(make_game, isolated_save, fixture_byte
     isolated_save.unlink()  # prove _save_game really writes a new file
     game._save_game()
     assert isolated_save.exists()
-    assert json.loads(isolated_save.read_text()) == fixture_data
+    # TASK-013c: the NG+ 2 fixture re-saves with best_map_reached raised to 9 (Layer 10).
+    expected = {**fixture_data, "ng_plus": {**fixture_data["ng_plus"], "best_map_reached": 9}}
+    assert json.loads(isolated_save.read_text()) == expected
     # Nothing else written next to the save.
     assert sorted(p.name for p in tmp_path.iterdir()) == [isolated_save.name]
