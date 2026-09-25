@@ -27,7 +27,7 @@ class NewGamePlus:
             self._apply_bonuses()
             return f"New Game Plus {self.ng_plus_level} unlocked!"
         self.best_map_reached = max(self.best_map_reached, maps_cleared)
-        return f"Best progress: Map {maps_cleared + 1}"
+        return f"Best progress: Layer {maps_cleared + 1}"
 
     def _apply_bonuses(self) -> None:
         """Increase permanent bonuses per NG+ level."""

@@ -159,7 +159,7 @@ class MenuRenderer:
             ("Overworld", "Choose a glowing path after each encounter."),
             ("Absorb", "Touch smaller creatures to consume them."),
             ("Grow", "Collect XP orbs — level up for skill points."),
-            ("Wardens", "Each layer boss has unique attacks and phases."),
+            ("Wardens", "One guards each layer, with unique attacks and phases."),
             ("Enemies", "Shielders block front hits — flank them."),
             ("Bombers", "Explode on death or when they close in."),
             ("Phantoms", "Invulnerable while faded — wait them out."),
