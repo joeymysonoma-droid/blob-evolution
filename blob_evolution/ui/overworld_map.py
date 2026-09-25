@@ -197,8 +197,13 @@ class OverworldRenderer:
             draw_star(surface, (sx, sy), 6, 2.6, style.SELECT)  # (255,214,110)
 
         if node.available or node.completed:
-            label = self.font_small.render(node.label, True, style.TEXT_DIM)
-            surface.blit(label, (x - label.get_width() // 2, y + radius + 5))
+            label_color = style.TEXT if node.available else style.TEXT_DIM
+            label = self.font_small.render(node.label, True, label_color)
+            lx = x + radius + 16
+            ly = y - label.get_height() // 2
+            plate = pygame.Rect(lx - 4, ly - 1, label.get_width() + 8, label.get_height() + 2)
+            style.draw_panel(surface, plate, fill=style.BG_DEEP, edge=style.BG_DEEP, radius=4, alpha=200)
+            surface.blit(label, (lx, ly))
 
         rect = pygame.Rect(x - radius - 6, y - radius - 6, radius * 2 + 12, radius * 2 + 12)
         self.node_rects.append((node.id, rect))
