@@ -89,20 +89,22 @@ def test_ng_plus_save_with_best_above_9_is_kept(fixture_data) -> None:
         assert ng.to_dict() == data
 
 
-def test_string_ng_plus_level_loads_without_clamp(make_game, isolated_save, fixture_data) -> None:
-    """BUG-019: "ng_plus_level": "2" loads without a TypeError; values stay as saved."""
-    save = {**fixture_data, "ng_plus": _ng_section(fixture_data, ng_plus_level="2")}
-    isolated_save.write_text(json.dumps(save), encoding="utf-8")
+def test_string_ng_plus_level_falls_back_to_default(make_game, isolated_save, fixture_data) -> None:
+    """BUG-019 with 007: "ng_plus_level": "2" loads without a TypeError as NG+ 0, best unchanged."""
+    section = _ng_section(fixture_data, ng_plus_level="2")
+    assert NewGamePlus().from_dict(json.loads(json.dumps(section))) is False
+    isolated_save.write_text(json.dumps({**fixture_data, "ng_plus": section}), encoding="utf-8")
     game = make_game()
-    assert game.ng_plus.to_dict() == save["ng_plus"]
+    assert game.ng_plus.to_dict() == {**section, "ng_plus_level": 0}
 
 
-def test_null_best_at_ng_plus_2_loads_without_clamp(make_game, isolated_save, fixture_data) -> None:
-    """BUG-019: "best_map_reached": null at NG+ 2 loads without a TypeError; values stay as saved."""
-    save = {**fixture_data, "ng_plus": _ng_section(fixture_data, ng_plus_level=2, best_map_reached=None)}
-    isolated_save.write_text(json.dumps(save), encoding="utf-8")
+def test_null_best_at_ng_plus_2_falls_back_then_clamps(make_game, isolated_save, fixture_data) -> None:
+    """BUG-019 with 007: null best at NG+ 2 loads without a TypeError as 0, then clamps to 9."""
+    section = _ng_section(fixture_data, ng_plus_level=2, best_map_reached=None)
+    assert NewGamePlus().from_dict(json.loads(json.dumps(section))) is False
+    isolated_save.write_text(json.dumps({**fixture_data, "ng_plus": section}), encoding="utf-8")
     game = make_game()
-    assert game.ng_plus.to_dict() == save["ng_plus"]
+    assert game.ng_plus.to_dict() == {**section, "best_map_reached": 9}
 
 
 def test_game_over_captures_best_before_complete_run(make_game, isolated_save) -> None:

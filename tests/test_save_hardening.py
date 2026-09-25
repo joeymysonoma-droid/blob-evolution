@@ -89,7 +89,10 @@ def test_valid_fixture_no_backup_and_byte_identical(make_game, isolated_save, fi
     isolated_save.write_bytes(fixture_bytes)
     _boot_and_save(make_game)
     assert _save_files(tmp_path) == [isolated_save.name]  # no .bak, no leftover .tmp
-    assert isolated_save.read_bytes() == fixture_bytes
+    # TASK-013c: the NG+ 2 fixture re-saves with best_map_reached raised from 1 to 9 (Layer 10).
+    assert fixture_bytes.count(b'"best_map_reached": 1') == 1
+    expected = fixture_bytes.replace(b'"best_map_reached": 1', b'"best_map_reached": 9')
+    assert isolated_save.read_bytes() == expected
 
 
 def test_empty_object_save_no_backup(make_game, isolated_save, default_save_bytes, tmp_path):
