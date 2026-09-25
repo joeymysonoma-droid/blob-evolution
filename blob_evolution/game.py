@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import random
 from typing import List, Optional
@@ -149,11 +148,7 @@ class Game:
                         "run_damage_boost": 0.0},
             "audio_enabled": self.audio.enabled,
         }
-        try:
-            with open(config.SAVE_FILE, "w") as f:
-                json.dump(data, f, indent=2)
-        except IOError:
-            pass
+        savefile.write_save(config.SAVE_FILE, data)
 
     def _diff_mult(self) -> dict:
         """Get difficulty multipliers."""

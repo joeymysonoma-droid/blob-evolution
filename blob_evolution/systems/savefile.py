@@ -34,6 +34,22 @@ def read_save(path: str) -> Optional[dict]:
     return data
 
 
+def write_save(path: str, data: dict) -> bool:
+    """Write the save atomically (temp file + fsync + os.replace); True on success."""
+    target = os.path.realpath(path)  # replace a symlink's target, not the link itself
+    tmp = target + config.SAVE_TEMP_SUFFIX
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, target)
+    except (OSError, TypeError, ValueError) as exc:
+        warn(f"could not write {path} ({type(exc).__name__}); previous save left untouched")
+        return False
+    return True
+
+
 def backup_paths(path: str) -> List[str]:
     """Backup slots in order: <save>.bak, <save>.bak.1, ..."""
     base = path + config.SAVE_BACKUP_SUFFIX
