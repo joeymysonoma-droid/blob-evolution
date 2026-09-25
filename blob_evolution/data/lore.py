@@ -73,12 +73,12 @@ VICTORY_NG_PLUS_LINE = "New Game Plus {n} unlocked. The Lattice remembers."
 # Save-recovery notices (TASK-009): shown once over the main menu at boot
 SAVE_RECOVERED_NOTICE = {
     "title": "The Lattice Forgot You",
-    "body": "Your save was damaged. Shards, upgrades, and NG+ begin again.\nYour old save rests in blob_evolution_save.json.bak",
+    "body": "Your save was damaged.\nShards, upgrades, and NG+ begin again.\nYour old save rests in a .bak file beside the new one.",
     "button": "Begin Again",
 }
 SAVE_PAUSED_NOTICE = {
     "title": "The Lattice Stops Remembering",
-    "body": "Your save was damaged, and no backup could be made.\nTo guard the original, this session won't be saved.",
+    "body": "Your save was damaged, and no backup could be made.\nTo guard it, saving is paused until a backup can be made.",
     "button": "Walk On",
 }
 SAVE_NOTICES = {"recovered": SAVE_RECOVERED_NOTICE, "saving_paused": SAVE_PAUSED_NOTICE}
