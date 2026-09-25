@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Tuple
 
 import pygame
 
@@ -15,6 +15,17 @@ from blob_evolution.systems.hazards import HazardManager
 from blob_evolution.ui import style
 from blob_evolution.utils.graphics import draw_health_bar
 from blob_evolution.utils.vector2 import Vector2
+
+
+def skills_overlay_layout(count: int) -> Tuple[pygame.Rect, List[pygame.Rect]]:
+    """Return the TAB skills panel and one row rect per skill (rows shrink to fit)."""
+    panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 320, 50, 640, 680)
+    start_y = panel.y + 90  # 140
+    list_bottom = panel.bottom - 48  # 682, 12px above the Evolution label at 694
+    pitch = min(60, (list_bottom - start_y + 6) // max(1, count))  # 60 for 9 skills
+    row_h = pitch - 6  # 54
+    rows = [pygame.Rect(panel.x + 28, start_y + i * pitch, panel.width - 56, row_h) for i in range(count)]
+    return panel, rows
 
 
 class HUD:
@@ -75,7 +86,8 @@ class HUD:
         overlay.fill((4, 8, 16, 190))
         surface.blit(overlay, (0, 0))
 
-        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 320, 50, 640, 680)
+        skills = player.skills.get_all_skills()
+        panel, rows = skills_overlay_layout(len(skills))
         style.draw_panel(surface, panel, alpha=235)
 
         title = self.font_large.render("SKILLS", True, style.TEXT)
@@ -86,12 +98,8 @@ class HUD:
         )
         surface.blit(points_text, (panel.centerx - points_text.get_width() // 2, panel.y + 52))
 
-        skills = player.skills.get_all_skills()
-        start_y = panel.y + 90
-        for i, skill in enumerate(skills):
-            y = start_y + i * 78
+        for i, (skill, row) in enumerate(zip(skills, rows)):
             can_upgrade = player.skills.can_upgrade(skill["key"], player.skill_points)
-            row = pygame.Rect(panel.x + 28, y, panel.width - 56, 68)
             edge = style.PANEL_EDGE_HOT if can_upgrade else style.PANEL_EDGE
             style.draw_panel(surface, row, edge=edge, radius=8, alpha=180)
             color = style.ACCENT if can_upgrade else style.TEXT
@@ -99,11 +107,11 @@ class HUD:
                 f"[{i + 1}]  {skill['name']}   Lv.{skill['level']}/{skill['max_level']}",
                 True, color,
             )
-            surface.blit(key_text, (row.x + 16, row.y + 12))
+            surface.blit(key_text, (row.x + 16, row.y + 8))
             desc = self.font_small.render(skill["description"], True, style.TEXT_DIM)
-            surface.blit(desc, (row.x + 16, row.y + 38))
+            surface.blit(desc, (row.x + 16, row.y + 31))
             cost_text = self.font_small.render(f"{skill['cost']} SP", True, style.SELECT_DIM)
-            surface.blit(cost_text, (row.right - cost_text.get_width() - 16, row.y + 14))
+            surface.blit(cost_text, (row.right - cost_text.get_width() - 16, row.y + 10))
 
         evo_text = self.font_small.render(
             f"Evolution: {player.evolution.current_form}", True, style.ESSENCE,
