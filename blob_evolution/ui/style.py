@@ -28,6 +28,12 @@ ESSENCE = (170, 130, 255)
 SHARD = (200, 180, 255)
 WARN = (255, 180, 90)
 
+# Save-recovery notice variants (TASK-009): differ by icon, edge weight and motion, not just color
+NOTICE_VARIANTS = {
+    "recovered": {"accent": ACCENT, "edge": PANEL_EDGE_HOT, "edge_w": 1, "icon": "info", "pulse": False},
+    "saving_paused": {"accent": DANGER, "edge": DANGER, "edge_w": 2, "icon": "warn", "pulse": True},
+}
+
 
 def pulse(speed: float = 2.0, lo: float = 0.0, hi: float = 1.0) -> float:
     """Oscillate between lo and hi over time."""

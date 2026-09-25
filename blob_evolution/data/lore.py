@@ -70,6 +70,19 @@ GAME_OVER_PROGRESS_LINE = "Reached Layer {reached}  ·  Best: Layer {best}"
 GAME_OVER_DEEPEST_LINE = "Reached Layer {reached}, your deepest yet"
 VICTORY_NG_PLUS_LINE = "New Game Plus {n} unlocked. The Lattice remembers."
 
+# Save-recovery notices (TASK-009): shown once over the main menu at boot
+SAVE_RECOVERED_NOTICE = {
+    "title": "The Lattice Forgot You",
+    "body": "Your save was damaged. Shards, upgrades, and NG+ begin again.\nYour old save rests in blob_evolution_save.json.bak",
+    "button": "Begin Again",
+}
+SAVE_PAUSED_NOTICE = {
+    "title": "The Lattice Stops Remembering",
+    "body": "Your save was damaged, and no backup could be made.\nTo guard the original, this session won't be saved.",
+    "button": "Walk On",
+}
+SAVE_NOTICES = {"recovered": SAVE_RECOVERED_NOTICE, "saving_paused": SAVE_PAUSED_NOTICE}
+
 ENDING_TITLES = {
     "reopen": "THE DIVIDE REOPENS",
     "merge": "ETERNAL STILLNESS",

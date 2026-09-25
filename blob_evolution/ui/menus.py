@@ -146,6 +146,59 @@ class MenuRenderer:
             )
             self.item_rects.append(rect)
 
+    @staticmethod
+    def save_notice_button_rect() -> pygame.Rect:
+        """Screen rect of the save notice's button (fixed layout)."""
+        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 280, 288, 560, 224)
+        return pygame.Rect(panel.centerx - 100, panel.y + 158, 200, 42)
+
+    def save_notice_hit_test(self, pos: Tuple[int, int]) -> bool:
+        """True if pos is on the save notice's button."""
+        return self.save_notice_button_rect().collidepoint(pos)
+
+    def draw_save_notice(
+        self, surface: pygame.Surface, variant: str, title: str, body: str, button: str,
+    ) -> pygame.Rect:
+        """Draw the save-recovery notice over the current frame; returns the button rect."""
+        v = style.NOTICE_VARIANTS[variant]
+        accent = v["accent"]
+        overlay = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((4, 8, 16, 190))
+        surface.blit(overlay, (0, 0))
+        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 280, 288, 560, 224)
+        style.draw_panel(surface, panel, edge=v["edge"], alpha=245)
+        if v["edge_w"] > 1:
+            pygame.draw.rect(surface, v["edge"], panel, v["edge_w"], border_radius=12)
+        cx, cy = panel.x + 44, panel.y + 44
+        col = accent
+        if v["pulse"]:
+            col = style.lerp_color(style.PANEL, accent, style.pulse(3.0, 0.6, 1.0))
+        if v["icon"] == "info":
+            pygame.draw.circle(surface, col, (cx, cy), 14, 2)
+            pygame.draw.circle(surface, col, (cx, cy - 6), 2)
+            pygame.draw.rect(surface, col, (cx - 1, cy - 2, 3, 9))
+        else:
+            pygame.draw.polygon(surface, col, [(cx, cy - 15), (cx - 16, cy + 13), (cx + 16, cy + 13)], 2)
+            pygame.draw.rect(surface, col, (cx - 1, cy - 6, 3, 10))
+            pygame.draw.circle(surface, col, (cx, cy + 8), 2)
+        tx = panel.x + 76
+        t = self.menu_font.render(title, True, accent)
+        surface.blit(t, (tx, cy - t.get_height() // 2))
+        wrap_w = panel.right - 36 - tx
+        lines = [line for para in body.split("\n") for line in wrap_text(para, self.small_font, wrap_w)]
+        for i, line in enumerate(lines[:3]):
+            surface.blit(self.small_font.render(line, True, style.TEXT), (tx, panel.y + 72 + i * 22))
+        btn = self.save_notice_button_rect()
+        glow = pygame.Surface(btn.size, pygame.SRCALPHA)
+        pygame.draw.rect(glow, (*style.SELECT, 35), glow.get_rect(), border_radius=8)
+        pygame.draw.rect(glow, (*style.SELECT, 120), glow.get_rect(), 1, border_radius=8)
+        surface.blit(glow, btn.topleft)
+        lab = self.menu_font.render(button, True, style.SELECT)
+        surface.blit(lab, lab.get_rect(center=btn.center))
+        hint = self.tiny_font.render("SPACE / ENTER / ESC", True, style.TEXT_DIM)
+        surface.blit(hint, (panel.centerx - hint.get_width() // 2, panel.bottom + 12))
+        return btn
+
     def draw_options(self, surface: pygame.Surface, selected: int, difficulty: Difficulty,
                      show_fps: bool, show_minimap: bool, sound_on: bool = True) -> None:
         """Draw options menu."""
