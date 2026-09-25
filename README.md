@@ -53,15 +53,15 @@ The game runs until it is closed or killed, so a headless run needs a time limit
 ## Features
 
 - **Story cinematics** — Pilgrimage opening, layer descents, and Warden confrontations
-- **Procedural audio** — SFX for combat/UI plus soft per-act ambient pads (toggle in Options)
+- **Procedural audio** — SFX for combat/UI plus soft per-layer ambient pads (toggle in Options)
 - **9 enemy archetypes** — Driftlings, shooters, splitters, chargers, shielders, orbiters, bombers, phantoms, leeches
-- **Act-unique bosses** — Each Warden has distinct movement and attack patterns with multi-phase fights
+- **A Warden for every layer** — Each has distinct movement and attack patterns with multi-phase fights
 - **Branching overworld map** — Choose your path after each encounter: fights, elites, rest, shops, events, blacksmith, mini-bosses
 - **Shards** — Permanent currency for meta upgrades and blob skins (main menu → Upgrades)
 - **9 upgradeable skills** (Speed, Size, Damage, Health, Regen, Projectile, Armor, Magnetism, Lifesteal)
 - **20+ artifacts** with rarity tiers and blacksmith upgrades
 - **Random events** with boons and curses
-- **10 themed acts** with procedural backgrounds and dream journals at rest sites
+- **10 themed layers of the Lattice** with procedural backgrounds and dream journals at rest sites
 - **Environmental hazards**: Lava, ice, toxic
 - **New Game Plus** with permanent bonuses
 - **Save system** for shards, skins, and NG+ progress
