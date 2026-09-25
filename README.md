@@ -9,16 +9,21 @@ A top-down roguelike where you control a blob that grows by absorbing smaller cr
 
 ## Install & Run
 
+Create and activate a virtual environment first. Some systems manage their Python installation externally and refuse a bare `pip install`.
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m blob_evolution.main
 ```
 
 ## Development
 
-Install the runtime and test dependencies (pytest), then run the tests from the repo root:
+With the virtual environment from Install & Run activated, install the runtime and test dependencies (pytest), then run the tests from the repo root:
 
 ```bash
+source .venv/bin/activate
 pip install -r requirements-dev.txt
 pytest
 ```
@@ -27,8 +32,10 @@ To run the game or tests without a display or sound device (CI, servers), set SD
 
 ```bash
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy pytest
-SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python -m blob_evolution.main
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 10 python -m blob_evolution.main
 ```
+
+The game runs until it is closed or killed, so a headless run needs a time limit such as `timeout 10`. Exit code 124 means it was still running when the timeout stopped it, which counts as a clean boot.
 
 ## Controls
 
