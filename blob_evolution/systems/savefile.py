@@ -12,6 +12,10 @@ from blob_evolution import config
 
 T = TypeVar("T")
 
+# Largest whole number accepted from a save (2**53 - 1, the biggest int a float holds exactly).
+# Bigger ints load fine but raise OverflowError once the game multiplies them by a float (e.g. NG+ bonuses).
+INT_MAX = 2**53 - 1
+
 
 def warn(message: str) -> None:
     """Print a save-system warning to stderr."""
@@ -94,10 +98,15 @@ def backup_save(path: str) -> bool:
 
 
 def _is_number(value: object) -> bool:
-    """Return True for finite ints/floats (bools excluded)."""
+    """Return True for finite ints/floats (bools excluded); ints must be within +-INT_MAX."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
-    return isinstance(value, int) or math.isfinite(value)
+    return abs(value) <= INT_MAX if isinstance(value, int) else math.isfinite(value)
+
+
+def _is_count(value: object) -> bool:
+    """Return True for a whole number from 0 to INT_MAX; bools and floats (even 3.0) are not counts."""
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= INT_MAX
 
 
 class SaveSection:
@@ -113,9 +122,19 @@ class SaveSection:
         return default
 
     def number(self, key: str, default: float) -> float:
-        """Read a finite number, else default."""
+        """Read a finite number (for genuine fractions such as bonuses), else default."""
         value = self.data.get(key, default)
         return value if _is_number(value) else self._reject(default)
+
+    def integer(self, key: str, default: int) -> int:
+        """Read a whole number 0..INT_MAX (a count or level), else default; floats like 3.0 are rejected too."""
+        value = self.data.get(key, default)
+        return value if _is_count(value) else self._reject(default)
+
+    def boolean(self, key: str, default: bool) -> bool:
+        """Read a real JSON true/false, else default; "false", 0, 1, 1.0 and null are rejected."""
+        value = self.data.get(key, default)
+        return value if isinstance(value, bool) else self._reject(default)
 
     def text(self, key: str, default: str) -> str:
         """Read a string, else default."""
@@ -130,6 +149,18 @@ class SaveSection:
         if not isinstance(value, list):
             return self._reject(list(default))
         items = [v for v in value if isinstance(v, str)]
+        if len(items) != len(value):
+            self.valid = False
+        return items
+
+    def integer_dict(self, key: str, default: Dict[str, int]) -> Dict[str, int]:
+        """Read a str->count mapping, dropping entries that are not whole numbers 0..INT_MAX."""
+        if key not in self.data:
+            return default
+        value = self.data[key]
+        if not isinstance(value, dict):
+            return self._reject(default)
+        items = {k: v for k, v in value.items() if _is_count(v)}
         if len(items) != len(value):
             self.valid = False
         return items
