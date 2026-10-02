@@ -128,12 +128,13 @@ class Game:
         ng_ok = self.ng_plus.from_dict(data.get("ng_plus", {}))
         perm_ok = self.permanent.from_dict(data.get("permanent", {}))
         eco = savefile.SaveSection(data.get("economy", {}))
-        self.economy.total_earned = eco.number("total_earned", 0)
+        self.economy.total_earned = eco.integer("total_earned", 0)
+        top = savefile.SaveSection(data)
         if "audio_enabled" in data:
-            self.audio.set_enabled(bool(data["audio_enabled"]))
+            self.audio.set_enabled(top.boolean("audio_enabled", self.audio.enabled))
             if self.audio.enabled:
                 self.audio.play_menu_music()
-        if not (readable and ng_ok and perm_ok and eco.valid):
+        if not (readable and ng_ok and perm_ok and eco.valid and top.valid):
             if readable:
                 savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
             self._save_blocked = not savefile.backup_save(config.SAVE_FILE)

@@ -239,9 +239,9 @@ class PermanentProgress:
     def from_dict(self, data: object) -> bool:
         """Load permanent progress; bad fields use defaults. Returns False if any were bad."""
         section = SaveSection(data)
-        self.shards = section.number("shards", 0)
-        self.total_shards_earned = section.number("total_shards_earned", 0)
-        for key, level in section.number_dict("upgrade_levels", {}).items():
+        self.shards = section.integer("shards", 0)
+        self.total_shards_earned = section.integer("total_shards_earned", 0)
+        for key, level in section.integer_dict("upgrade_levels", {}).items():
             if key not in self.upgrade_levels:
                 self.upgrade_levels[key] = 0
             self.upgrade_levels[key] = level
