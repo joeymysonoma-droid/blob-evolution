@@ -73,13 +73,13 @@ def test_recovered_variant_after_backup(recovered_game, monkeypatch) -> None:
     assert recovered_game.screen.get_at(PANEL_TOP_EDGE)[:3] == style.PANEL_EDGE_HOT
 
 
-def test_invalid_field_is_recovered_too(make_game, isolated_save, fixture_data) -> None:
-    """A readable save with a wrong-typed field is backed up and also shows recovered."""
+def test_invalid_field_shows_partial_notice(make_game, isolated_save, fixture_data) -> None:
+    """A readable save with one wrong-typed field is backed up and shows the partial notice (TASK-023)."""
     import json
 
     fixture_data["permanent"]["shards"] = "72"
     isolated_save.write_text(json.dumps(fixture_data), encoding="utf-8")
-    assert make_game().save_notice == "recovered"
+    assert make_game().save_notice == "partial"
 
 
 def test_saving_paused_when_backup_slots_full(make_game, isolated_save, fixture_bytes, monkeypatch) -> None:
