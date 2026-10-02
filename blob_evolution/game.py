@@ -121,7 +121,7 @@ class Game:
     def _load_save(self) -> None:
         """Load persistent save data; back up the file first if any of it is unusable."""
         self._save_blocked = False
-        self.save_notice: Optional[str] = None  # "recovered" / "saving_paused" until dismissed
+        self.save_notice: Optional[str] = None  # "recovered" / "partial" / "saving_paused" until dismissed
         data = savefile.read_save(config.SAVE_FILE)
         readable = data is not None
         data = data if readable else {}
@@ -138,7 +138,8 @@ class Game:
             if readable:
                 savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
             self._save_blocked = not savefile.backup_save(config.SAVE_FILE)
-            self.save_notice = "saving_paused" if self._save_blocked else "recovered"
+            whole = not readable or self.ng_plus.table_reset or self.permanent.table_reset
+            self.save_notice = "saving_paused" if self._save_blocked else "recovered" if whole else "partial"
 
     def _save_game(self) -> None:
         """Save persistent progress, unless an unreadable save couldn't be backed up."""

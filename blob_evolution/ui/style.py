@@ -31,6 +31,8 @@ WARN = (255, 180, 90)
 # Save-recovery notice variants (TASK-009): differ by icon, edge weight and motion, not just color
 NOTICE_VARIANTS = {
     "recovered": {"accent": ACCENT, "edge": PANEL_EDGE_HOT, "edge_w": 1, "icon": "info", "pulse": False},
+    # TODO(Visual Designer): "partial" reuses the recovered look until a distinct one is specified
+    "partial": {"accent": ACCENT, "edge": PANEL_EDGE_HOT, "edge_w": 1, "icon": "info", "pulse": False},
     "saving_paused": {"accent": DANGER, "edge": DANGER, "edge_w": 2, "icon": "warn", "pulse": True},
 }
 

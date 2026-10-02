@@ -84,7 +84,18 @@ SAVE_PAUSED_NOTICE = {
     "body": "Your damaged save could not be backed up.\nTo guard it, saving waits for a backup.",
     "button": "Walk On",
 }
-SAVE_NOTICES = {"recovered": SAVE_RECOVERED_NOTICE, "saving_paused": SAVE_PAUSED_NOTICE}
+# TODO(Narrative): PLACEHOLDER copy for the "partial" notice (a few fields were reset, the rest was kept).
+# Swap in the real strings here; nothing else needs to change.
+SAVE_PARTIAL_NOTICE = {
+    "title": "[PLACEHOLDER] The Lattice Misplaced Something",
+    "body": "[PLACEHOLDER] Part of your save was damaged and reset.\nThe rest of your progress was kept.",
+    "button": "[PLACEHOLDER] Continue",
+}
+SAVE_NOTICES = {
+    "recovered": SAVE_RECOVERED_NOTICE,
+    "partial": SAVE_PARTIAL_NOTICE,
+    "saving_paused": SAVE_PAUSED_NOTICE,
+}
 
 ENDING_TITLES = {
     "reopen": "THE DIVIDE REOPENS",

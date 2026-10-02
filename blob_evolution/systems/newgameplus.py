@@ -21,6 +21,7 @@ class NewGamePlus:
             "speed": 0.0,
             "essence": 0.0,
         }
+        self.table_reset = False  # last from_dict lost a whole table (see SaveSection.table_reset)
 
     def complete_run(self, maps_cleared: int) -> str:
         """Record a completed run and apply NG+ bonuses."""
@@ -60,7 +61,8 @@ class NewGamePlus:
         self.ng_plus_level = section.integer("ng_plus_level", 0)
         self.total_runs = section.integer("total_runs", 0)
         self.best_map_reached = section.integer("best_map_reached", 0)
-        self.permanent_bonuses = section.number_dict("permanent_bonuses", self.permanent_bonuses)
+        self.permanent_bonuses = section.number_dict("permanent_bonuses", self.permanent_bonuses, non_negative=True)
+        self.table_reset = section.table_reset
         if self.ng_plus_level >= 1:
             # Pre-TASK-013c full clears never recorded Layer 10 (index 9) as best.
             self.best_map_reached = max(self.best_map_reached, 9)

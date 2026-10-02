@@ -79,6 +79,7 @@ class PermanentProgress:
         self.unlocked_wardens: List[str] = []
         self.unlocked_artifacts: List[str] = []
         self.endings_seen: List[str] = []
+        self.table_reset = False  # last from_dict lost a whole table (see SaveSection.table_reset)
 
     def add_shards(self, amount: int) -> None:
         """Add shard currency."""
@@ -241,13 +242,13 @@ class PermanentProgress:
         section = SaveSection(data)
         self.shards = section.integer("shards", 0)
         self.total_shards_earned = section.integer("total_shards_earned", 0)
-        for key, level in section.integer_dict("upgrade_levels", {}).items():
-            if key not in self.upgrade_levels:
-                self.upgrade_levels[key] = 0
+        max_levels = {u["id"]: u["max_level"] for u in PERMANENT_UPGRADES}
+        for key, level in section.integer_dict("upgrade_levels", {}, max_levels).items():
             self.upgrade_levels[key] = level
         self.unlocked_skins = section.str_list("unlocked_skins", ["default"])
         self.equipped_skin = section.text("equipped_skin", "default")
         self.unlocked_wardens = section.str_list("unlocked_wardens", [])
         self.unlocked_artifacts = section.str_list("unlocked_artifacts", [])
         self.endings_seen = section.str_list("endings_seen", [])
+        self.table_reset = section.table_reset
         return section.valid

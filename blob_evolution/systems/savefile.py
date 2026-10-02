@@ -110,16 +110,26 @@ def _is_count(value: object) -> bool:
 
 
 class SaveSection:
-    """Type-checked reader over one save section; valid turns False on bad data."""
+    """Type-checked reader over one save section; valid turns False on bad data.
+
+    table_reset turns True when a whole table (a dict or list field of the wrong type) fell back to its
+    default, which loses every entry in it; one bad field or one bad entry only clears valid.
+    """
 
     def __init__(self, data: object) -> None:
         self.valid = isinstance(data, dict)
+        self.table_reset = False
         self.data: dict = data if isinstance(data, dict) else {}
 
     def _reject(self, default: T) -> T:
         """Mark the section invalid and return the fallback."""
         self.valid = False
         return default
+
+    def _reject_table(self, default: T) -> T:
+        """Mark the section invalid because a whole table was the wrong type; return the fallback."""
+        self.table_reset = True
+        return self._reject(default)
 
     def number(self, key: str, default: float) -> float:
         """Read a finite number (for genuine fractions such as bonuses), else default."""
@@ -147,32 +157,42 @@ class SaveSection:
             return list(default)
         value = self.data[key]
         if not isinstance(value, list):
-            return self._reject(list(default))
+            return self._reject_table(list(default))
         items = [v for v in value if isinstance(v, str)]
         if len(items) != len(value):
             self.valid = False
         return items
 
-    def integer_dict(self, key: str, default: Dict[str, int]) -> Dict[str, int]:
-        """Read a str->count mapping, dropping entries that are not whole numbers 0..INT_MAX."""
+    def integer_dict(
+        self, key: str, default: Dict[str, int], limits: Optional[Dict[str, int]] = None,
+    ) -> Dict[str, int]:
+        """Read a str->count mapping, dropping entries that are not whole numbers 0..INT_MAX.
+
+        With limits, an entry whose key is not in limits, or whose value is above its limit, is dropped too.
+        """
         if key not in self.data:
             return default
         value = self.data[key]
         if not isinstance(value, dict):
-            return self._reject(default)
-        items = {k: v for k, v in value.items() if _is_count(v)}
+            return self._reject_table(default)
+        items = {
+            k: v for k, v in value.items()
+            if _is_count(v) and (limits is None or (k in limits and v <= limits[k]))
+        }
         if len(items) != len(value):
             self.valid = False
         return items
 
-    def number_dict(self, key: str, default: Dict[str, float]) -> Dict[str, float]:
-        """Read a str->number mapping, dropping non-numeric values."""
+    def number_dict(
+        self, key: str, default: Dict[str, float], non_negative: bool = False,
+    ) -> Dict[str, float]:
+        """Read a str->number mapping, dropping non-numeric values (and negative ones if non_negative)."""
         if key not in self.data:
             return default
         value = self.data[key]
         if not isinstance(value, dict):
-            return self._reject(default)
-        items = {k: v for k, v in value.items() if _is_number(v)}
+            return self._reject_table(default)
+        items = {k: v for k, v in value.items() if _is_number(v) and (not non_negative or v >= 0)}
         if len(items) != len(value):
             self.valid = False
         return items
