@@ -2,9 +2,18 @@
 
 Every position here is recorded from a real OverworldRenderer.draw on a headless display:
 star centers and sizes from the draw_star calls, label plates from the style.draw_panel calls,
-ring reach from the pygame.draw.circle calls around a selected node with the pulse held at max.
+ring reach from the pygame.draw.circle calls around a node drawn selected, current and plain-available
+(the widest of the three), with the pulse held at max.
 No node radius, star size, ring reach or label offset is copied from _draw_node.
 Each map's all-available render and each node's ring reach are recorded once per module and shared.
+
+Three sets of maps run the same geometry checks (star vs label plates, star vs rings, on screen and
+below the header; plus each label plate vs its own ring):
+  tight  16 hand-picked tight maps (2 per height, Layers 1 and 8): the fast guard.
+  broad  seeds 0-99 on Layer 1, every one with >= 3 starred nodes: catches a layout change that makes
+         the hand-picked maps stop being the tight ones (BUG-037). Part of the default run.
+  sweep  seeds 0-399 on Layer 1, marked `slow`: skipped by default (pytest.ini addopts `-m "not slow"`),
+         run with `pytest -m slow`.
 """
 
 from __future__ import annotations
@@ -23,6 +32,10 @@ from blob_evolution.utils.enums import NodeType
 
 HEADER_BOTTOM = config.OVERWORLD_HEADER_RECT[1] + config.OVERWORLD_HEADER_RECT[3]
 ACTS = (0, 7)  # Layers 1 and 8; layout is identical across layers today, this guards it staying so
+MIN_STARS = 3  # a map needs this many starred nodes to be a useful star check
+BROAD_SEEDS = range(100)  # Layer 1, default run
+SWEEP_SEEDS = range(400)  # Layer 1, `slow` run
+CURRENT_FROM_MAP = object()  # render(): keep the map's own current node
 STAR_CENTER_MARK = (-3, 2)  # offset the star_center spy adds, so a star placed without it is caught
 
 # Two seeds per map height, picked from seeds 0-399 (>= 3 starred nodes each) as the tightest cases:
@@ -35,7 +48,39 @@ SEEDS_BY_HEIGHT: Dict[int, Tuple[int, ...]] = {
 }
 SEEDS_PER_HEIGHT = 2
 HEIGHTS = list(range(MIN_ROUNDS, MAX_ROUNDS + 1))
-MAPS = [(act, rows, seed) for act in ACTS for rows in HEIGHTS for seed in SEEDS_BY_HEIGHT[rows]]
+
+
+def _map(act: int, seed: int) -> OverworldMap:
+    """Build a map, failing with a clear message if its row count is outside MIN_ROUNDS..MAX_ROUNDS."""
+    ow = OverworldMap(act_index=act, seed=seed)
+    assert MIN_ROUNDS <= ow.encounter_rows <= MAX_ROUNDS, (
+        f"seed {seed} on layer {act + 1} has {ow.encounter_rows} encounter rows, "
+        f"outside the supported {MIN_ROUNDS}-{MAX_ROUNDS}"
+    )
+    return ow
+
+
+def _starred_seeds(seeds: range) -> Tuple[List[int], List[int]]:
+    """Split Layer 1 seeds into (usable, skipped), skipping maps with fewer than MIN_STARS starred nodes.
+
+    Counts nodes only (no row-count check), so a bad row count fails inside a test, not at collection.
+    """
+    usable, skipped = [], []
+    for seed in seeds:
+        stars = sum(n.is_elite_marked for n in OverworldMap(act_index=0, seed=seed).nodes.values())
+        (usable if stars >= MIN_STARS else skipped).append(seed)
+    return usable, skipped
+
+
+BROAD_USABLE, BROAD_SKIPPED = _starred_seeds(BROAD_SEEDS)
+SWEEP_USABLE, SWEEP_SKIPPED = _starred_seeds(SWEEP_SEEDS)
+# (layer index, seed) per set; the same four geometry tests run over all of them
+TIGHT_MAPS = [(act, seed) for act in ACTS for seeds in SEEDS_BY_HEIGHT.values() for seed in seeds]
+GEOMETRY_MAPS = (
+    [pytest.param(a, s, id=f"tight-L{a + 1}-s{s}") for a, s in TIGHT_MAPS]
+    + [pytest.param(0, s, id=f"broad-s{s}") for s in BROAD_USABLE]
+    + [pytest.param(0, s, id=f"sweep-s{s}", marks=pytest.mark.slow) for s in SWEEP_USABLE]
+)
 
 
 @dataclass
@@ -92,24 +137,26 @@ def renderer() -> overworld_map.OverworldRenderer:
 
 @pytest.fixture(scope="module")
 def render(renderer) -> Callable[..., Dict[str, NodeDraw]]:
-    """Return render(ow, selected_id=None, mark_star_center=False, only_node=None) -> {node id: NodeDraw}.
+    """Return render(ow, selected_id=None, mark_star_center=False, only_node=None, current_id=...) -> {node id: NodeDraw}.
 
     only_node draws just that node through the real _draw_node (as draw() would), skipping the rest.
+    current_id overrides which node counts as current (default: the map's own) for an only_node draw.
     """
+    surface = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))  # reused: only draw calls are recorded
 
     def _render(
         ow: OverworldMap,
         selected_id: Optional[str] = None,
         mark_star_center: bool = False,
         only_node: Optional[str] = None,
+        current_id=CURRENT_FROM_MAP,
     ) -> Dict[str, NodeDraw]:
-        surface = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
         draws: Dict[str, NodeDraw] = {nid: NodeDraw() for nid in ow.nodes}
-        current: List[str] = []
+        current_nodes: List[str] = []
         loose_texts: List[str] = []
 
         def node() -> Optional[NodeDraw]:
-            return draws[current[-1]] if current else None
+            return draws[current_nodes[-1]] if current_nodes else None
 
         real_draw_node = renderer._draw_node
         real_star = overworld_map.draw_star
@@ -118,11 +165,11 @@ def render(renderer) -> Callable[..., Dict[str, NodeDraw]]:
         real_circle = pygame.draw.circle
 
         def draw_node(surf, n, *args, **kwargs) -> None:
-            current.append(n.id)
+            current_nodes.append(n.id)
             try:
                 real_draw_node(surf, n, *args, **kwargs)
             finally:
-                current.pop()
+                current_nodes.pop()
 
         def draw_star(surf, center, outer, inner, color, *args, **kwargs):
             if surf is surface and node() is not None:
@@ -162,7 +209,8 @@ def render(renderer) -> Callable[..., Dict[str, NodeDraw]]:
             if only_node is None:
                 renderer.draw(surface, ow, 0, 0, selected_node_id=selected_id)
             else:
-                renderer._draw_node(surface, ow.nodes[only_node], ow.current_node_id, selected_id)
+                current = ow.current_node_id if current_id is CURRENT_FROM_MAP else current_id
+                renderer._draw_node(surface, ow.nodes[only_node], current, selected_id)
         assert not any("\u2605" in t for t in loose_texts), loose_texts
         return draws
 
@@ -184,7 +232,7 @@ def available_render(render) -> Callable[[int, int], Tuple[OverworldMap, Dict[st
 
     def _shared(act: int, seed: int) -> Tuple[OverworldMap, Dict[str, NodeDraw]]:
         if (act, seed) not in cache:
-            ow = _all_available(OverworldMap(act_index=act, seed=seed))
+            ow = _all_available(_map(act, seed))
             cache[(act, seed)] = (ow, render(ow))
         return cache[(act, seed)]
 
@@ -210,44 +258,78 @@ def _gap(rect: pygame.Rect, center: Tuple[int, int], r: float) -> float:
 
 
 @pytest.fixture(scope="module")
-def ring_reach(render) -> Callable[[OverworldMap, str], int]:
-    """Return reach(ow, node_id): outermost circle radius drawn around that node when selected, pulse at max."""
-    cache: Dict[Tuple[int, int, str], int] = {}
+def ring_states(render) -> Callable[[OverworldMap, str], Dict[str, int]]:
+    """Return states(ow, node_id) -> outermost ring radius drawn around that node in each ring state.
 
-    def _reach(ow: OverworldMap, nid: str) -> int:
+    "selected", "current" and "plain" (available, neither selected nor current), each measured from the
+    pygame.draw.circle calls the real _draw_node makes at the node's center, with the pulse at max.
+    """
+    cache: Dict[Tuple[int, int, str], Dict[str, int]] = {}
+
+    def _states(ow: OverworldMap, nid: str) -> Dict[str, int]:
         key = (ow.act_index, ow.seed, nid)
         if key not in cache:
-            draws = render(ow, selected_id=nid, only_node=nid)
+            assert ow.nodes[nid].available, (key, "ring states are measured on available nodes")
             center = _xy(ow.nodes[nid])
-            radii = [r for c, r in draws[nid].circles if c == center]
-            assert radii, (key, "no circle drawn at the node center")
-            cache[key] = max(radii)
+            draws = {
+                "selected": render(ow, selected_id=nid, only_node=nid, current_id=None),
+                "current": render(ow, selected_id=None, only_node=nid, current_id=nid),
+                "plain": render(ow, selected_id=None, only_node=nid, current_id=None),
+            }
+            radii = {}
+            for state, drawn in draws.items():
+                found = [r for c, r in drawn[nid].circles if c == center]
+                assert found, (key, state, "no ring drawn at the node center")
+                radii[state] = max(found)
+            cache[key] = radii
         return cache[key]
 
-    return _reach
+    return _states
+
+
+@pytest.fixture(scope="module")
+def ring_reach(ring_states) -> Callable[[OverworldMap, str], int]:
+    """Return reach(ow, node_id): the widest ring drawn around that node in any of its ring states."""
+    return lambda ow, nid: max(ring_states(ow, nid).values())
 
 
 def test_every_height_has_seeds() -> None:
     """Each encounter-row count (map height) has its seeds, and each seed really makes that height on both layers."""
-    assert HEIGHTS == [8, 9, 10, 11]
-    assert sorted(SEEDS_BY_HEIGHT) == HEIGHTS
+    assert sorted(SEEDS_BY_HEIGHT) == HEIGHTS, (
+        f"map heights are {HEIGHTS} but the tight-seed table covers {sorted(SEEDS_BY_HEIGHT)}: add or drop seeds"
+    )
     for rows, seeds in SEEDS_BY_HEIGHT.items():
         assert len(seeds) == SEEDS_PER_HEIGHT, (rows, seeds)
         for seed in seeds:
             for act in ACTS:
-                assert OverworldMap(act_index=act, seed=seed).encounter_rows == rows, (act, rows, seed)
+                made = _map(act, seed).encounter_rows
+                assert made == rows, f"seed {seed} on layer {act + 1} has {made} encounter rows, the table says {rows}"
 
 
 def test_elite_nodes_exist_in_the_sample() -> None:
-    """Every sampled map has at least 3 starred nodes, so all three node states get a star to check."""
-    for act, rows, seed in MAPS:
-        assert len(_elite_ids(OverworldMap(act_index=act, seed=seed))) >= 3, (act, rows, seed)
+    """Every tight map has at least MIN_STARS starred nodes, so all three node states get a star to check."""
+    for act, seed in TIGHT_MAPS:
+        assert len(_elite_ids(_map(act, seed))) >= MIN_STARS, (act, seed)
 
 
-@pytest.mark.parametrize("act,rows,seed", MAPS)
-def test_star_is_drawn_as_a_shape_only_on_uncompleted_elite_nodes(render, act: int, rows: int, seed: int) -> None:
+def test_broad_run_covers_most_seeds() -> None:
+    """Seeds 0-99 skip only maps with too few stars, and still cover every map height."""
+    assert len(BROAD_SKIPPED) <= len(BROAD_SEEDS) // 10, f"too many skipped seeds: {BROAD_SKIPPED}"
+    heights = {_map(0, seed).encounter_rows for seed in BROAD_USABLE}
+    assert heights == set(HEIGHTS), (sorted(heights), HEIGHTS)
+
+
+@pytest.mark.slow
+def test_sweep_covers_most_seeds() -> None:
+    """Seeds 0-399 skip only maps with too few stars, and still cover every map height."""
+    assert len(SWEEP_SKIPPED) <= len(SWEEP_SEEDS) // 10, f"too many skipped seeds: {SWEEP_SKIPPED}"
+    assert {_map(0, seed).encounter_rows for seed in SWEEP_USABLE} == set(HEIGHTS)
+
+
+@pytest.mark.parametrize("act,seed", TIGHT_MAPS)
+def test_star_is_drawn_as_a_shape_only_on_uncompleted_elite_nodes(render, act: int, seed: int) -> None:
     """Available and dimmed elite nodes get a backing + front draw_star; completed and plain nodes get none; no ★ glyph."""
-    ow = OverworldMap(act_index=act, seed=seed)
+    ow = _map(act, seed)
     elite = set(_elite_ids(ow))
     states = {}
     for group in (sorted(elite), sorted(set(ow.nodes) - elite)):  # cycle states within each group
@@ -269,10 +351,10 @@ def test_star_is_drawn_as_a_shape_only_on_uncompleted_elite_nodes(render, act: i
             assert d.stars == [], (seed, nid, states[nid], "star drawn on a completed or unmarked node")
 
 
-@pytest.mark.parametrize("act,rows,seed", MAPS)
-def test_star_is_placed_by_star_center(render, act: int, rows: int, seed: int) -> None:
+@pytest.mark.parametrize("act,seed", TIGHT_MAPS)
+def test_star_is_placed_by_star_center(render, act: int, seed: int) -> None:
     """_draw_node asks star_center (with the node's draw x, y) and draws exactly where it answers."""
-    ow = _all_available(OverworldMap(act_index=act, seed=seed))
+    ow = _all_available(_map(act, seed))
     draws = render(ow, mark_star_center=True)
     for nid in _elite_ids(ow):
         d = draws[nid]
@@ -282,8 +364,21 @@ def test_star_is_placed_by_star_center(render, act: int, rows: int, seed: int) -
         assert d.stars and all(s.center == answer for s in d.stars), (seed, nid, answer, d.stars)
 
 
-@pytest.mark.parametrize("act,rows,seed", MAPS)
-def test_label_plate_is_where_012_draws_it(available_render, ring_reach, act: int, rows: int, seed: int) -> None:
+def test_ring_reach_is_the_widest_of_the_selected_current_and_plain_rings(ring_states, ring_reach) -> None:
+    """All three ring states are measured from real draw calls, and reach is the widest (BUG-038)."""
+    for act, seed in TIGHT_MAPS[:: len(TIGHT_MAPS) // 4]:
+        ow = _all_available(_map(act, seed))
+        for nid in list(ow.nodes)[:8]:
+            radii = ring_states(ow, nid)
+            assert set(radii) == {"selected", "current", "plain"}, (seed, nid, radii)
+            assert ring_reach(ow, nid) == max(radii.values()), (seed, nid, radii)
+
+
+# --- the four geometry checks: tight maps (fast guard), seeds 0-99 (default), seeds 0-399 (slow) ---------
+
+
+@pytest.mark.parametrize("act,seed", GEOMETRY_MAPS)
+def test_label_plate_is_where_012_draws_it(available_render, ring_reach, act: int, seed: int) -> None:
     """Every labelled node draws one plate, vertically centered on the node and right of its widest ring."""
     ow, draws = available_render(act, seed)
     for nid, d in draws.items():
@@ -296,8 +391,8 @@ def test_label_plate_is_where_012_draws_it(available_render, ring_reach, act: in
         assert plate.left > x + ring_reach(ow, nid), (seed, nid, plate, ring_reach(ow, nid))
 
 
-@pytest.mark.parametrize("act,rows,seed", MAPS)
-def test_star_never_overlaps_a_label_plate(available_render, act: int, rows: int, seed: int) -> None:
+@pytest.mark.parametrize("act,seed", GEOMETRY_MAPS)
+def test_star_never_overlaps_a_label_plate(available_render, act: int, seed: int) -> None:
     """No drawn star (backing included) touches any drawn label plate on the map."""
     ow, draws = available_render(act, seed)
     plates = [(nid, p) for nid, d in draws.items() for p in d.plates]
@@ -308,21 +403,30 @@ def test_star_never_overlaps_a_label_plate(available_render, act: int, rows: int
             for pid, plate in plates:
                 if star.box().colliderect(plate):
                     hits.append((nid, pid, star.box(), plate))
-    assert not hits, (act, rows, seed, hits)
+    assert not hits, (act, seed, hits)
 
 
-@pytest.mark.parametrize("act,rows,seed", MAPS)
-def test_star_left_of_its_node_clear_of_rings_on_screen(available_render, ring_reach, act: int, rows: int, seed: int) -> None:
-    """Each star sits left of its node, outside every node's widest ring, fully on screen and below the header."""
+@pytest.mark.parametrize("act,seed", GEOMETRY_MAPS)
+def test_star_left_of_its_node_and_clear_of_every_ring(available_render, ring_reach, act: int, seed: int) -> None:
+    """Each star sits left of its node's ring, level with it, and outside every node's widest ring."""
     ow, draws = available_render(act, seed)
-    screen = pygame.Rect(0, 0, config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
     for nid in _elite_ids(ow):
         x, y = _xy(ow.nodes[nid])
         for star in draws[nid].stars:
             box = star.box()
             assert box.right <= x - ring_reach(ow, nid), (seed, nid, box, "star not left of its own ring")
             assert abs(star.center[1] - y) <= 1, (seed, nid, star.center, y)
-            assert screen.contains(box) and box.top >= HEADER_BOTTOM, (seed, nid, box)
             for oid, other in ow.nodes.items():
                 gap = _gap(box, _xy(other), ring_reach(ow, oid))
                 assert gap > 0, (seed, nid, oid, box, round(gap, 2))
+
+
+@pytest.mark.parametrize("act,seed", GEOMETRY_MAPS)
+def test_star_on_screen_and_below_the_header(available_render, act: int, seed: int) -> None:
+    """Each star box is fully on screen and below the header."""
+    ow, draws = available_render(act, seed)
+    screen = pygame.Rect(0, 0, config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+    for nid in _elite_ids(ow):
+        for star in draws[nid].stars:
+            box = star.box()
+            assert screen.contains(box) and box.top >= HEADER_BOTTOM, (seed, nid, box)
