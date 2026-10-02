@@ -19,7 +19,7 @@ import pytest
 from blob_evolution import config
 from blob_evolution.systems import newgameplus
 from blob_evolution.systems.newgameplus import NewGamePlus
-from blob_evolution.systems.permanent import PermanentProgress
+from blob_evolution.systems.permanent import PERMANENT_UPGRADES, PermanentProgress
 from blob_evolution.systems.savefile import INT_MAX, SaveSection
 
 NAN, INF = float("nan"), float("inf")
@@ -69,6 +69,7 @@ COUNT_FIELDS: Dict[str, Tuple[Tuple[str, ...], Callable[[Any], Any], int]] = {
     "total_earned": (("economy", "total_earned"), lambda g: g.economy.total_earned, 0),
 }
 BAK = config.SAVE_BACKUP_SUFFIX
+UPGRADE_MAX = {u["id"]: u["max_level"] for u in PERMANENT_UPGRADES}
 
 
 def _with(data: dict, path: Tuple[str, ...], value: Any, base_ng_level: int = 2) -> dict:
@@ -232,7 +233,7 @@ def test_boot_bad_count_falls_back_with_warning_and_backup(
     assert read(game) == default, (field, name)
     assert "[save]" in err and "invalid data" in err, err
     assert _backed_up(isolated_save, raw)
-    assert game.save_notice == "recovered"
+    assert game.save_notice == "partial"
     game._save_game()
     text = isolated_save.read_text(encoding="utf-8")
     assert "NaN" not in text and "Infinity" not in text
@@ -246,6 +247,8 @@ def test_boot_good_count_loads_unchanged_without_warning(
     """0, small and INT_MAX values load as given, with no warning, no .bak and no notice."""
     path, read, _default = COUNT_FIELDS[field]
     base_level = 0 if field == "best_map_reached" else 2
+    if field == "upgrade_level":
+        value = min(value, UPGRADE_MAX["perm_damage"])  # TASK-023: a level above its max is rejected now
     game, _raw, err = _boot(make_game, isolated_save, _with(fixture_data, path, value, base_level), capsys)
     assert read(game) == value
     assert err == ""
@@ -271,7 +274,7 @@ def test_boot_bad_audio_enabled_uses_default_with_warning_and_backup(
     assert game.audio.enabled is True, "falls back to the default, never to bool(value)"
     assert "[save]" in err and "invalid data" in err, err
     assert _backed_up(isolated_save, raw)
-    assert game.save_notice == "recovered"
+    assert game.save_notice == "partial"
 
 
 def test_boot_audio_off_is_remembered_and_true_loads_quietly(make_game, isolated_save, fixture_data, capsys) -> None:
