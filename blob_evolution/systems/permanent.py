@@ -105,30 +105,26 @@ class PermanentProgress:
                 total += level * upgrade["value"]
         return total
 
-    def get_upgrade_cost(self, upgrade_id: str) -> int:
-        """Calculate cost for next upgrade level."""
+    def get_upgrade_cost(self, upgrade_id: str) -> Optional[int]:
+        """Calculate cost for next upgrade level; None if unknown or already at max level."""
         upgrade = next((u for u in PERMANENT_UPGRADES if u["id"] == upgrade_id), None)
         if not upgrade:
-            return 9999
+            return None
         level = self.upgrade_levels.get(upgrade_id, 0)
         if level >= upgrade["max_level"]:
-            return 9999
+            return None
         return int(upgrade["cost_base"] * (upgrade["cost_scale"] ** level))
 
     def can_upgrade(self, upgrade_id: str) -> bool:
-        """Check if upgrade can be purchased."""
+        """Check if upgrade can be purchased (known, below max level, affordable)."""
         cost = self.get_upgrade_cost(upgrade_id)
-        level = self.upgrade_levels.get(upgrade_id, 0)
-        upgrade = next((u for u in PERMANENT_UPGRADES if u["id"] == upgrade_id), None)
-        if not upgrade or level >= upgrade["max_level"]:
-            return False
-        return self.shards >= cost
+        return cost is not None and self.shards >= cost
 
     def purchase_upgrade(self, upgrade_id: str) -> bool:
         """Buy permanent upgrade. Returns True on success."""
-        if not self.can_upgrade(upgrade_id):
-            return False
         cost = self.get_upgrade_cost(upgrade_id)
+        if cost is None or not self.can_upgrade(upgrade_id):
+            return False
         self.shards -= cost
         self.upgrade_levels[upgrade_id] = self.upgrade_levels.get(upgrade_id, 0) + 1
         return True
@@ -142,7 +138,7 @@ class PermanentProgress:
         if level >= upgrade["max_level"]:
             return "Already at max level!"
         cost = self.get_upgrade_cost(upgrade_id)
-        if self.shards < cost:
+        if cost is not None and self.shards < cost:
             return f"Not enough shards! Need {cost}."
         return "Cannot purchase upgrade."
 

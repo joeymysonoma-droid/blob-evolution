@@ -15,6 +15,7 @@ from blob_evolution.data.lore import (
     BLACKSMITH_TITLE,
     REST_SUBTITLE,
     REST_TITLE,
+    SKILL_MAX_LABEL,
     archive_entries_for_tab,
     build_act_descent_pages,
     build_boss_intro_pages,
@@ -1647,9 +1648,8 @@ class Game:
                 if i == self.meta_selected:
                     style.draw_panel(self.screen, row_rect, edge=style.SELECT, radius=6, alpha=180)
                 color = style.SELECT if i == self.meta_selected else style.TEXT
-                text = font_sm.render(
-                    f"{upg['name']}  Lv.{level}/{upg['max_level']}  —  {cost} shards", True, color,
-                )
+                price = SKILL_MAX_LABEL if cost is None else f"{cost} shards"
+                text = font_sm.render(f"{upg['name']}  Lv.{level}/{upg['max_level']}  —  {price}", True, color)
                 self.screen.blit(text, (row_rect.x + 14, row_rect.y + 6))
             if self.meta_selected < len(PERMANENT_UPGRADES):
                 sel = PERMANENT_UPGRADES[self.meta_selected]
