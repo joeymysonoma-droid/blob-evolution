@@ -350,6 +350,10 @@ def test_real_copy_fits_small_font_without_growing(menu, draw_notice, variant: s
     assert drawn.body_tops == [PANEL_Y + 72 + i * 22 for i in range(count)]  # 360 / 382 / 404
     assert drawn.panel_blit.height == 224
     assert drawn.button == MenuRenderer.save_notice_button_rect(0)
+    assert drawn.glow == [drawn.button]
+    b = drawn.button
+    assert menu.save_notice_hit_test(b.topleft) and menu.save_notice_hit_test((b.right - 1, b.bottom - 1))
+    assert not menu.save_notice_hit_test((b.left, b.top - 1)) and not menu.save_notice_hit_test((b.left, b.bottom))
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
@@ -502,23 +506,29 @@ def test_notice_drawn_only_over_the_main_menu(notice_game, monkeypatch) -> None:
 
 
 def test_notice_does_not_return_after_options_or_help(notice_game, monkeypatch) -> None:
-    """Dismiss, visit Options and Help and come back: the notice stays gone and the menu answers keys."""
+    """Dismiss, visit Options and Help and come back (ESC, SPACE, or Options' Back row): the notice stays gone."""
     game = notice_game
     _key(game, pygame.K_ESCAPE)
     assert game.save_notice is None
     calls = _recording(game, monkeypatch)
-    for downs, back_key in ((3, pygame.K_ESCAPE), (4, pygame.K_SPACE)):
-        game.menu_selected = 0
-        for _ in range(downs):
-            _key(game, pygame.K_DOWN)
+    # (menu row, screen reached, keys that leave it)
+    trips = [
+        (3, GameState.OPTIONS, [pygame.K_ESCAPE]),
+        (3, GameState.OPTIONS, [pygame.K_UP, pygame.K_SPACE]),  # UP wraps to the "Back" row, SPACE confirms it
+        (4, GameState.HELP, [pygame.K_SPACE]),
+        (4, GameState.HELP, [pygame.K_ESCAPE]),
+    ]
+    for row, screen, leave in trips:
+        game.menu_selected = row
         _key(game, pygame.K_SPACE)
-        assert game.state in (GameState.OPTIONS, GameState.HELP)
+        assert game.state == screen
         game._draw()
-        _key(game, back_key)
-        assert game.state == GameState.MAIN_MENU
+        for key in leave:
+            _key(game, key)
+        assert game.state == GameState.MAIN_MENU, (screen, leave)
         for _ in range(3):
             game._draw()
-        assert game.save_notice is None
+        assert game.save_notice is None, (screen, leave)
     assert calls == []
     game.menu_selected = 0
     _key(game, pygame.K_DOWN)
