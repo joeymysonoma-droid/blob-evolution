@@ -1,7 +1,8 @@
-"""BUG-016 / TASK-018: a max-level skill shows "MAX" (never "999 SP") and can't be bought.
+"""BUG-016 / TASK-018: a max-level skill shows "MAX" (never "999 SP"), isn't highlighted, and can't be bought.
 
 Rendered text is captured from the real HUD / Game draw code by wrapping the HUD's fonts,
 so the checks cover what the player actually sees, not just SkillManager.
+The label is asserted as the literal "MAX" (not lore.SKILL_MAX_LABEL) so changing the wording fails a test.
 """
 
 from __future__ import annotations
@@ -12,11 +13,11 @@ import pygame
 import pytest
 
 from blob_evolution import config
-from blob_evolution.data.lore import SKILL_MAX_LABEL
 from blob_evolution.entities.player import Player
 from blob_evolution.systems.hazards import HazardManager
 from blob_evolution.systems.skills import SKILL_DEFINITIONS, SKILL_ORDER
-from blob_evolution.ui.hud import HUD
+from blob_evolution.ui import style
+from blob_evolution.ui.hud import HUD, skills_overlay_layout
 from blob_evolution.utils.enums import GameState, NodeType
 from blob_evolution.utils.vector2 import Vector2
 
@@ -66,7 +67,7 @@ def _player(level: int, sp: int = 50) -> Player:
 
 def _expected_cost_label(key: str, level: int) -> str:
     """What the overlay's cost slot should say: MAX at max level, else base_cost + level SP."""
-    return SKILL_MAX_LABEL if level >= MAX else f"{SKILL_DEFINITIONS[key]['base_cost'] + level} SP"
+    return "MAX" if level >= MAX else f"{SKILL_DEFINITIONS[key]['base_cost'] + level} SP"
 
 
 def _overlay_cost_labels(texts: List[str]) -> dict:
@@ -96,7 +97,7 @@ def test_overlay_mixed_levels_per_row() -> None:
     texts = _record_fonts(hud)
     hud.draw_skills_overlay(pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT)), player)
     labels = _overlay_cost_labels(texts)
-    assert labels["speed"] == SKILL_MAX_LABEL
+    assert labels["speed"] == "MAX"
     assert labels["size"] == f"{SKILL_DEFINITIONS['size']['base_cost'] + MAX - 1} SP"
     assert labels["damage"] == f"{SKILL_DEFINITIONS['damage']['base_cost']} SP"
 
@@ -112,7 +113,7 @@ def test_hud_never_shows_a_skill_cost(level: int) -> None:
         HazardManager(), Vector2(0, 0), 60.0, "Test Map", 0,
     )
     assert "SP" in texts and "37" in texts
-    assert not [t for t in texts if "999" in t or t == SKILL_MAX_LABEL or t.endswith(" SP")]
+    assert not [t for t in texts if "999" in t or t == "MAX" or t.endswith(" SP")]
 
 
 def test_skill_manager_max_contract() -> None:
@@ -125,6 +126,47 @@ def test_skill_manager_max_contract() -> None:
         assert skills.upgrade(key) == -1
         assert skills.get_level(key) == MAX
     assert skills.upgrade("not_a_skill") == -1 and not skills.can_upgrade("not_a_skill", 10_000)
+
+
+def test_maxed_row_is_not_highlighted_but_affordable_rows_are(monkeypatch) -> None:
+    """BUG-033: only an upgradeable row gets the hot edge (draw_panel) and accent name colour; a maxed row doesn't."""
+    player = _player(0, sp=50)
+    player.skills.levels.update(speed=MAX, size=MAX - 1)  # speed maxed; size (10 SP) and damage (1 SP) affordable
+    hud = HUD()
+    edges = {}
+    real_panel = style.draw_panel
+
+    def draw_panel(surface, rect, *args, **kwargs):
+        """Record the edge colour passed for every panel, then draw it."""
+        edges[tuple(rect)] = kwargs.get("edge", style.PANEL_EDGE)
+        return real_panel(surface, rect, *args, **kwargs)
+
+    monkeypatch.setattr(style, "draw_panel", draw_panel)
+    name_colors = {}
+
+    class ColorFont(RecordingFont):
+        """Records the colour each row-name text is rendered in."""
+
+        def render(self, text, antialias, color, *args, **kwargs):
+            """Record (text -> colour) for the "[n]  Name ..." row titles."""
+            name_colors[str(text)] = tuple(color)
+            return super().render(text, antialias, color, *args, **kwargs)
+
+    hud.font = ColorFont(hud.font, [])
+    hud.draw_skills_overlay(pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT)), player)
+
+    _, rows = skills_overlay_layout(len(SKILL_ORDER))
+    row_edge = {key: edges[tuple(rows[i])] for i, key in enumerate(SKILL_ORDER)}
+    row_name_color = {
+        key: next(c for t, c in name_colors.items() if t.startswith(f"[{i + 1}]  "))
+        for i, key in enumerate(SKILL_ORDER)
+    }
+    for key in ("size", "damage"):  # affordable, not maxed: the check is not vacuous
+        assert row_edge[key] == style.PANEL_EDGE_HOT, f"{key} should use the upgradeable edge"
+        assert row_name_color[key] == style.ACCENT, f"{key} should use the upgradeable name colour"
+    assert row_edge["speed"] == style.PANEL_EDGE, "maxed row must not use the upgradeable edge"
+    assert row_name_color["speed"] == style.TEXT, "maxed row must not use the upgradeable name colour"
+    assert row_edge["speed"] != row_edge["size"] and row_name_color["speed"] != row_name_color["size"]
 
 
 @pytest.mark.parametrize("level", [0, MAX - 1])
@@ -187,7 +229,7 @@ def test_real_game_tab_overlay_shows_max(playing_game) -> None:
     assert game.state == GameState.SKILLS
     game._draw()
     labels = _overlay_cost_labels(texts)
-    assert labels["speed"] == SKILL_MAX_LABEL
+    assert labels["speed"] == "MAX"
     assert labels["size"] == f"{SKILL_DEFINITIONS['size']['base_cost'] + MAX - 1} SP"
     assert labels["health"] == f"{SKILL_DEFINITIONS['health']['base_cost']} SP"
     assert not [t for t in texts if "999" in t]
