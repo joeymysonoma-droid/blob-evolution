@@ -134,7 +134,7 @@ NG_WARDEN_QUOTES: Dict[int, List[Tuple[int, str]]] = {
         (5, "How many times must fire prove you?"),
     ],
     4: [
-        (2, "Stillness recognized you mid-stride. Stop. Stay."),
+        (2, "The Stillness recognized you mid-stride. Stop. Stay."),
         (5, "You have fled the freeze before. It never leaves the Expanse."),
     ],
     5: [

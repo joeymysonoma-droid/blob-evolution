@@ -512,7 +512,7 @@ class MenuRenderer:
                 y += 8
             if not unlocked:
                 hint = self.tiny_font.render(
-                    "Defeat wardens and collect artifacts to unlock memories.",
+                    "Defeat Wardens and collect artifacts to unlock memories.",
                     True, style.TEXT_MUTED,
                 )
                 surface.blit(hint, (detail_panel.x + 28, detail_panel.bottom - 40))
