@@ -267,7 +267,7 @@ class MenuRenderer:
             ("Memory", "Shards buy permanent upgrades between runs."),
             ("Archive", "Defeat Wardens and find artifacts to remember."),
             ("Sound", "Toggle audio in Options."),
-            ("Core", "Reopen evolution, merge, or (later) become the Broker."),
+            ("Core", "Reopen evolution, merge, or (once unlocked) become the Broker."),
         ]
         y = panel.y + 28
         for label, detail in lines:
