@@ -1,6 +1,7 @@
 """Procedural audio: layered SFX and looping act themes, synthesized with pygame.mixer.
 
-Everything is generated at runtime in pure Python (no numpy, no audio files).
+Sound effects are generated at runtime in pure Python (no numpy). Music plays from the mp3 files in
+blob_evolution/assets/music (TASK-026); the generated themes are the fallback when a file will not load.
 Rendering works on float buffers (lists of floats, nominal range -1..1) and only
 the last step (`_finish` / `_to_sound`) converts to 16-bit mono Sounds.
 
@@ -12,7 +13,8 @@ Layout:
   4. drum helper (_drums) and loop helper (_loop_fit, _Grid)
   5. SFX library  (_build_sfx)
   6. music        (menu + 10 act themes)
-  7. AudioManager / get_audio  (public API unchanged; act tracks are built lazily)
+  7. recorded music (TRACK_FILES, _loop_from_sound)
+  8. AudioManager / get_audio  (public API unchanged; act tracks are built lazily)
 """
 
 from __future__ import annotations
@@ -20,7 +22,8 @@ from __future__ import annotations
 import array
 import math
 import random
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from pathlib import Path
+from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import pygame
 
@@ -1273,8 +1276,78 @@ def _build_act_theme(act: int) -> pygame.mixer.Sound:
 # 7. AudioManager (public API unchanged)
 # ---------------------------------------------------------------------------
 
+# --- Recorded music (TASK-026) ------------------------------------------------------------------------
+# Eleven mp3 files in blob_evolution/assets/music play instead of the generated themes. The generated
+# themes above stay as the fallback when a file is missing or will not load.
+MUSIC_DIR = Path(__file__).resolve().parent.parent / "assets" / "music"
+CROSSFADE_S = 2.0        # equal-power seam crossfade baked into the in-memory loop
+TARGET_LUFS = -21.0      # every gain below is TARGET_LUFS minus the loop's measured loudness
+MUSIC_CHANNELS = 2       # mixer channels 0 and 1 are reserved for music; SFX use the rest
+SFX_CHANNELS = 18        # channels left for sound effects (the mixer opens SFX_CHANNELS + MUSIC_CHANNELS = 20)
+ACT_FADE_MS = 1200       # crossfade when the music changes
+MENU_FADE_MS = 1500      # crossfade back to the menu theme (after game over / victory / quit to menu)
+DUCK_RAMP_S = 0.3        # how fast ducking changes the music level
+
+
+class FileTrack(NamedTuple):
+    """One recorded track: file name, linear gain (<= 1.0) and the loop window in seconds of the decoded file."""
+
+    filename: str
+    gain: float
+    loop_in: float
+    loop_out: float
+
+
+TRACK_FILES: Dict[str, FileTrack] = {
+    "menu": FileTrack("01-Menu.mp3", 0.369, 13.75, 63.53),
+    "act_0": FileTrack("02-MossyGlade.mp3", 0.380, 30.50, 62.25),
+    "act_1": FileTrack("03-BogBloom.mp3", 0.501, 18.00, 63.00),
+    "act_2": FileTrack("04-EchoesintheGlass.mp3", 0.332, 14.50, 67.02),
+    "act_3": FileTrack("05-IronBloom.mp3", 0.518, 0.50, 74.50),
+    "act_4": FileTrack("06-ArcticStillness.mp3", 0.649, 18.75, 56.75),
+    "act_5": FileTrack("07-MirageSerenade.mp3", 0.364, 12.00, 65.90),
+    "act_6": FileTrack("08-CreakingLullaby.mp3", 0.597, 11.00, 61.25),
+    "act_7": FileTrack("09-Hollow.mp3", 0.813, 17.50, 57.00),
+    "act_8": FileTrack("10-AscensionPulse.mp3", 0.525, 19.75, 51.75),
+    "act_9": FileTrack("11-AscensionsEnd.mp3", 0.634, 5.50, 59.79),
+}
+
+
+def _loop_from_sound(snd: pygame.mixer.Sound, t_in: float, t_out: float, xfade: float) -> pygame.mixer.Sound:
+    """Cut [t_in, t_out] out of a decoded 16-bit Sound and blend its tail into its head (equal power).
+
+    The result plays as a seamless loop of (t_out - t_in - xfade) seconds. If the window does not fit or the
+    mixer format is not 16-bit, the original Sound is returned (it then loops as a whole file).
+    """
+    init = pygame.mixer.get_init()
+    if not init or init[1] != -16:
+        return snd
+    freq, _fmt, ch = init
+    samples = array.array("h")
+    samples.frombytes(snd.get_raw())
+    i0, i1 = int(t_in * freq) * ch, int(t_out * freq) * ch
+    n = int(xfade * freq) * ch
+    if not (0 <= i0 and n > 0 and i0 + 2 * n < i1 <= len(samples)):
+        return snd
+    head, tail = samples[i0:i0 + n], samples[i1 - n:i1]
+    frames = n // ch
+    blend = array.array("h", tail)
+    for f in range(frames):
+        th = 0.5 * math.pi * f / frames
+        fade_in, fade_out = math.sin(th), math.cos(th)
+        for c in range(ch):
+            k = f * ch + c
+            v = tail[k] * fade_out + head[k] * fade_in
+            blend[k] = -32768 if v < -32768 else 32767 if v > 32767 else int(v)
+    loop = samples[i0 + n:i1 - n] + blend
+    try:
+        return pygame.mixer.Sound(buffer=loop.tobytes())
+    except pygame.error:
+        return snd
+
+
 class AudioManager:
-    """Global procedural sound manager."""
+    """Global sound manager: generated SFX, recorded music (generated themes as fallback)."""
 
     def __init__(self) -> None:
         self.enabled = True
@@ -1282,9 +1355,16 @@ class AudioManager:
         self.music_volume = 0.32
         self._ready = False
         self._sfx: Dict[str, pygame.mixer.Sound] = {}
-        self._tracks: Dict[str, pygame.mixer.Sound] = {}
-        self._music_channel: Optional[pygame.mixer.Channel] = None
+        self._tracks: Dict[str, pygame.mixer.Sound] = {}      # generated themes (menu eager, acts lazy)
+        self._files: Dict[str, pygame.mixer.Sound] = {}       # decoded file loops (current + previous only)
+        self._file_failed: set = set()                        # keys whose file would not load: no retries
+        self._chan: List[pygame.mixer.Channel] = []           # the two music channels, alternated per change
+        self._cur = 0
+        self._music_channel: Optional[pygame.mixer.Channel] = None  # channel of the current track
         self._current_track: Optional[str] = None
+        self._current_source: Optional[str] = None            # "file" or "generated" for the current track
+        self._duck = 1.0
+        self._duck_target = 1.0
         self._init_mixer()
 
     def _init_mixer(self) -> None:
@@ -1292,9 +1372,11 @@ class AudioManager:
             if not pygame.mixer.get_init():
                 pygame.mixer.pre_init(SAMPLE_RATE, -16, 1, 512)
                 pygame.mixer.init()
-            pygame.mixer.set_num_channels(16)
+            pygame.mixer.set_num_channels(SFX_CHANNELS + MUSIC_CHANNELS)
+            pygame.mixer.set_reserved(MUSIC_CHANNELS)
             self._build_library()
-            self._music_channel = pygame.mixer.Channel(15)
+            self._chan = [pygame.mixer.Channel(i) for i in range(MUSIC_CHANNELS)]
+            self._music_channel = self._chan[0]
             self._ready = True
         except pygame.error:
             self._ready = False
@@ -1307,7 +1389,7 @@ class AudioManager:
             sound.set_volume(self.music_volume)
 
     def _get_track(self, key: str) -> Optional[pygame.mixer.Sound]:
-        """Return a music Sound, building (and caching) act themes on first use."""
+        """Return a generated music Sound, building (and caching) act themes on first use."""
         track = self._tracks.get(key)
         if track is None and key.startswith("act_"):
             try:
@@ -1320,10 +1402,31 @@ class AudioManager:
                 self._tracks[key] = track
         return track
 
+    def _file_sound(self, key: str) -> Optional[pygame.mixer.Sound]:
+        """Return the recorded loop for a track key, or None if it has no file or the file will not load."""
+        spec = TRACK_FILES.get(key)
+        if spec is None or key in self._file_failed:
+            return None
+        snd = self._files.get(key)
+        if snd is None:
+            try:
+                snd = pygame.mixer.Sound(str(MUSIC_DIR / spec.filename))
+                snd = _loop_from_sound(snd, spec.loop_in, spec.loop_out, CROSSFADE_S)
+            except (pygame.error, OSError, ValueError, MemoryError):
+                self._file_failed.add(key)
+                return None
+            snd.set_volume(max(0.0, min(1.0, spec.gain)))
+            while len(self._files) >= 2:
+                self._files.pop(next(iter(self._files)))
+            self._files[key] = snd
+        return snd
+
     def prewarm(self, act_index: int) -> None:
-        """Optionally build an act theme ahead of time (e.g. during a story page)."""
+        """Optionally load an act's music ahead of time (e.g. during a story page)."""
         if self._ready:
-            self._get_track(f"act_{max(0, min(act_index, 9))}")
+            key = f"act_{max(0, min(act_index, 9))}"
+            if self._file_sound(key) is None:
+                self._get_track(key)
 
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
@@ -1345,31 +1448,66 @@ class AudioManager:
         sound.set_volume(max(0.0, min(1.0, self.sfx_volume * volume_scale)))
         sound.play()
 
-    def _play_track(self, key: str) -> None:
-        if not self.enabled or not self._ready or not self._music_channel:
+    def _level(self) -> float:
+        """Volume of the current music channel (recorded music carries its gain on the Sound)."""
+        base = self.music_volume if self._current_source == "file" else 1.0
+        return max(0.0, min(1.0, base * self._duck))
+
+    def _apply_volume(self) -> None:
+        if self._current_track and self._chan:
+            self._chan[self._cur].set_volume(self._level())
+
+    def duck_music(self, factor: float, immediate: bool = False) -> None:
+        """Lower (or restore) the music level, e.g. 0.5 while a story card is up; ramps unless immediate."""
+        self._duck_target = max(0.0, min(1.0, factor))
+        if immediate:
+            self._duck = self._duck_target
+            self._apply_volume()
+
+    def tick(self, dt: float) -> None:
+        """Advance the duck ramp; call once per frame."""
+        if self._duck != self._duck_target:
+            step = dt / DUCK_RAMP_S
+            self._duck += max(-step, min(step, self._duck_target - self._duck))
+            self._apply_volume()
+
+    def _play_track(self, key: str, fade_ms: int = ACT_FADE_MS) -> None:
+        if not self.enabled or not self._ready or not self._chan:
             return
-        track = self._get_track(key)
-        if not track:
+        cur = self._chan[self._cur] if self._current_track else None
+        if self._current_track == key and cur is not None and cur.get_busy():
             return
-        if self._current_track == key and self._music_channel.get_busy():
+        snd = self._file_sound(key)
+        source = "file"
+        if snd is None:
+            snd, source = self._get_track(key), "generated"
+        if not snd:
             return
-        self._current_track = key
-        track.set_volume(self.music_volume)
-        self._music_channel.play(track, loops=-1, fade_ms=400)
+        old = cur if cur is not None and cur.get_busy() else None
+        self._cur = 1 - self._cur
+        new = self._chan[self._cur]
+        self._current_track, self._current_source = key, source
+        self._music_channel = new
+        new.set_volume(self._level())
+        new.play(snd, loops=-1, fade_ms=fade_ms)
+        new.set_volume(self._level())
+        if old is not None:
+            old.fadeout(fade_ms)
 
     def play_act_music(self, act_index: int) -> None:
-        """Start looping act theme."""
+        """Start looping act theme (crossfades from whatever is playing)."""
         idx = max(0, min(act_index, 9))
-        self._play_track(f"act_{idx}")
+        self._play_track(f"act_{idx}", ACT_FADE_MS)
 
     def play_menu_music(self) -> None:
         """Start looping menu theme (separate from act 0)."""
-        self._play_track("menu")
+        self._play_track("menu", MENU_FADE_MS)
 
     def stop_music(self) -> None:
-        if self._music_channel:
-            self._music_channel.fadeout(350)
+        for channel in self._chan:
+            channel.fadeout(350)
         self._current_track = None
+        self._current_source = None
 
 
 _audio: Optional[AudioManager] = None

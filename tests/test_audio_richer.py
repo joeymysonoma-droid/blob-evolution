@@ -143,7 +143,8 @@ def test_legacy_signatures():
     assert A.B == 0.18 and A.Q == pytest.approx(0.36) and A.H == pytest.approx(0.72) and A.W == pytest.approx(1.44)
 
 
-def test_audio_manager_lazy_and_playable(mixer):
+def test_audio_manager_lazy_and_playable(mixer, monkeypatch, tmp_path):
+    monkeypatch.setattr(A, "MUSIC_DIR", tmp_path)     # no mp3s: this test is about the generated themes
     mgr = A.AudioManager()
     assert mgr._ready
     assert "menu" in mgr._tracks
