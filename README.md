@@ -53,7 +53,7 @@ The game runs until it is closed or killed, so a headless run needs a time limit
 ## Features
 
 - **Story cinematics** — Pilgrimage opening, layer descents, and Warden confrontations
-- **Procedural audio** — SFX for combat/UI plus soft per-layer ambient pads (toggle in Options)
+- **Sound** — Procedurally generated SFX (combat, UI, bosses, artifacts) and eleven recorded music tracks, one for the menu and one per layer (mute in Options → Sound)
 - **9 enemy archetypes** — Driftlings, shooters, splitters, chargers, shielders, orbiters, bombers, phantoms, leeches
 - **A Warden for every layer** — Each has distinct movement and attack patterns with multi-phase fights
 - **Branching overworld map** — Choose your path after each encounter: fights, elites, rest, shops, events, blacksmith, mini-bosses
@@ -67,3 +67,10 @@ The game runs until it is closed or killed, so a headless run needs a time limit
 - **Save system** for shards, skins, and NG+ progress
 - **4 difficulty levels**: Easy, Normal, Hard, Extreme
 - **Archive** — Cosmology, Warden memories, artifact lineages, and endings
+
+## Audio
+
+- **SFX are generated at runtime** (pure Python, no audio files). **Music is recorded**: the 11 mp3 files in `blob_evolution/assets/music/` (about 13 MB) are the one exception to "no audio files". They are loaded from the folder next to the package, so the working directory does not matter.
+- If a music file is missing or will not load, that track falls back to the generated theme, so the game always has music. If no audio device is available the game runs silent.
+- **Volume:** there is no volume slider. Open Options from the main menu, select **Sound** and press Left/Right (or A/D) to switch all sound, music and SFX, ON or OFF. The choice is saved.
+- **Credits and licence:** the tracks' source (see `SOURCES.txt` in the hand-off) lists only file hashes, so author and licence are still to be confirmed by the Director before any public release. Add attribution here once it is known.
