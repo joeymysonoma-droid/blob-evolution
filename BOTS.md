@@ -25,13 +25,14 @@ Graphics are procedural. Audio is synthesized in `audio.py`, plus Director-appro
 
 | Path | Contents |
 |------|----------|
-| `blob_evolution/game.py` | Main loop and most game logic (~1,700 lines — high risk, keep changes minimal) |
+| `blob_evolution/game.py` | Main loop and most game logic (1,787 lines — high risk, keep changes minimal) |
 | `blob_evolution/config.py` | Constants, difficulty settings, map themes, entity limits |
 | `blob_evolution/entities/` | player, creature, boss, projectile, pickups, particle |
 | `blob_evolution/systems/` | audio, skills, artifacts, economy, events, hazards, overworld, evolution, permanent, newgameplus |
 | `blob_evolution/ui/` | hud, menus, cinematic, overworld_map, style |
 | `blob_evolution/maps/generator.py` | Procedural map generation |
 | `blob_evolution/data/lore.py` | All story text and names — the lore source of truth |
+| `blob_evolution/assets/` | Director-approved music/sfx/narration audio files (`assets/music`, `assets/sfx`, `assets/narration`) |
 
 ## Hard limits
 
@@ -47,7 +48,7 @@ Graphics are procedural. Audio is synthesized in `audio.py`, plus Director-appro
 | Lead Dev | All code changes. |
 | QA | Testing, bug reports, pytest tests, balance numbers. Never fixes bugs. |
 | Visual Designer | Palettes, shapes, UI layout, particles — delivered as RGB values and draw specs. |
-| Audio Designer | SFX and music — `_tone` / `_chord` / `_sequence` code (the fallback) and Director-approved files in `assets/music`, `assets/sfx`, `assets/narration`. |
+| Audio Designer | SFX and music — `_tone` / `_chord` / `_sequence` code (the fallback) and Director-approved files in `assets/music`, `assets/sfx`, `assets/narration` (once added). |
 | Narrative | Names, lore text, tone, and consistency. |
 
 The human is the **Director** and has final say.
