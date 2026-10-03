@@ -203,6 +203,33 @@ def test_a_good_file_does_not_hide_the_generated_themes_from_other_keys(manager,
     assert manager._current_track == "act_4" and manager._current_source == "generated"
 
 
+def test_a_mixer_opened_by_pygame_init_is_reopened_at_22050_mono(monkeypatch) -> None:
+    """Game calls pygame.init() first, which opens the mixer at 44100 Hz stereo; sounds are 22050 Hz mono."""
+    pygame.mixer.quit()
+    pygame.mixer.init(44100, -16, 2, 512)
+    assert tuple(pygame.mixer.get_init()[:3]) == (44100, -16, 2)
+    monkeypatch.setattr(audio, "_build_sfx", lambda: {"ping": _tiny_sound()})
+    monkeypatch.setattr(audio, "_build_menu_theme", _tiny_sound)
+    mgr = AudioManager()
+    assert mgr._ready and tuple(pygame.mixer.get_init()[:3]) == (22050, -16, 1)
+    one_second = pygame.mixer.Sound(buffer=bytes(2 * 22050))
+    assert one_second.get_length() == pytest.approx(1.0, abs=0.01), "a 22050-sample buffer lasts 1 s, not 0.25 s"
+    assert pygame.mixer.get_num_channels() == audio.SFX_CHANNELS + audio.MUSIC_CHANNELS
+
+
+def test_a_mixer_already_in_the_right_format_is_left_alone(monkeypatch) -> None:
+    calls: List[str] = []
+    real_quit = pygame.mixer.quit
+    monkeypatch.setattr(audio.pygame.mixer, "quit", lambda: (calls.append("quit"), real_quit()))
+    monkeypatch.setattr(audio, "_build_sfx", lambda: {"ping": _tiny_sound()})
+    monkeypatch.setattr(audio, "_build_menu_theme", _tiny_sound)
+    pygame.mixer.quit()
+    pygame.mixer.init(22050, -16, 1, 512)
+    calls.clear()
+    AudioManager()
+    assert calls == []
+
+
 def test_mixer_unavailable_means_silence_without_errors(monkeypatch, capsys) -> None:
     def refuse(*args, **kwargs):
         raise pygame.error("no audio device")
@@ -302,6 +329,20 @@ def test_ducking_ramps_down_and_back_up(manager, wav_music) -> None:
     manager.duck_music(1.0)
     manager.tick(0.5)
     assert channel.get_volume() == pytest.approx(full, abs=0.01)
+
+
+def test_a_duck_applied_during_the_fade_in_survives_the_end_of_the_fade(manager, wav_music) -> None:
+    """SDL_mixer restores the pre-fade channel volume when a fade-in ends; tick() must re-assert the duck."""
+    import time
+    manager.play_act_music(0)                       # 1.2 s fade-in
+    channel = manager._chan[manager._cur]
+    manager.duck_music(0.5)
+    for _ in range(25):                             # about 1.7 s of real frames, dt matching wall time
+        manager.tick(1 / 15)
+        time.sleep(1 / 15)
+    expected = manager._level()
+    assert expected == pytest.approx(0.5 * manager.music_volume, abs=1e-6)
+    assert channel.get_volume() == pytest.approx(expected, abs=0.02)
 
 
 def test_generated_fallback_also_ducks_and_keeps_its_old_level(manager) -> None:

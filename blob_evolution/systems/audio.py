@@ -1365,11 +1365,18 @@ class AudioManager:
         self._current_source: Optional[str] = None            # "file" or "generated" for the current track
         self._duck = 1.0
         self._duck_target = 1.0
+        self._fade_left = 0.0
         self._init_mixer()
 
     def _init_mixer(self) -> None:
         try:
-            if not pygame.mixer.get_init():
+            opened = pygame.mixer.get_init()
+            if opened and tuple(opened[:3]) != (SAMPLE_RATE, -16, 1):
+                # pygame.init() (called by Game before this) opens the mixer at 44100 Hz stereo, which would
+                # play every 22050 Hz mono buffer here 4x too fast. Reopen it in the format the sounds use.
+                pygame.mixer.quit()
+                opened = None
+            if not opened:
                 pygame.mixer.pre_init(SAMPLE_RATE, -16, 1, 512)
                 pygame.mixer.init()
             pygame.mixer.set_num_channels(SFX_CHANNELS + MUSIC_CHANNELS)
@@ -1470,6 +1477,13 @@ class AudioManager:
             step = dt / DUCK_RAMP_S
             self._duck += max(-step, min(step, self._duck_target - self._duck))
             self._apply_volume()
+        self._fade_left -= dt
+        if self._fade_left <= 0 and self._ready and self._chan:
+            # SDL_mixer drives the channel volume itself while a fade-in runs and restores the volume it had
+            # when the fade started, which silently undoes any duck applied meanwhile. Re-assert it afterwards.
+            channel = self._chan[self._cur]
+            if channel.get_busy() and abs(channel.get_volume() - self._level()) > 0.02:
+                self._apply_volume()
 
     def _play_track(self, key: str, fade_ms: int = ACT_FADE_MS) -> None:
         if not self.enabled or not self._ready or not self._chan:
@@ -1491,6 +1505,7 @@ class AudioManager:
         new.set_volume(self._level())
         new.play(snd, loops=-1, fade_ms=fade_ms)
         new.set_volume(self._level())
+        self._fade_left = fade_ms / 1000.0 + 0.1
         if old is not None:
             old.fadeout(fade_ms)
 
