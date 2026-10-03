@@ -1,25 +1,78 @@
-"""Procedural audio: SFX and simple looping melodies via pygame.mixer."""
+"""Procedural audio: layered SFX and looping act themes, synthesized with pygame.mixer.
+
+Everything is generated at runtime in pure Python (no numpy, no audio files).
+Rendering works on float buffers (lists of floats, nominal range -1..1) and only
+the last step (`_finish` / `_to_sound`) converts to 16-bit mono Sounds.
+
+Layout:
+  1. note constants + beat helpers
+  2. DSP helpers  (_osc, _env, _voice, _noise_burst, _filter, _echo, _layer, _finish ...)
+  3. legacy API   (_tone, _chord, _note_sample, _sequence, _mix_tracks)  -- same signatures,
+                  only optional kwargs were added
+  4. drum helper (_drums) and loop helper (_loop_fit, _Grid)
+  5. SFX library  (_build_sfx)
+  6. music        (menu + 10 act themes)
+  7. AudioManager / get_audio  (public API unchanged; act tracks are built lazily)
+"""
 
 from __future__ import annotations
 
 import array
 import math
 import random
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import pygame
 
 
 SAMPLE_RATE = 22050
+_SR = float(SAMPLE_RATE)
+_TWO_PI = 2.0 * math.pi
+_CENT = math.log(2.0) / 1200.0
+
+# Deterministic noise source (re-seeded per sound / track so builds are repeatable)
+_rng = random.Random(24)
 
 # Named pitches (Hz)
+C2, D2, E2, F2, G2, A2, B2 = 65.41, 73.42, 82.41, 87.31, 98.00, 110.00, 123.47     # NEW: low octave
 C3, D3, E3, F3, G3, A3, B3 = 130.81, 146.83, 164.81, 174.61, 196.00, 220.00, 246.94
 C4, D4, E4, F4, G4, A4, B4 = 261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88
 C5, D5, E5, F5, G5, A5 = 523.25, 587.33, 659.25, 698.46, 783.99, 880.00
+B5, C6, D6, E6 = 987.77, 1046.50, 1174.66, 1318.51                                  # NEW: top octave
+# NEW: accidentals (sharp names; flats are aliases)
+Bb2, Bb3, Bb4 = 116.54, 233.08, 466.16
+Cs4, Cs5 = 277.18, 554.37
+Eb3, Eb4, Eb5 = 155.56, 311.13, 622.25
+Fs3, Fs4, Fs5 = 185.00, 369.99, 739.99
+Gs3, Gs4, Gs5 = 207.65, 415.30, 830.61
+Ab3, Ab4 = Gs3, Gs4
+Db4 = Cs4
+
+# Beat helpers for SFX (0.18 s base). Music themes use _Grid(bpm) instead.
+B = 0.18       # sixteenth-ish
+Q = B * 2      # eighth
+H = B * 4      # quarter
+W = B * 8      # half
+
+Note = Union[float, int]  # Hz, or 0 = rest
+Buf = List[float]
+
+
+# ---------------------------------------------------------------------------
+# 2. DSP helpers (float buffers)
+# ---------------------------------------------------------------------------
+
+def _pair(v) -> Optional[Tuple[float, float]]:
+    """Accept None, a number, or (start, end) and return (start, end) or None."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v), float(v)
+    return float(v[0]), float(v[1])
 
 
 def _envelope(i: int, n: int, attack: float = 0.01, release: float = 0.08) -> float:
-    """Simple ASR envelope."""
+    """Simple ASR envelope (legacy helper, kept for compatibility)."""
     a = int(SAMPLE_RATE * attack)
     r = int(SAMPLE_RATE * release)
     if a > 0 and i < a:
@@ -29,6 +82,320 @@ def _envelope(i: int, n: int, attack: float = 0.01, release: float = 0.08) -> fl
     return 1.0
 
 
+def _env(
+    n: int,
+    attack: float = 0.01,
+    decay: Optional[float] = None,
+    sustain: float = 1.0,
+    release: float = 0.08,
+) -> Buf:
+    """ADSR-style envelope of n samples.
+
+    attack  : linear ramp 0 -> 1 (seconds)
+    decay   : exponential fall from 1 toward `sustain`, reaching ~1% of the gap after
+              `decay` seconds (None = no decay stage, plain ASR)
+    sustain : level held after the decay (0 = pluck / percussive)
+    release : linear fade to 0 over the last `release` seconds (overlaps the body)
+    """
+    a = min(n, int(attack * SAMPLE_RATE))
+    env: Buf = [i / a for i in range(a)] if a > 0 else []
+    rem = n - a
+    if rem > 0:
+        if decay is None or sustain >= 1.0:
+            env.extend([1.0] * rem)
+        else:
+            dn = max(1, min(rem, int(decay * SAMPLE_RATE)))
+            k = math.exp(-4.6 / dn)
+            x = 1.0 - sustain
+            seg: Buf = []
+            for _ in range(dn):
+                seg.append(sustain + x)
+                x *= k
+            env.extend(seg)
+            env.extend([sustain] * (rem - dn))
+    r = min(n, int(release * SAMPLE_RATE))
+    if r > 0:
+        base = n - r
+        for j in range(r):
+            env[base + j] *= (r - j) / r
+    return env
+
+
+def _osc(
+    wave: str,
+    freq: float,
+    n: int,
+    f_end: Optional[float] = None,
+    sweep: str = "exp",
+    vibrato: Optional[Tuple[float, float]] = None,
+    detune: float = 0.0,
+) -> Buf:
+    """Unit oscillator (n samples). Phase-accumulating, so pitch sweeps are click-free.
+
+    wave   : sine | square | triangle | saw | noise   (square scaled 0.55, saw 0.45)
+    f_end  : if given, pitch glides freq -> f_end over the buffer ("exp" or "lin")
+    vibrato: (rate_hz, depth_cents)
+    detune : constant offset in cents
+    """
+    if n <= 0:
+        return []
+    if wave == "noise":
+        rnd = _rng.random
+        return [rnd() * 2.0 - 1.0 for _ in range(n)]
+    det = 2.0 ** (detune / 1200.0) if detune else 1.0
+    isr = 1.0 / _SR
+    sin = math.sin
+    if f_end is None and not vibrato:
+        inc = freq * det * isr
+        if wave not in ("square", "triangle", "saw"):
+            w = _TWO_PI * inc
+            return [sin(w * i) for i in range(n)]
+        ph = [(inc * i) % 1.0 for i in range(n)]
+    else:
+        ph = []
+        p = 0.0
+        f0 = freq * det
+        f1 = (f_end if f_end else freq) * det
+        ratio = (f1 / f0) ** (1.0 / max(1, n - 1)) if f0 > 0 else 1.0
+        step = (f1 - f0) / max(1, n - 1)
+        f = f0
+        use_exp = sweep != "lin"
+        if vibrato:
+            vw = _TWO_PI * vibrato[0] * isr
+            vd = vibrato[1] * _CENT
+            for i in range(n):
+                p += f * (1.0 + vd * sin(vw * i)) * isr
+                p -= int(p)
+                ph.append(p)
+                f = f * ratio if use_exp else f + step
+        else:
+            for i in range(n):
+                p += f * isr
+                p -= int(p)
+                ph.append(p)
+                f = f * ratio if use_exp else f + step
+    if wave == "square":
+        return [0.55 if p < 0.5 else -0.55 for p in ph]
+    if wave == "saw":
+        return [(2.0 * p - 1.0) * 0.45 for p in ph]
+    if wave == "triangle":
+        return [4.0 * abs(p - 0.5) - 1.0 for p in ph]
+    return [sin(_TWO_PI * p) for p in ph]
+
+
+def _norm(buf: Buf, peak: float = 1.0) -> Buf:
+    """Scale a buffer so its absolute maximum equals `peak`."""
+    m = max((abs(v) for v in buf), default=0.0)
+    if m <= 1e-12:
+        return buf
+    g = peak / m
+    return [v * g for v in buf]
+
+
+def _voice(
+    wave: str,
+    freq: float,
+    duration: float,
+    vol: float = 1.0,
+    a: float = 0.005,
+    d: Optional[float] = None,
+    s: float = 1.0,
+    r: float = 0.02,
+    f_end: Optional[float] = None,
+    sweep: str = "exp",
+    vib: Optional[Tuple[float, float]] = None,
+    det: float = 0.0,
+    lp: Union[None, float, Tuple[float, float]] = None,
+) -> Buf:
+    """One enveloped oscillator: osc * ADSR * vol (optionally low-passed, then re-leveled)."""
+    n = max(1, int(SAMPLE_RATE * duration))
+    o = _osc(wave, freq, n, f_end, sweep, vib, det)
+    if lp is not None:
+        o = _norm(_filter(o, "lp", *_pair(lp)), 1.0)
+    e = _env(n, a, d, s, r)
+    return [x * y * vol for x, y in zip(o, e)]
+
+
+def _filter(buf: Buf, kind: str = "lp", f0: float = 1000.0, f1: Optional[float] = None, poles: int = 1,
+            sr: Optional[float] = None) -> Buf:
+    """One-pole (or cascaded) low/high-pass with a cutoff swept f0 -> f1 (exponentially).
+    `sr` = sample rate of `buf` (default SAMPLE_RATE; used by _wash)."""
+    n = len(buf)
+    if n == 0:
+        return buf
+    if f1 is None:
+        f1 = f0
+    f0 = max(20.0, f0)
+    f1 = max(20.0, f1)
+    ratio = f1 / f0
+    exp = math.exp
+    rate = sr or _SR
+    src = buf
+    block = 64
+    for _ in range(max(1, poles)):
+        y = 0.0
+        res = [0.0] * n
+        for s in range(0, n, block):
+            f = min(f0 * ratio ** (s / n), 0.45 * rate)
+            a = 1.0 - exp(-_TWO_PI * f / rate)
+            for i in range(s, min(n, s + block)):
+                y += a * (src[i] - y)
+                res[i] = y
+        src = res
+    if kind == "hp":
+        return [x - y for x, y in zip(buf, src)]
+    return src
+
+
+def _noise_burst(
+    duration: float,
+    vol: float = 1.0,
+    a: float = 0.002,
+    d: Optional[float] = None,
+    s: float = 1.0,
+    r: float = 0.01,
+    lp: Union[None, float, Tuple[float, float]] = None,
+    hp: Union[None, float, Tuple[float, float]] = None,
+    poles: int = 1,
+) -> Buf:
+    """Enveloped white noise with optional swept low-pass / high-pass (leveled to peak 1 first)."""
+    n = max(1, int(SAMPLE_RATE * duration))
+    x = _osc("noise", 0.0, n)
+    if hp is not None:
+        x = _filter(x, "hp", *_pair(hp), poles=poles)
+    if lp is not None:
+        x = _filter(x, "lp", *_pair(lp), poles=poles)
+    x = _norm(x, 1.0)
+    e = _env(n, a, d, s, r)
+    return [u * v * vol for u, v in zip(x, e)]
+
+
+def _echo(buf: Buf, delay: float, feedback: float = 0.45, mix: float = 0.35, taps: int = 3) -> Buf:
+    """Feedback-style echo: dry + `taps` repeats, each `delay` later and `feedback` x quieter.
+
+    First repeat has gain `mix`. The result is `taps * delay` seconds LONGER than the input.
+    """
+    d = int(delay * SAMPLE_RATE)
+    n = len(buf)
+    if d <= 0 or taps <= 0 or n == 0:
+        return buf
+    out = list(buf) + [0.0] * (d * taps)
+    g = mix
+    for k in range(1, taps + 1):
+        off = d * k
+        seg = out[off:off + n]
+        out[off:off + n] = [u + v * g for u, v in zip(seg, buf)]
+        g *= feedback
+    return out
+
+
+def _layer(parts: Sequence[Tuple[Buf, float, float]], length: Optional[int] = None) -> Buf:
+    """Mix [(buffer, offset_seconds, gain), ...] into one float buffer (sum, no normalization)."""
+    total = 0
+    for buf, off, _g in parts:
+        total = max(total, int(off * SAMPLE_RATE) + len(buf))
+    if length is not None:
+        total = max(total, length)
+    out = [0.0] * total
+    for buf, off, g in parts:
+        o = int(off * SAMPLE_RATE)
+        seg = out[o:o + len(buf)]
+        out[o:o + len(buf)] = [u + v * g for u, v in zip(seg, buf)]
+    return out
+
+
+def _fade_edges(buf: Buf, ms: float = 2.0) -> Buf:
+    """Linear fade-in / fade-out over `ms` milliseconds (kills edge clicks)."""
+    f = min(len(buf) // 2, max(1, int(SAMPLE_RATE * ms / 1000.0)))
+    for i in range(f):
+        g = i / f
+        buf[i] *= g
+        buf[-1 - i] *= g
+    return buf
+
+
+def _to_int16(buf: Buf) -> array.array:
+    out = array.array("h")
+    out.extend([int(max(-32767.0, min(32767.0, v * 32767.0))) for v in buf])
+    return out
+
+
+def _to_sound(buf: Buf) -> pygame.mixer.Sound:
+    return pygame.mixer.Sound(buffer=_to_int16(buf or [0.0]).tobytes())
+
+
+def _finish(buf: Buf, peak: float = 0.3, fade_ms: float = 2.0) -> pygame.mixer.Sound:
+    """Normalize to `peak` (fraction of full scale), fade edges ~2 ms, return a Sound.
+
+    Volume is safe by construction: nothing leaves this function above `peak`.
+    """
+    buf = _norm(list(buf), peak)
+    _fade_edges(buf, fade_ms)
+    return _to_sound(buf)
+
+
+def _loop_fit(buf: Buf, n: int) -> Buf:
+    """Force `buf` to exactly n samples. Overflow (echo / release tails) is folded back
+    onto the start so a looping buffer stays seamless; short buffers are zero-padded."""
+    m = len(buf)
+    if m == n:
+        return buf
+    if m < n:
+        return buf + [0.0] * (n - m)
+    out = buf[:n]
+    for k in range(n, m, n):
+        seg = buf[k:k + n]
+        out[:len(seg)] = [u + v for u, v in zip(out[:len(seg)], seg)]
+    return out
+
+
+class _Grid:
+    """Tempo grid. B/Q/H/W follow the global helpers (sixteenth, eighth, quarter, half)
+    but scale with `bpm`. `bar` = `beats` quarter notes (4 = 4/4, 3.5 = 7/8)."""
+
+    def __init__(self, bpm: float, beats: float = 4.0) -> None:
+        self.beat = 60.0 / bpm
+        self.B = self.beat / 4.0
+        self.Q = self.beat / 2.0
+        self.H = self.beat
+        self.W = self.beat * 2.0
+        self.T = self.beat / 3.0     # triplet eighth
+        self.bar = self.beat * beats
+        self.bpm = bpm
+
+    def samples(self, bars: int) -> int:
+        return int(round(self.bar * bars * SAMPLE_RATE))
+
+
+def _wash(
+    duration: float,
+    vol: float = 1.0,
+    a: float = 0.5,
+    r: float = 0.5,
+    lp: Tuple[float, float] = (400.0, 900.0),
+    factor: int = 8,
+) -> Buf:
+    """Cheap low-frequency noise texture (wind / breath): noise is generated and filtered at
+    SAMPLE_RATE/factor and linearly interpolated back up. Only valid for cutoffs < ~1.2 kHz."""
+    n = max(1, int(SAMPLE_RATE * duration))
+    m = n // factor + 2
+    rnd = _rng.random
+    x = [rnd() * 2.0 - 1.0 for _ in range(m)]
+    x = _filter(x, "lp", lp[0], lp[1], sr=_SR / factor)
+    out: Buf = []
+    for k in range(m - 1):
+        u = x[k]
+        d = (x[k + 1] - u) / factor
+        out.extend([u + d * j for j in range(factor)])
+    x = _norm(out[:n], 1.0)
+    e = _env(n, a, None, 1.0, r)
+    return [u * v * vol for u, v in zip(x, e)]
+
+
+# ---------------------------------------------------------------------------
+# 3. Legacy API (backward compatible; new behaviour is opt-in via keyword args)
+# ---------------------------------------------------------------------------
+
 def _tone(
     freq: float,
     duration: float,
@@ -36,45 +403,136 @@ def _tone(
     wave: str = "sine",
     attack: float = 0.01,
     release: float = 0.08,
+    *,
+    decay: Optional[float] = None,
+    sustain: float = 1.0,
+    f_end: Optional[float] = None,
+    sweep: str = "exp",
+    vibrato: Optional[Tuple[float, float]] = None,
+    detune: float = 0.0,
+    echo: Optional[Tuple[float, float, float, int]] = None,
 ) -> pygame.mixer.Sound:
-    """Synthesize a mono 16-bit tone as a Sound."""
+    """Synthesize a mono 16-bit tone as a Sound (amplitude = `volume`, not normalized).
+
+    Old behaviour (ASR) is unchanged. New optional args: `decay`/`sustain` (exponential
+    decay stage), `f_end`/`sweep` (pitch glide), `vibrato=(Hz, cents)`, `detune` (cents),
+    `echo=(delay, feedback, mix, taps)`.
+    """
     n = max(1, int(SAMPLE_RATE * duration))
-    buf = array.array("h")
-    for i in range(n):
-        t = i / SAMPLE_RATE
-        env = _envelope(i, n, attack, release) * volume
-        phase = 2.0 * math.pi * freq * t
-        if wave == "square":
-            sample = 1.0 if math.sin(phase) >= 0 else -1.0
-            sample *= 0.55
-        elif wave == "triangle":
-            sample = 2.0 * abs(2.0 * ((freq * t) % 1.0) - 1.0) - 1.0
-        elif wave == "saw":
-            sample = 2.0 * ((freq * t) % 1.0) - 1.0
-            sample *= 0.45
-        elif wave == "noise":
-            sample = random.uniform(-1.0, 1.0)
+    o = _osc(wave, freq, n, f_end, sweep, vibrato, detune)
+    e = _env(n, attack, decay, sustain, release)
+    buf = [x * y * volume for x, y in zip(o, e)]
+    if echo:
+        buf = _echo(buf, *echo)
+    return _to_sound(buf)
+
+
+def _chord(
+    freqs: list,
+    duration: float,
+    volume: float = 0.2,
+    *,
+    wave: str = "sine",
+    attack: float = 0.05,
+    release: float = 0.2,
+    decay: Optional[float] = None,
+    sustain: float = 1.0,
+    detune: float = 0.0,
+    echo: Optional[Tuple[float, float, float, int]] = None,
+) -> pygame.mixer.Sound:
+    """Layer several oscillators into one Sound (average of voices, then envelope)."""
+    n = max(1, int(SAMPLE_RATE * duration))
+    voices = [_osc(wave, f, n, detune=detune * (1 if k % 2 == 0 else -1)) for k, f in enumerate(freqs)]
+    e = _env(n, attack, decay, sustain, release)
+    cnt = float(max(1, len(voices)))
+    buf = [sum(vs) / cnt * ev * volume for vs, ev in zip(zip(*voices), e)] if voices else [0.0] * n
+    if echo:
+        buf = _echo(buf, *echo)
+    return _to_sound(buf)
+
+
+# Per-note render cache (cleared after each music track so memory stays flat)
+_NOTE_CACHE: Dict[tuple, Buf] = {}
+
+
+def _note_buf(
+    freqs: tuple,
+    sounding: int,
+    wave: str,
+    attack: float,
+    decay: Optional[float],
+    sustain: float,
+    release: float,
+    vibrato: Optional[Tuple[float, float]],
+    detune: float,
+) -> Buf:
+    key = (freqs, sounding, wave, attack, decay, sustain, release, vibrato, detune)
+    hit = _NOTE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    cnt = float(len(freqs))
+    voices = []
+    for k, f in enumerate(freqs):
+        det = detune * (1 if k % 2 == 0 else -1) if len(freqs) > 1 else detune
+        voices.append(_osc(wave, f, sounding, None, "exp", vibrato, det))
+    if len(voices) == 1:
+        o = voices[0]
+    else:
+        o = [sum(vs) / cnt for vs in zip(*voices)]
+    e = _env(sounding, attack, decay, sustain, release)
+    out = [x * y for x, y in zip(o, e)]
+    _NOTE_CACHE[key] = out
+    return out
+
+
+def _sequence_f(
+    notes: list,
+    volume: float = 0.22,
+    wave: str = "triangle",
+    *,
+    attack: Optional[float] = None,
+    decay: Optional[float] = None,
+    sustain: float = 1.0,
+    release: Optional[float] = None,
+    gap: Optional[float] = None,
+    vibrato: Optional[Tuple[float, float]] = None,
+    detune: float = 0.0,
+) -> Buf:
+    """Float version of `_sequence`.
+
+    `notes` items are (freq, seconds) or (freq, seconds, velocity). `freq` may be a
+    tuple/list of Hz (a chord, voices averaged) or 0 for a rest. Start times come from
+    cumulative durations (rounded once), so long phrases never drift.
+    Defaults reproduce the old note shape (12 ms attack, 60 ms release, 30 ms gap).
+    """
+    atk = 0.012 if attack is None else attack
+    rel = 0.06 if release is None else release
+    gp = 0.03 if gap is None else gap
+    out: Buf = []
+    t = 0.0
+    pos = 0
+    for item in notes:
+        freq, dur = item[0], item[1]
+        vel = item[2] if len(item) > 2 else 1.0
+        t += dur
+        n = max(1, int(round(t * SAMPLE_RATE)) - pos)
+        pos += n
+        freqs = tuple(float(f) for f in freq) if isinstance(freq, (tuple, list)) else (float(freq),)
+        freqs = tuple(f for f in freqs if f > 0)
+        if not freqs:
+            out.extend([0.0] * n)
+            continue
+        gsamp = min(int(SAMPLE_RATE * gp), n // 5)
+        sounding = max(1, n - gsamp)
+        buf = _note_buf(freqs, sounding, wave, atk, decay, sustain, rel, vibrato, detune)
+        g = volume * vel
+        if g == 1.0:
+            out.extend(buf)
         else:
-            sample = math.sin(phase)
-        val = int(max(-32767, min(32767, sample * env * 32767)))
-        buf.append(val)
-    return pygame.mixer.Sound(buffer=buf.tobytes())
-
-
-def _chord(freqs: list, duration: float, volume: float = 0.2) -> pygame.mixer.Sound:
-    """Layer several sines into one buffer (SFX stingers only)."""
-    n = max(1, int(SAMPLE_RATE * duration))
-    buf = array.array("h")
-    for i in range(n):
-        t = i / SAMPLE_RATE
-        env = _envelope(i, n, 0.05, 0.2) * volume
-        sample = 0.0
-        for f in freqs:
-            sample += math.sin(2.0 * math.pi * f * t)
-        sample /= max(1, len(freqs))
-        val = int(max(-32767, min(32767, sample * env * 32767)))
-        buf.append(val)
-    return pygame.mixer.Sound(buffer=buf.tobytes())
+            out.extend([v * g for v in buf])
+        if n > sounding:
+            out.extend([0.0] * (n - sounding))
+    return out
 
 
 def _note_sample(
@@ -82,167 +540,738 @@ def _note_sample(
     duration: float,
     volume: float,
     wave: str = "triangle",
+    *,
+    attack: Optional[float] = None,
+    decay: Optional[float] = None,
+    sustain: float = 1.0,
+    release: Optional[float] = None,
 ) -> List[int]:
-    """Render one note (or silence if freq <= 0) as sample list."""
-    n = max(1, int(SAMPLE_RATE * duration))
-    # Leave a tiny gap so notes don't smear into a drone
-    gap = min(int(SAMPLE_RATE * 0.03), n // 5)
-    sounding = max(1, n - gap)
-    out: List[int] = []
-    if freq <= 0:
-        return [0] * n
-    for i in range(sounding):
-        t = i / SAMPLE_RATE
-        env = _envelope(i, sounding, 0.012, 0.06) * volume
-        phase = 2.0 * math.pi * freq * t
-        if wave == "square":
-            sample = (1.0 if math.sin(phase) >= 0 else -1.0) * 0.5
-        elif wave == "triangle":
-            sample = 2.0 * abs(2.0 * ((freq * t) % 1.0) - 1.0) - 1.0
-        else:
-            sample = math.sin(phase)
-        out.append(int(max(-32767, min(32767, sample * env * 32767))))
-    out.extend([0] * (n - sounding))
-    return out
-
-
-def _mix_tracks(tracks: List[List[int]], volume: float = 1.0) -> pygame.mixer.Sound:
-    """Mix equal-length (or pad shorter) mono tracks into one Sound."""
-    length = max((len(t) for t in tracks), default=1)
-    buf = array.array("h")
-    for i in range(length):
-        sample = 0.0
-        for track in tracks:
-            if i < len(track):
-                sample += track[i]
-        sample = sample * volume / max(1, len(tracks))
-        buf.append(int(max(-32767, min(32767, sample))))
-    return pygame.mixer.Sound(buffer=buf.tobytes())
-
-
-Note = Union[float, int]  # Hz, or 0 = rest
+    """Render one note (or silence if freq <= 0) as a 16-bit sample list.
+    All five waves are supported now (saw / noise used to fall back to sine)."""
+    buf = _sequence_f([(freq, duration)], volume, wave, attack=attack, decay=decay,
+                      sustain=sustain, release=release)
+    return [int(max(-32767.0, min(32767.0, v * 32767.0))) for v in buf]
 
 
 def _sequence(
-    notes: List[Tuple[Note, float]],
+    notes: list,
     volume: float = 0.22,
     wave: str = "triangle",
+    *,
+    attack: Optional[float] = None,
+    decay: Optional[float] = None,
+    sustain: float = 1.0,
+    release: Optional[float] = None,
+    gap: Optional[float] = None,
+    vibrato: Optional[Tuple[float, float]] = None,
+    detune: float = 0.0,
 ) -> List[int]:
-    """Build a monophonic phrase from (freq, duration_seconds) pairs."""
-    samples: List[int] = []
-    for freq, dur in notes:
-        samples.extend(_note_sample(float(freq), dur, volume, wave))
-    return samples
+    """Build a phrase from (freq, seconds[, velocity]) pairs -> List[int] (16-bit)."""
+    buf = _sequence_f(notes, volume, wave, attack=attack, decay=decay, sustain=sustain,
+                      release=release, gap=gap, vibrato=vibrato, detune=detune)
+    return [int(max(-32767.0, min(32767.0, v * 32767.0))) for v in buf]
 
 
-# Beat length helpers
-B = 0.18       # sixteenth-ish
-Q = B * 2      # eighth
-H = B * 4      # quarter
-W = B * 8      # half
+def _mix_tracks(
+    tracks: List[List[int]],
+    volume: float = 1.0,
+    gains: Optional[List[float]] = None,
+    peak: Optional[float] = None,
+) -> pygame.mixer.Sound:
+    """Mix mono int tracks into one Sound.
+
+    Default (gains=None, peak=None): old behaviour, sum / track_count * volume.
+    gains : per-track weights, summed WITHOUT the 1/N division.
+    peak  : if given, the mix is normalized so its maximum is `peak` of full scale.
+    """
+    length = max((len(t) for t in tracks), default=1)
+    cnt = float(max(1, len(tracks)))
+    out = [0.0] * length
+    for k, track in enumerate(tracks):
+        g = gains[k] if gains is not None else 1.0 / cnt
+        seg = out[:len(track)]
+        out[:len(track)] = [u + v * g for u, v in zip(seg, track)]
+    if peak is not None:
+        m = max((abs(v) for v in out), default=0.0)
+        if m > 0:
+            out = [v * (peak * 32767.0 / m) for v in out]
+    else:
+        out = [v * volume for v in out]
+    buf = array.array("h", [int(max(-32767.0, min(32767.0, v))) for v in out] or [0])
+    return pygame.mixer.Sound(buffer=buf.tobytes())
+
+
+# ---------------------------------------------------------------------------
+# 4. Drums
+# ---------------------------------------------------------------------------
+
+_DRUM_CACHE: Dict[str, Buf] = {}
+
+
+def _drum_hit(kind: str) -> Buf:
+    """One drum voice at unit peak (cached). K kick, S snare, H closed hat, O open hat,
+    T tom, X rim click, M metal clank, C clap."""
+    hit = _DRUM_CACHE.get(kind)
+    if hit is not None:
+        return hit
+    if kind == "K":
+        buf = _layer([
+            (_voice("sine", 150, 0.20, 1.0, a=0.001, d=0.16, s=0.0, r=0.02, f_end=45), 0, 1.0),
+            (_noise_burst(0.01, 1.0, a=0.0005, d=0.008, s=0.0, r=0.002, hp=1200), 0, 0.25),
+        ])
+    elif kind == "S":
+        buf = _layer([
+            (_noise_burst(0.16, 1.0, a=0.0005, d=0.12, s=0.0, r=0.02, hp=1500, lp=(7000, 3000)), 0, 1.0),
+            (_voice("triangle", 200, 0.10, 1.0, a=0.0005, d=0.08, s=0.0, r=0.01, f_end=140), 0, 0.6),
+        ])
+    elif kind == "H":
+        buf = _noise_burst(0.05, 1.0, a=0.0005, d=0.035, s=0.0, r=0.01, hp=6500)
+    elif kind == "O":
+        buf = _noise_burst(0.20, 1.0, a=0.0005, d=0.17, s=0.0, r=0.02, hp=5500)
+    elif kind == "T":
+        buf = _layer([
+            (_voice("sine", 220, 0.24, 1.0, a=0.001, d=0.2, s=0.0, r=0.02, f_end=110), 0, 1.0),
+            (_noise_burst(0.01, 1.0, a=0.0005, d=0.008, s=0.0, r=0.002, hp=1500), 0, 0.15),
+        ])
+    elif kind == "X":
+        buf = _layer([
+            (_voice("square", 1800, 0.03, 1.0, a=0.0005, d=0.02, s=0.0, r=0.005), 0, 0.6),
+            (_noise_burst(0.025, 1.0, a=0.0005, d=0.02, s=0.0, r=0.005, hp=3000), 0, 0.5),
+        ])
+    elif kind == "M":
+        buf = _layer([
+            (_voice("square", 563, 0.16, 1.0, a=0.0005, d=0.12, s=0.0, r=0.01), 0, 0.5),
+            (_voice("square", 841, 0.16, 1.0, a=0.0005, d=0.10, s=0.0, r=0.01), 0, 0.4),
+            (_voice("square", 1297, 0.12, 1.0, a=0.0005, d=0.08, s=0.0, r=0.01), 0, 0.3),
+            (_noise_burst(0.08, 1.0, a=0.0005, d=0.06, s=0.0, r=0.01, hp=4000), 0, 0.4),
+        ])
+    elif kind == "C":
+        burst = _noise_burst(0.02, 1.0, a=0.0005, d=0.015, s=0.0, r=0.004, hp=1200, lp=5000)
+        tail = _noise_burst(0.14, 1.0, a=0.0005, d=0.11, s=0.0, r=0.02, hp=1200, lp=4500)
+        buf = _layer([(burst, 0, 0.8), (burst, 0.012, 0.8), (burst, 0.024, 0.8), (tail, 0.03, 0.7)])
+    else:
+        buf = [0.0]
+    buf = _norm(buf, 1.0)
+    _DRUM_CACHE[kind] = buf
+    return buf
+
+
+def _drums(pattern: str, step: float, gain: float = 1.0, steps: Optional[int] = None) -> Buf:
+    """Render a drum pattern string, one character per `step` seconds.
+
+    K kick  S snare  H hat  O open hat  T tom  X rim  M metal  C clap  . rest
+    UPPERCASE = full hit, lowercase = soft (x0.45). Spaces and '|' are ignored. The pattern
+    is tiled to `steps` steps (default: its own length). Hit tails that run past the end are
+    folded back to the start, so the result loops seamlessly.
+    """
+    pat = [c for c in pattern if c not in " |"]
+    total = steps if steps is not None else len(pat)
+    n = int(round(total * step * SAMPLE_RATE))
+    out = [0.0] * (n + 5000)   # headroom: hit tails are folded back by _loop_fit
+    for i in range(total):
+        c = pat[i % len(pat)]
+        if c == ".":
+            continue
+        hit = _drum_hit(c.upper())
+        g = gain * (0.45 if c.islower() else 1.0)
+        o = int(round(i * step * SAMPLE_RATE))
+        seg = out[o:o + len(hit)]
+        out[o:o + len(hit)] = [u + v * g for u, v in zip(seg, hit)]
+    return _loop_fit(out, n)
+
+
+# ---------------------------------------------------------------------------
+# 5. SFX library.  Each builder is a recipe: layers (buffer, offset_s, gain) -> _finish(peak)
+#    Peaks: frequent sounds <= 0.20, others 0.24-0.40. Every sound < 0.7 s incl. echo tail.
+# ---------------------------------------------------------------------------
+
+def _sfx_ui_select() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("triangle", 880, 0.07, a=0.002, d=0.05, s=0.0, r=0.015), 0.0, 1.0),
+        (_voice("sine", 1760, 0.05, a=0.001, d=0.03, s=0.0, r=0.01), 0.0, 0.35),
+    ]), 0.16)
+
+
+def _sfx_ui_confirm() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("triangle", 523, 0.12, a=0.003, d=0.10, s=0.0, r=0.02), 0.00, 1.0),
+        (_voice("triangle", 784, 0.16, a=0.003, d=0.13, s=0.0, r=0.03), 0.07, 1.0),
+        (_voice("sine", 1568, 0.12, a=0.002, d=0.09, s=0.0, r=0.02), 0.07, 0.3),
+    ]), 0.09, 0.4, 0.30, 2), 0.24)
+
+
+def _sfx_ui_back() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("triangle", 659, 0.07, a=0.002, d=0.05, s=0.0, r=0.015), 0.00, 1.0),
+        (_voice("triangle", 440, 0.08, a=0.002, d=0.06, s=0.0, r=0.02), 0.04, 1.0),
+    ]), 0.18)
+
+
+def _sfx_shoot() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("sine", 1400, 0.07, a=0.001, d=0.06, s=0.0, r=0.01, f_end=500), 0.0, 1.0),
+        (_noise_burst(0.02, a=0.0005, d=0.015, s=0.0, r=0.004, hp=3500), 0.0, 0.45),
+    ]), 0.17)
+
+
+def _sfx_hit() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_noise_burst(0.06, a=0.0005, d=0.045, s=0.0, r=0.01, lp=(3500, 700)), 0.0, 1.0),
+        (_voice("sine", 170, 0.09, a=0.001, d=0.07, s=0.0, r=0.015, f_end=65), 0.0, 0.65),
+    ]), 0.19)
+
+
+def _sfx_dash() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_noise_burst(0.22, a=0.06, s=1.0, r=0.12, lp=(500, 6000), hp=200, poles=2), 0.0, 1.0),
+        (_voice("saw", 110, 0.20, a=0.04, s=1.0, r=0.10, f_end=330, lp=1200), 0.0, 0.25),
+    ]), 0.28)
+
+
+def _sfx_hurt() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("saw", 220, 0.26, a=0.003, d=0.20, s=0.2, r=0.08, f_end=80, lp=(1800, 400)), 0.0, 0.8),
+        (_noise_burst(0.12, a=0.001, d=0.09, s=0.0, r=0.02, lp=(2500, 300)), 0.0, 0.5),
+        (_voice("sine", 90, 0.20, a=0.002, d=0.15, s=0.0, r=0.03, f_end=50), 0.0, 0.8),
+    ]), 0.34)
+
+
+def _sfx_kill() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("triangle", 392, 0.10, a=0.002, d=0.08, s=0.0, r=0.015), 0.00, 1.0),
+        (_voice("triangle", 523, 0.10, a=0.002, d=0.08, s=0.0, r=0.015), 0.04, 1.0),
+        (_voice("triangle", 659, 0.10, a=0.002, d=0.08, s=0.0, r=0.015), 0.08, 1.0),
+        (_noise_burst(0.015, a=0.0005, d=0.01, s=0.0, r=0.003, hp=4000), 0.0, 0.3),
+    ]), 0.07, 0.35, 0.25, 2), 0.24)
+
+
+def _sfx_explode() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_noise_burst(0.38, a=0.001, d=0.30, s=0.0, r=0.04, lp=(4500, 180), poles=2), 0.0, 1.0),
+        (_voice("sine", 95, 0.36, a=0.002, d=0.30, s=0.0, r=0.04, f_end=32), 0.0, 0.65),
+        (_noise_burst(0.12, a=0.0005, d=0.10, s=0.0, r=0.02, hp=2500), 0.0, 0.35),
+    ]), 0.10, 0.40, 0.28, 2), 0.38)
+
+
+def _sfx_levelup() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("triangle", C5, 0.16, a=0.003, d=0.13, s=0.0, r=0.03), 0.00, 1.0),
+        (_voice("triangle", E5, 0.16, a=0.003, d=0.13, s=0.0, r=0.03), 0.07, 1.0),
+        (_voice("triangle", G5, 0.16, a=0.003, d=0.13, s=0.0, r=0.03), 0.14, 1.0),
+        (_voice("triangle", C6, 0.22, a=0.003, d=0.19, s=0.0, r=0.04), 0.21, 1.0),
+        (_voice("sine", G5 * 2, 0.16, a=0.002, d=0.12, s=0.0, r=0.03), 0.14, 0.3),
+        (_voice("sine", C6 * 2, 0.20, a=0.002, d=0.16, s=0.0, r=0.04), 0.21, 0.3),
+    ]), 0.10, 0.45, 0.30, 2), 0.33)
+
+
+def _sfx_pickup() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("sine", 700, 0.08, a=0.002, d=0.06, s=0.0, r=0.015, f_end=1050), 0.0, 1.0),
+        (_voice("triangle", 1400, 0.04, a=0.001, d=0.03, s=0.0, r=0.01), 0.03, 0.3),
+    ]), 0.16)
+
+
+def _sfx_boss_hit() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_noise_burst(0.08, a=0.0005, d=0.06, s=0.0, r=0.01, lp=(2500, 600)), 0.0, 1.0),
+        (_voice("square", 180, 0.11, a=0.001, d=0.09, s=0.0, r=0.015, f_end=90, lp=1500), 0.0, 0.6),
+        (_voice("sine", 80, 0.12, a=0.001, d=0.10, s=0.0, r=0.02), 0.0, 0.6),
+    ]), 0.27)
+
+
+def _sfx_boss_phase() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("saw", A2, 0.62, a=0.25, s=1.0, r=0.20, lp=(300, 1200)), 0.0, 0.7),
+        (_voice("saw", E3, 0.62, a=0.25, s=1.0, r=0.20, det=7, lp=(300, 1200)), 0.0, 0.5),
+        (_voice("saw", A3, 0.62, a=0.25, s=1.0, r=0.20, det=-7, lp=(300, 1200)), 0.0, 0.4),
+        (_noise_burst(0.50, a=0.30, s=1.0, r=0.15, lp=(300, 3000)), 0.1, 0.35),
+        (_voice("sine", 70, 0.30, a=0.002, d=0.25, s=0.0, r=0.04, f_end=35), 0.0, 1.0),
+    ]), 0.38)
+
+
+def _sfx_boss_spawn() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("saw", G2, 0.50, a=0.12, s=1.0, r=0.18, lp=(300, 900)), 0.0, 0.7),
+        (_voice("saw", D3, 0.50, a=0.12, s=1.0, r=0.18, det=6, lp=(300, 900)), 0.0, 0.5),
+        (_voice("triangle", G3, 0.50, a=0.12, s=1.0, r=0.18, det=-6), 0.0, 0.4),
+        (_noise_burst(0.45, a=0.10, s=1.0, r=0.2, lp=(400, 120), poles=2), 0.0, 0.6),
+        (_voice("sine", 60, 0.35, a=0.002, d=0.30, s=0.0, r=0.05, f_end=30), 0.0, 1.0),
+    ]), 0.08, 0.40, 0.25, 2), 0.36)
+
+
+def _sfx_victory() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("triangle", C5, 0.20, a=0.004, d=0.17, s=0.2, r=0.04), 0.00, 1.0),
+        (_voice("triangle", E5, 0.20, a=0.004, d=0.17, s=0.2, r=0.04), 0.08, 1.0),
+        (_voice("triangle", G5, 0.20, a=0.004, d=0.17, s=0.2, r=0.04), 0.16, 1.0),
+        (_voice("triangle", C6, 0.24, a=0.004, d=0.20, s=0.3, r=0.06), 0.24, 1.0),
+        (_voice("sine", C5, 0.24, a=0.03, s=1.0, r=0.08), 0.24, 0.5),
+        (_voice("sine", E5, 0.24, a=0.03, s=1.0, r=0.08), 0.24, 0.4),
+        (_voice("sine", G5, 0.24, a=0.03, s=1.0, r=0.08), 0.24, 0.4),
+    ]), 0.08, 0.40, 0.25, 2), 0.34)
+
+
+def _sfx_defeat() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("saw", 196, 0.55, a=0.01, d=0.45, s=0.15, r=0.15, f_end=98, lp=(1200, 200)), 0.00, 0.8),
+        (_voice("sine", 98, 0.60, a=0.01, d=0.50, s=0.1, r=0.20, f_end=49), 0.00, 0.8),
+        (_voice("triangle", Eb3, 0.30, a=0.01, d=0.25, s=0.0, r=0.08), 0.15, 0.5),
+        (_voice("triangle", D3, 0.30, a=0.01, d=0.25, s=0.0, r=0.08), 0.30, 0.5),
+        (_noise_burst(0.20, a=0.002, d=0.15, s=0.0, r=0.04, lp=(1500, 150)), 0.0, 0.4),
+    ]), 0.32)
+
+
+def _sfx_story() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("sine", 330, 0.10, a=0.01, d=0.08, s=0.0, r=0.03), 0.00, 1.0),
+        (_voice("sine", 495, 0.08, a=0.01, d=0.06, s=0.0, r=0.03), 0.05, 0.5),
+    ]), 0.11, 0.40, 0.30, 1), 0.17)
+
+
+def _sfx_absorb() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("sine", 220, 0.10, a=0.008, d=0.08, s=0.0, r=0.02, f_end=460), 0.0, 1.0),
+        (_noise_burst(0.06, a=0.002, d=0.04, s=0.0, r=0.01, lp=(800, 300)), 0.0, 0.3),
+    ]), 0.20)
+
+
+# ---- NEW sounds (no game.py hook yet) ----
+
+def _sfx_shield_block() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("square", 740, 0.14, a=0.0005, d=0.10, s=0.0, r=0.02), 0.0, 0.5),
+        (_voice("square", 1180, 0.12, a=0.0005, d=0.08, s=0.0, r=0.02), 0.0, 0.4),
+        (_voice("sine", 2430, 0.10, a=0.0005, d=0.06, s=0.0, r=0.02), 0.0, 0.3),
+        (_noise_burst(0.05, a=0.0005, d=0.035, s=0.0, r=0.01, hp=3000), 0.0, 0.5),
+        (_voice("sine", 120, 0.10, a=0.001, d=0.08, s=0.0, r=0.02, f_end=70), 0.0, 0.7),
+    ]), 0.30)
+
+
+def _sfx_heal() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("sine", C5, 0.20, a=0.02, d=0.17, s=0.0, r=0.05, det=8), 0.00, 1.0),
+        (_voice("sine", C5, 0.20, a=0.02, d=0.17, s=0.0, r=0.05, det=-8), 0.00, 1.0),
+        (_voice("sine", G5, 0.24, a=0.02, d=0.20, s=0.0, r=0.06, det=8), 0.09, 0.9),
+        (_voice("sine", G5, 0.24, a=0.02, d=0.20, s=0.0, r=0.06, det=-8), 0.09, 0.9),
+    ]), 0.08, 0.40, 0.25, 2), 0.24)
+
+
+def _sfx_artifact() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("sine", A5, 0.34, a=0.002, d=0.30, s=0.0, r=0.05), 0.00, 1.0),
+        (_voice("sine", A5 * 2.76, 0.20, a=0.002, d=0.12, s=0.0, r=0.03), 0.00, 0.35),
+        (_voice("sine", E6, 0.30, a=0.002, d=0.26, s=0.0, r=0.05), 0.08, 0.7),
+        (_voice("sine", A5 * 2.76 * 0.75, 0.16, a=0.002, d=0.10, s=0.0, r=0.03), 0.08, 0.25),
+        (_voice("triangle", A3, 0.30, a=0.10, d=0.25, s=0.0, r=0.08), 0.0, 0.5),
+    ]), 0.11, 0.42, 0.28, 2), 0.32)
+
+
+def _sfx_merge() -> pygame.mixer.Sound:
+    return _finish(_echo(_layer([
+        (_voice("triangle", E5, 0.26, a=0.01, s=1.0, r=0.04, f_end=G4), 0.00, 0.9),
+        (_voice("triangle", G3, 0.26, a=0.01, s=1.0, r=0.04, f_end=G4), 0.00, 0.9),
+        (_voice("sine", G4, 0.18, a=0.01, d=0.16, s=0.0, r=0.05), 0.26, 1.0),
+        (_voice("sine", D5, 0.18, a=0.01, d=0.16, s=0.0, r=0.05), 0.26, 0.6),
+        (_voice("sine", G5, 0.18, a=0.01, d=0.16, s=0.0, r=0.05), 0.26, 0.5),
+        (_noise_burst(0.26, a=0.13, s=1.0, r=0.09, lp=(300, 1200)), 0.0, 0.25),
+        (_voice("sine", 98, 0.18, a=0.01, d=0.16, s=0.0, r=0.05), 0.26, 0.8),
+    ]), 0.10, 0.40, 0.25, 2), 0.32)
+
+
+def _sfx_boss_warning() -> pygame.mixer.Sound:
+    return _finish(_layer([
+        (_voice("square", A3, 0.14, a=0.005, d=0.10, s=0.4, r=0.03, lp=900), 0.00, 0.8),
+        (_voice("square", Eb4, 0.14, a=0.005, d=0.10, s=0.4, r=0.03, lp=900), 0.00, 0.6),
+        (_voice("square", A3, 0.14, a=0.005, d=0.10, s=0.4, r=0.03, lp=900), 0.24, 0.8),
+        (_voice("square", Eb4, 0.14, a=0.005, d=0.10, s=0.4, r=0.03, lp=900), 0.24, 0.6),
+        (_voice("saw", 55, 0.56, a=0.28, s=1.0, r=0.18, lp=(200, 700)), 0.0, 0.6),
+        (_noise_burst(0.36, a=0.22, s=1.0, r=0.10, lp=(200, 2500)), 0.20, 0.3),
+        (_voice("sine", 65, 0.18, a=0.002, d=0.14, s=0.0, r=0.03, f_end=40), 0.44, 0.9),
+    ]), 0.34)
+
+
+# name -> builder. The first 17 names REPLACE existing sounds; the last 6 (NEW_SFX) need a game.py hook
+SFX_BUILDERS: Dict[str, Callable[[], pygame.mixer.Sound]] = {
+    "ui_select": _sfx_ui_select, "ui_confirm": _sfx_ui_confirm, "shoot": _sfx_shoot,
+    "dash": _sfx_dash, "hit": _sfx_hit, "hurt": _sfx_hurt, "kill": _sfx_kill,
+    "explode": _sfx_explode, "levelup": _sfx_levelup, "pickup": _sfx_pickup,
+    "boss_hit": _sfx_boss_hit, "boss_phase": _sfx_boss_phase, "boss_spawn": _sfx_boss_spawn,
+    "victory": _sfx_victory, "defeat": _sfx_defeat, "story": _sfx_story, "absorb": _sfx_absorb,
+    # NEW (need a hook in game.py; harmless if never played)
+    "ui_back": _sfx_ui_back, "shield_block": _sfx_shield_block, "heal": _sfx_heal,
+    "artifact": _sfx_artifact, "merge": _sfx_merge, "boss_warning": _sfx_boss_warning,
+}
+NEW_SFX = ("ui_back", "shield_block", "heal", "artifact", "merge", "boss_warning")
+
+
+def _build_sfx() -> Dict[str, pygame.mixer.Sound]:
+    out: Dict[str, pygame.mixer.Sound] = {}
+    for name, fn in SFX_BUILDERS.items():
+        _rng.seed("sfx:" + name)
+        out[name] = fn()
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 6. Music.  Each theme returns (grid, bars, peak, layers).  Layers are dicts:
+#    {"kind": "seq",   "notes": [(Hz|chord tuple, seconds[, vel]), ...], "wave": ..., "opts": {...}}
+#    {"kind": "drums", "pattern": "K...S...", "step": seconds}
+#    {"kind": "buf",   "buf": float list, "offset": seconds}
+#    common: "gain" (relative level, each layer is peak-normalized first), "lp" (cutoff or
+#            (start, end) Hz), "echo": (delay, feedback, mix, taps)  -- the echo tail wraps.
+#    Every layer is forced to exactly bars * bar_length samples (see _loop_fit), so the loop is
+#    sample-exact and tails run over the seam instead of clicking.
+# ---------------------------------------------------------------------------
+
+Layer = Dict[str, object]
+Theme = Tuple[_Grid, int, float, List[Layer]]
+
+
+def _seq(notes: list, wave: str, gain: float, lp=None, echo=None, **opts) -> Layer:
+    lay: Layer = {"kind": "seq", "notes": notes, "wave": wave, "gain": gain, "opts": opts}
+    if lp is not None:
+        lay["lp"] = lp
+    if echo is not None:
+        lay["echo"] = echo
+    return lay
+
+
+def _dr(pattern: str, step: float, gain: float) -> Layer:
+    return {"kind": "drums", "pattern": pattern, "step": step, "gain": gain}
+
+
+def _raw(buf: Buf, gain: float, offset: float = 0.0) -> Layer:
+    return {"kind": "buf", "buf": buf, "offset": offset, "gain": gain}
+
+
+def _cat(*parts: list) -> list:
+    out: list = []
+    for p in parts:
+        out.extend(p)
+    return out
+
+
+def _render_theme(theme: Theme) -> pygame.mixer.Sound:
+    g, bars, peak, layers = theme
+    n = g.samples(bars)
+    parts = []
+    for lay in layers:
+        kind = lay["kind"]
+        if kind == "seq":
+            buf = _sequence_f(lay["notes"], 1.0, lay["wave"], **lay["opts"])
+            if abs(len(buf) - n) > 3:
+                raise ValueError("music layer length %d != loop length %d" % (len(buf), n))
+        elif kind == "drums":
+            step = float(lay["step"])
+            buf = _drums(lay["pattern"], step, 1.0, steps=int(round(g.bar * bars / step)))
+        else:
+            buf = [0.0] * int(float(lay["offset"]) * SAMPLE_RATE) + list(lay["buf"])
+        if "lp" in lay:
+            buf = _filter(buf, "lp", *_pair(lay["lp"]))
+        buf = _norm(buf, 1.0)
+        if "echo" in lay:
+            buf = _echo(buf, *lay["echo"])
+        parts.append((_loop_fit(buf, n), 0.0, float(lay["gain"])))
+    snd = _finish(_layer(parts, n), peak)
+    _NOTE_CACHE.clear()
+    return snd
+
+
+# ---- 0  The Verdant Rim: gentle cradle. C major, 76 bpm, 4 bars --------------------------
+def _theme_rim() -> Theme:
+    g = _Grid(76)
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    melody = _cat(
+        [(E4, h), (G4, q), (A4, q), (G4, h), (E4, h)],
+        [(A4, h + q), (G4, q), (E4, h), (0, h)],
+        [(F4, h), (A4, q), (C5, q), (A4, h), (F4, h)],
+        [(D5, h), (B4, q), (G4, q), (G4, w)],
+    )
+    roots = [(C3, G3), (A2, E3), (F2, C3), (G2, D3)]
+    bass = _cat(*[[(r, h + q), (0, q), (f, h), (0, h)] for r, f in roots])
+    pad = [((C4, E4, G4), g.bar), ((A3, C4, E4), g.bar), ((F3, A3, C4), g.bar), ((G3, B3, D4), g.bar)]
+    return g, 4, 0.36, [
+        _seq(melody, "triangle", 0.55, echo=(q * 3, 0.4, 0.25, 2),
+             attack=0.03, release=0.12, vibrato=(5.0, 8.0)),
+        _seq(bass, "sine", 0.80, attack=0.02, release=0.15),
+        _seq(pad, "sine", 0.45, attack=0.35, release=0.45, gap=0.0, detune=5.0),
+        _dr("k...h...k...h...", b, 0.40),
+    ]
+
+
+# ---- 1  The Sinking Garden: murky mournful. D minor, 62 bpm, 4 bars ----------------------
+def _theme_garden() -> Theme:
+    g = _Grid(62)
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    melody = _cat(
+        [(A4, h + q), (F4, q), (D4, h), (E4, h)],
+        [(D4, h + q), (F4, q), (Bb4, h), (A4, h)],
+        [(G4, h + q), (Bb4, q), (A4, h), (G4, h)],
+        [(E4, h), (Cs4, q), (D4, q), (E4, w)],
+    )
+    bass = [(D3, g.bar), (Bb2, g.bar), (G2, g.bar), (A2, g.bar)]
+    pad = [((D3, F3, A3), g.bar), ((Bb3, D4, F4), g.bar), ((G3, Bb3, D4), g.bar), ((A3, Cs4, E4), g.bar)]
+    return g, 4, 0.32, [
+        _seq(melody, "sine", 0.60, echo=(h * 0.75, 0.5, 0.3, 3),
+             attack=0.06, release=0.25, vibrato=(4.5, 22.0), detune=4.0),
+        _seq(bass, "triangle", 0.80, attack=0.1, release=0.4, gap=0.0),
+        _seq(pad, "saw", 0.35, lp=(650, 650), attack=0.5, release=0.6, gap=0.0, detune=12.0),
+        _dr("K.......t.......", b, 0.55),
+    ]
+
+
+# ---- 2  The Memory Vaults: crystalline arpeggios. A minor, 96 bpm, 4 bars ----------------
+def _theme_vaults() -> Theme:
+    g = _Grid(96)
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    arp = _cat(
+        [(f, q) for f in (A4, C5, E5, A5, E5, C5, E5, C5)],
+        [(f, q) for f in (F4, A4, C5, F5, C5, A4, C5, A4)],
+        [(f, q) for f in (C5, E5, G5, C6, G5, E5, G5, E5)],
+        [(f, q) for f in (G4, B4, D5, G5, D5, B4, D5, B4)],
+    )
+    melody = _cat(
+        [(A5, h + q), (G5, q), (E5, w)],
+        [(F5, h + q), (E5, q), (C5, w)],
+        [(G5, h + q), (E5, q), (C6, w)],
+        [(D5, h + q), (B4, q), (D5, h), (0, h)],
+    )
+    roots = [A2, F2, C3, G2]
+    fifths = [E3, C3, G3, D3]
+    bass = _cat(*[[(r, h + q), (0, q), (f, h), (0, h)] for r, f in zip(roots, fifths)])
+    pad = [((A3, C4, E4), g.bar), ((F3, A3, C4), g.bar), ((C4, E4, G4), g.bar), ((G3, B3, D4), g.bar)]
+    return g, 4, 0.40, [
+        _seq(arp, "triangle", 0.50, echo=(b * 3, 0.5, 0.35, 3),
+             attack=0.004, decay=0.22, sustain=0.0, release=0.02, gap=0.0),
+        _seq(melody, "sine", 0.55, echo=(b * 3, 0.5, 0.40, 3),
+             attack=0.003, decay=0.7, sustain=0.0, release=0.05, gap=0.0),
+        _seq(bass, "sine", 0.70, attack=0.015, release=0.12),
+        _seq(pad, "sine", 0.35, attack=0.5, release=0.5, gap=0.0, detune=6.0),
+        _dr("k.x...x.k.x...x.", b, 0.35),
+    ]
+
+
+# ---- 3  The Forge Veins: driving heat / industrial. E phrygian, 120 bpm, 4 bars ---------
+def _theme_forge() -> Theme:
+    g = _Grid(120)
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    bass = _cat(
+        [(E2, q)] * 8,
+        [(E2, q)] * 6 + [(F2, q), (F2, q)],
+        [(E2, q)] * 6 + [(G2, q), (A2, q)],
+        [(E2, q)] * 4 + [(B2, q), (B2, q), (C3, q), (B2, q)],
+    )
+    riff = [(E4, q), (0, b), (E4, b), (G4, q), (F4, q), (E4, q), (0, q), (B3, q), (E4, q)]
+    lead = _cat(
+        riff,
+        [(E4, q), (0, b), (E4, b), (G4, q), (A4, q), (B4, q), (0, q), (C5, q), (B4, q)],
+        riff,
+        [(B4, q), (B4, q), (C5, q), (B4, q), (A4, q), (G4, q), (F4, q), (E4, q)],
+    )
+    pad = [((E3, B3), g.bar), ((E3, B3), g.bar), ((E3, B3, G4), g.bar), ((E3, B3, C4), g.bar)]
+    return g, 4, 0.42, [
+        _seq(bass, "saw", 0.85, lp=(500, 500), attack=0.003, decay=0.12, sustain=0.5, release=0.03, gap=0.01),
+        _seq(lead, "square", 0.50, lp=(2500, 2500), attack=0.004, decay=0.10, sustain=0.5, release=0.04),
+        _seq(pad, "saw", 0.25, lp=(900, 900), attack=0.1, release=0.2, gap=0.0, detune=9.0),
+        _dr("K...K...K...K...", b, 0.75),
+        _dr("....S.......S...", b, 0.60),
+        _dr("..M...M...M...M.", b, 0.30),
+        _dr("h.h.h.h.h.h.h.hO", b, 0.30),
+    ]
+
+
+# ---- 4  The Still Expanse: sparse icy, DRUMLESS. C lydian, 56 bpm, 4 bars ----------------
+def _theme_frost() -> Theme:
+    g = _Grid(56)
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    bass = [(C2, g.bar), (C2, g.bar), (G2, g.bar), (C2, g.bar)]
+    pad = [((C4, G4, D5), g.bar), ((C4, G4, E5), g.bar), ((D4, A4, E5), g.bar), ((C4, G4, D5), g.bar)]
+    melody = _cat(
+        [(G5, h), (0, h), (E5, h), (0, h)],
+        [(0, h), (D5, h), (0, h), (A4, h)],
+        [(Fs5, h), (0, h), (E5, h), (0, h)],
+        [(D5, w), (0, w)],
+    )
+    wind = _wash(g.bar * 4, 1.0, a=g.bar * 1.5, r=g.bar * 1.5, lp=(500, 900))
+    return g, 4, 0.26, [
+        _seq(melody, "sine", 0.55, echo=(h, 0.55, 0.45, 3),
+             attack=0.004, decay=0.9, sustain=0.0, release=0.1, gap=0.0),
+        _seq(bass, "sine", 0.80, attack=0.6, release=0.9, gap=0.0),
+        _seq(pad, "sine", 0.40, attack=1.0, release=1.2, gap=0.0, detune=4.0),
+        _raw(wind, 0.30),
+    ]
+
+
+# ---- 5  The Mirage Basin: swaying mirage. D phrygian-dominant, 88 bpm, 4 bars (triplet feel)
+def _theme_mirage() -> Theme:
+    g = _Grid(88)
+    t, h = g.T, g.H
+    melody = _cat(
+        [(D5, h), (Eb5, t), (D5, t), (C5, t), (A4, h), (Fs4, h)],
+        [(Eb5, h), (D5, t), (C5, t), (Bb4, t), (G4, h), (A4, h)],
+        [(D5, h), (Fs5, t), (Eb5, t), (D5, t), (A4, h), (D5, h)],
+        [(C5, h), (Bb4, t), (A4, t), (G4, t), (A4, 2 * h)],
+    )
+    sway = lambda r, f: [(r, h), (f, 2 * t), (0, t), (r, h), (f, 2 * t), (0, t)]
+    bass = _cat(sway(D3, A3), sway(Eb3, Bb3), sway(D3, A3), sway(C3, G3))
+    pad = [((D4, Fs4, A4), g.bar), ((Eb4, G4, Bb4), g.bar), ((D4, Fs4, A4), g.bar), ((C4, Eb4, G4), g.bar)]
+    return g, 4, 0.34, [
+        _seq(melody, "triangle", 0.60, echo=(h * 0.75, 0.45, 0.30, 2),
+             attack=0.02, release=0.08, vibrato=(5.5, 30.0)),
+        _seq(bass, "sine", 0.80, attack=0.01, release=0.1),
+        _seq(pad, "triangle", 0.40, attack=0.5, release=0.6, gap=0.0, detune=14.0, vibrato=(4.0, 10.0)),
+        _dr("K..h..T..h.t", t, 0.55),
+    ]
+
+
+# ---- 6  The Dreaming Thicket: uncanny odd intervals. E / Bb tritone, 7/8, 100 bpm, 4 bars
+def _theme_thicket() -> Theme:
+    g = _Grid(100, beats=3.5)
+    b, q, h = g.B, g.Q, g.H
+    melody = _cat(
+        [(E4, q), (Bb4, q), (A4, q), (Eb5, q), (D5, q), (Gs4, q), (0, q)],
+        [(B4, q), (F5, q), (E5, q), (Bb4, q), (Cs5, q), (G4, q), (0, q)],
+        [(E4, q), (Bb4, q), (A4, q), (Eb5, q), (D5, q), (Fs4, q), (Bb4, q)],
+        [(Eb5, q), (A4, q), (Eb5, q), (A4, q), (Bb4, q), (E4, q), (0, q)],
+    )
+    bass = [(E2, h), (Bb2, h), (E2, h), (F2, q)] * 4
+    pad = [((E3, Bb3, Fs4), g.bar), ((F3, B3, G4), g.bar), ((E3, Bb3, Fs4), g.bar), ((Eb3, A3, Gs4), g.bar)]
+    slip = _voice("sine", 1400, g.bar * 0.9, a=g.bar * 0.45, s=1.0, r=g.bar * 0.45, f_end=500)
+    return g, 4, 0.36, [
+        _seq(melody, "triangle", 0.55, echo=(q * 3, 0.5, 0.35, 2),
+             attack=0.01, release=0.08, vibrato=(6.5, 45.0), detune=10.0),
+        _seq(bass, "saw", 0.65, lp=(420, 420), attack=0.01, release=0.1, detune=7.0),
+        _seq(pad, "sine", 0.40, attack=0.4, release=0.5, gap=0.0, detune=25.0, vibrato=(7.0, 30.0)),
+        _raw(slip, 0.22, offset=g.bar * 1.0),
+        _raw(slip, 0.22, offset=g.bar * 3.0),
+        _dr("K..h.S.h.K.h.h", b, 0.45),
+    ]
+
+
+# ---- 7  The Hollow Undermembrane: near-silent, thin. E phrygian, 48 bpm, 4 bars -----------
+def _theme_hollow() -> Theme:
+    g = _Grid(48)
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    melody = _cat(
+        [(G4, w), (0, w)],
+        [(F4, w), (0, h), (E4, h)],
+        [(B4, h), (0, h), (A4, w)],
+        [(0, w), (G4, h), (0, h)],
+    )
+    bass = [(E2, g.bar), (E2, g.bar), (G2, g.bar), (E2, g.bar)]
+    breath = _wash(g.bar * 4, 1.0, a=g.bar * 1.5, r=g.bar * 1.5, lp=(300, 200))
+    return g, 4, 0.12, [
+        _seq(melody, "sine", 0.45, echo=(h * 1.5, 0.5, 0.45, 2),
+             attack=0.5, decay=1.5, sustain=0.3, release=1.0, gap=0.0, vibrato=(3.0, 12.0)),
+        _seq(bass, "sine", 0.80, attack=1.0, release=1.5, gap=0.0),
+        _raw(breath, 0.30),
+        _dr("k.k.............", b, 0.40),
+    ]
+
+
+# ---- 8  The Ascending Strata: rising fanfare w/ tension. C major, 108 bpm, 8 bars ---------
+def _theme_ascent() -> Theme:
+    g = _Grid(108)
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    melody = _cat(
+        [(G4, q), (C5, q), (E5, h), (D5, q), (C5, q), (E5, h)],
+        [(D5, q), (G5, q), (G5, h), (F5, q), (E5, q), (D5, h)],
+        [(E5, q), (A5, q), (C6, h), (B5, q), (A5, q), (C6, h)],
+        [(G5, h), (E5, q), (G5, q), (B5, h), (A5, h)],
+        [(A5, h), (F5, q), (A5, q), (C6, h), (A5, h)],
+        [(G5, q), (C6, q), (E6, h), (D6, q), (C6, q), (G5, h)],
+        [(F5, h), (A5, h), (D6, h), (C6, q), (A5, q)],
+        [(C6, w), (D6, h), (B5, h)],
+    )
+    chords = [(C4, E4, G4), (B3, D4, G4), (A3, C4, E4), (G3, B3, E4),
+              (A3, C4, F4), (C4, E4, G4), (A3, D4, F4), (G3, C4, D4)]
+    pad = [(c, g.bar) for c in chords]
+    rf = [(C3, G3), (G2, D3), (A2, E3), (E2, B2), (F2, C3), (C3, G3), (D3, A3), (G2, D3)]
+    bass = _cat(*[[(r, q), (r, q), (f, q), (r, q)] * 2 for r, f in rf])
+    snare = "....S.......S..." * 7 + "....S...S.S.SSSS"
+    return g, 8, 0.42, [
+        _seq(melody, "saw", 0.50, lp=(3000, 3000), attack=0.01, decay=0.15, sustain=0.6,
+             release=0.06, detune=6.0, vibrato=(5.5, 15.0)),
+        _seq(pad, "saw", 0.30, lp=(1200, 1200), attack=0.08, release=0.15, detune=8.0),
+        _seq(bass, "triangle", 0.80, attack=0.004, decay=0.12, sustain=0.5, release=0.03),
+        _dr("K...K...K...K...", b, 0.65),
+        _dr(snare, b, 0.55),
+        _dr("h.h.h.h.h.h.h.h.", b, 0.25),
+    ]
+
+
+# ---- 9  The First Divide: tense final climax. A minor (harmonic), 132 bpm, 8 bars ---------
+def _theme_divide() -> Theme:
+    g = _Grid(132)
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    roots = [A2, A2, F2, E2, A2, Bb2, F2, E2]
+    bass = _cat(*[[(r, b, 1.0 if i % 4 == 0 else 0.55) for i in range(16)] for r in roots])
+    mA = [(A4, q), (A4, b), (C5, b), (E5, q), (D5, q), (C5, q), (B4, q), (A4, q), (0, q)]
+    mF = [(F4, q), (F4, b), (A4, b), (C5, q), (Bb4, q), (A4, q), (G4, q), (F4, q), (0, q)]
+    mE = [(E4, q), (E4, b), (Gs4, b), (B4, q), (A4, q), (Gs4, q), (Fs4, q), (E4, q), (0, q)]
+    mHi = [(A5, q), (A5, b), (C6, b), (E6, q), (D6, q), (C6, q), (B5, q), (A5, q), (0, q)]
+    mTr = [(A4, q), (A4, b), (C5, b), (E5, q), (Eb5, q), (D5, q), (Bb4, q), (A4, q), (0, q)]
+    mEe = [(E4, q), (E4, b), (Gs4, b), (B4, q), (D5, q), (B4, q), (Gs4, q), (B4, q), (0, q)]
+    lead = _cat(mA, mA, mF, mE, mHi, mTr, mF, mEe)
+    pad = [((A3, C4, E4), g.bar), ((A3, C4, E4), g.bar), ((F3, A3, C4), g.bar), ((E3, Gs3, B3, D4), g.bar),
+           ((A3, C4, E4), g.bar), ((Bb3, D4, F4), g.bar), ((F3, A3, C4), g.bar), ((Gs3, B3, D4, F4), g.bar)]
+    riser = _noise_burst(g.bar * 2, 1.0, a=g.bar * 1.9, s=1.0, r=0.02, lp=(500, 6000), hp=200)
+    snare = "....S.......S..." * 3 + "....S...S.S.S.SS"
+    snare = snare * 2
+    return g, 8, 0.44, [
+        _seq(bass, "saw", 0.85, lp=(600, 600), attack=0.002, decay=0.06, sustain=0.5, release=0.015, gap=0.005),
+        _seq(lead, "square", 0.50, lp=(3000, 3000), echo=(q, 0.55, 0.50, 2),
+             attack=0.004, decay=0.10, sustain=0.5, release=0.04, detune=7.0),
+        _seq(pad, "saw", 0.28, lp=(1000, 1000), attack=0.1, release=0.2, gap=0.0, detune=10.0),
+        _raw(riser, 0.28, offset=g.bar * 6),
+        _dr("K.K.K.K.K.K.K.K.", b, 0.80),
+        _dr(snare, b, 0.65),
+        _dr("HhhhHhhhHhhhHhhh", b, 0.30),
+        _dr("." * 16 * 3 + "............TTTT" + "." * 16 * 3 + "............TTTT", b, 0.55),
+    ]
+
+
+# ---- Menu: bright looping motif (old tune kept, now 4 bars with fifth-dyad variation) ------
+def _theme_menu() -> Theme:
+    g = _Grid(60.0 / 0.72)     # beat = 0.72 s, same tempo as the old menu theme
+    b, q, h, w = g.B, g.Q, g.H, g.W
+    m1 = [
+        (E4, q), (G4, q), (A4, q), (G4, q), (E4, q), (D4, q), (C4, h),
+        (E4, q), (G4, q), (A4, q), (C5, q), (B4, q), (A4, q), (G4, h),
+    ]
+    m2 = [((f, f * 1.5), d) if f else (0, d) for f, d in m1]
+    bass1 = [(C3, h), (G3, h), (A3, h), (E3, h), (C3, h), (G3, h), (F3, h), (G3, h)]
+    pad1 = [((C4, E4, G4), w), ((A3, C4, E4), w), ((C4, E4, G4), w), ((A3, C4, F4), w)]
+    return g, 4, 0.34, [
+        _seq(_cat(m1, m2), "triangle", 0.55, echo=(q * 3, 0.4, 0.25, 2), attack=0.012, release=0.08),
+        _seq(_cat(bass1, bass1), "sine", 0.80, attack=0.01, release=0.1),
+        _seq(_cat(pad1, pad1), "sine", 0.35, attack=0.25, release=0.3, gap=0.0, detune=5.0),
+        _dr("K...h.h.S...h.h.", b, 0.40),
+    ]
+
+
+ACT_THEME_BUILDERS: List[Callable[[], Theme]] = [
+    _theme_rim, _theme_garden, _theme_vaults, _theme_forge, _theme_frost,
+    _theme_mirage, _theme_thicket, _theme_hollow, _theme_ascent, _theme_divide,
+]
 
 
 def _build_menu_theme() -> pygame.mixer.Sound:
     """Bright looping menu motif."""
-    melody = _sequence([
-        (E4, Q), (G4, Q), (A4, Q), (G4, Q),
-        (E4, Q), (D4, Q), (C4, H),
-        (E4, Q), (G4, Q), (A4, Q), (C5, Q),
-        (B4, Q), (A4, Q), (G4, H),
-    ], volume=0.20, wave="triangle")
-    bass = _sequence([
-        (C3, H), (G3, H), (A3, H), (E3, H),
-        (C3, H), (G3, H), (F3, H), (G3, H),
-    ], volume=0.14, wave="sine")
-    return _mix_tracks([melody, bass], volume=0.95)
+    _rng.seed("music:menu")
+    return _render_theme(_theme_menu())
 
 
 def _build_act_theme(act: int) -> pygame.mixer.Sound:
-    """Simple act-flavored looping phrase."""
-    # (melody notes, bass notes, melody wave, tempo scale)
-    themes = [
-        # 0 Rim — gentle green
-        (
-            [(G4, Q), (A4, Q), (B4, Q), (A4, Q), (G4, Q), (E4, Q), (D4, H),
-             (E4, Q), (G4, Q), (A4, H), (G4, H)],
-            [(C3, H), (E3, H), (G3, H), (E3, H), (C3, H), (G3, H)],
-            "triangle",
-        ),
-        # 1 Rot — murky minor
-        (
-            [(D4, Q), (F4, Q), (G4, Q), (F4, Q), (D4, H), (C4, H),
-             (D4, Q), (F4, Q), (A4, Q), (G4, Q), (F4, H)],
-            [(D3, H), (A3, H), (F3, H), (A3, H), (D3, W)],
-            "triangle",
-        ),
-        # 2 Echoes — crystalline
-        (
-            [(A4, Q), (0, Q), (C5, Q), (0, Q), (E5, Q), (0, Q), (C5, Q), (0, Q),
-             (A4, Q), (C5, Q), (E5, H), (D5, H)],
-            [(A3, H), (E3, H), (A3, H), (C4, H), (A3, W)],
-            "sine",
-        ),
-        # 3 Ash — punchy
-        (
-            [(E4, B), (E4, B), (G4, Q), (A4, Q), (G4, Q), (E4, Q), (D4, H),
-             (E4, B), (G4, B), (A4, Q), (B4, Q), (A4, H)],
-            [(E3, Q), (E3, Q), (G3, H), (A3, H), (E3, H), (B3, H)],
-            "square",
-        ),
-        # 4 Frost — sparse
-        (
-            [(C5, H), (0, Q), (A4, H), (0, Q), (G4, H), (0, Q),
-             (A4, Q), (C5, Q), (E5, H)],
-            [(C3, W), (A3, W), (G3, W)],
-            "sine",
-        ),
-        # 5 Thirst — swaying
-        (
-            [(F4, Q), (A4, Q), (C5, Q), (A4, Q), (G4, Q), (F4, Q), (D4, H),
-             (F4, Q), (A4, Q), (G4, H), (F4, H)],
-            [(F3, H), (C4, H), (D3, H), (A3, H), (F3, W)],
-            "triangle",
-        ),
-        # 6 Masks — odd intervals
-        (
-            [(E4, Q), (G4, Q), (A4, Q), (C5, Q), (B4, Q), (G4, Q), (A4, H),
-             (E4, Q), (A4, Q), (G4, H), (E4, H)],
-            [(E3, H), (A3, H), (G3, H), (B3, H), (E3, W)],
-            "triangle",
-        ),
-        # 7 Silence — low & thin
-        (
-            [(G3, H), (0, Q), (A3, H), (0, Q), (B3, H), (0, Q),
-             (A3, Q), (G3, Q), (E3, H)],
-            [(E3, W), (0, H), (G3, W), (0, H)],
-            "sine",
-        ),
-        # 8 Ascent — rising fanfare-ish
-        (
-            [(C4, Q), (E4, Q), (G4, Q), (A4, Q), (G4, Q), (E4, Q), (C5, H),
-             (B4, Q), (A4, Q), (G4, H), (C5, H)],
-            [(C3, H), (G3, H), (E3, H), (G3, H), (C3, W)],
-            "triangle",
-        ),
-        # 9 Divide — tense
-        (
-            [(A3, Q), (C4, Q), (E4, Q), (C4, Q), (A3, Q), (G3, Q), (A3, H),
-             (C4, Q), (E4, Q), (F4, Q), (E4, Q), (C4, H)],
-            [(110.0, H), (E3, H), (A3, H), (E3, H), (110.0, W)],
-            "square",
-        ),
-    ]
-    idx = max(0, min(act, len(themes) - 1))
-    mel_notes, bass_notes, wave = themes[idx]
-    melody = _sequence(mel_notes, volume=0.18, wave=wave)
-    bass = _sequence(bass_notes, volume=0.12, wave="sine")
-    # Match lengths by padding the shorter track with silence
-    if len(melody) < len(bass):
-        melody = melody + [0] * (len(bass) - len(melody))
-    elif len(bass) < len(melody):
-        bass = bass + [0] * (len(melody) - len(bass))
-    return _mix_tracks([melody, bass], volume=0.9)
+    """Act-flavored looping theme (act index is clamped to 0..9)."""
+    idx = max(0, min(act, len(ACT_THEME_BUILDERS) - 1))
+    _rng.seed("music:act_%d" % idx)
+    return _render_theme(ACT_THEME_BUILDERS[idx]())
 
+
+# ---------------------------------------------------------------------------
+# 7. AudioManager (public API unchanged)
+# ---------------------------------------------------------------------------
 
 class AudioManager:
     """Global procedural sound manager."""
@@ -271,30 +1300,30 @@ class AudioManager:
             self._ready = False
 
     def _build_library(self) -> None:
-        self._sfx = {
-            "ui_select": _tone(660, 0.05, 0.25, "sine", 0.005, 0.03),
-            "ui_confirm": _chord([523, 784], 0.12, 0.22),
-            "shoot": _tone(880, 0.04, 0.18, "square", 0.002, 0.03),
-            "dash": _tone(180, 0.12, 0.3, "saw", 0.005, 0.08),
-            "hit": _tone(220, 0.06, 0.28, "square", 0.002, 0.04),
-            "hurt": _tone(140, 0.15, 0.35, "saw", 0.005, 0.1),
-            "kill": _chord([392, 523, 659], 0.14, 0.25),
-            "explode": _tone(90, 0.22, 0.4, "noise", 0.001, 0.15),
-            "levelup": _chord([523, 659, 784, 1046], 0.35, 0.28),
-            "pickup": _tone(740, 0.08, 0.22, "sine", 0.005, 0.05),
-            "boss_hit": _tone(160, 0.08, 0.32, "square", 0.002, 0.06),
-            "boss_phase": _chord([110, 165, 220], 0.45, 0.35),
-            "boss_spawn": _chord([98, 147, 196], 0.5, 0.3),
-            "victory": _chord([523, 659, 784, 1046], 0.7, 0.3),
-            "defeat": _chord([196, 185, 147], 0.6, 0.28),
-            "story": _tone(330, 0.1, 0.18, "sine", 0.02, 0.06),
-            "absorb": _tone(300, 0.1, 0.25, "sine", 0.01, 0.06),
-        }
+        """SFX and the menu theme are built at startup; act themes are built lazily."""
+        self._sfx = _build_sfx()
         self._tracks["menu"] = _build_menu_theme()
-        for i in range(10):
-            self._tracks[f"act_{i}"] = _build_act_theme(i)
         for sound in self._tracks.values():
             sound.set_volume(self.music_volume)
+
+    def _get_track(self, key: str) -> Optional[pygame.mixer.Sound]:
+        """Return a music Sound, building (and caching) act themes on first use."""
+        track = self._tracks.get(key)
+        if track is None and key.startswith("act_"):
+            try:
+                idx = int(key[4:])
+            except ValueError:
+                return None
+            if 0 <= idx < len(ACT_THEME_BUILDERS):
+                track = _build_act_theme(idx)
+                track.set_volume(self.music_volume)
+                self._tracks[key] = track
+        return track
+
+    def prewarm(self, act_index: int) -> None:
+        """Optionally build an act theme ahead of time (e.g. during a story page)."""
+        if self._ready:
+            self._get_track(f"act_{max(0, min(act_index, 9))}")
 
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
@@ -319,7 +1348,7 @@ class AudioManager:
     def _play_track(self, key: str) -> None:
         if not self.enabled or not self._ready or not self._music_channel:
             return
-        track = self._tracks.get(key)
+        track = self._get_track(key)
         if not track:
             return
         if self._current_track == key and self._music_channel.get_busy():
