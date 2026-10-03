@@ -22,6 +22,16 @@ from blob_evolution.ui.menus import MenuRenderer
 from blob_evolution.utils.enums import GameState, NodeType
 
 
+@pytest.fixture(autouse=True)
+def _reset_shared_audio():
+    """get_audio() is a process-wide singleton: put back what these tests change on it."""
+    yield
+    a = audio.get_audio()
+    a.set_enabled(True)
+    a.set_narration_volume(audio.NARRATION_VOLUME_DEFAULT)
+    a.stop_narration()
+
+
 def _write_wav(path: Path, seconds: float = 2.0, rate: int = 22050) -> None:
     """A loud-enough square-ish wave; `seconds` long so a clip is still busy while a test looks at it."""
     frames = (b"\x00\x20\x00\x20\x00\xe0\x00\xe0") * int(seconds * rate / 4)
@@ -722,3 +732,9 @@ def test_narration_save_key_is_the_only_new_top_level_key(make_game, isolated_sa
     g.audio.set_narration_volume(0.2)
     g._save_game()
     assert set(_saved(isolated_save)) == {"ng_plus", "permanent", "economy", "audio_enabled", "narration_volume"}
+
+
+def test_loading_a_save_without_the_field_resets_to_the_default(make_game, isolated_save, fixture_bytes) -> None:
+    audio.get_audio().set_narration_volume(0.2)
+    isolated_save.write_bytes(fixture_bytes)
+    assert make_game().audio.narration_volume == audio.NARRATION_VOLUME_DEFAULT

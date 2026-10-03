@@ -146,7 +146,7 @@ class Game:
             if self.audio.enabled:
                 self.audio.play_menu_music()
         self._narration_in_save = "narration_volume" in data  # a saved value is written back even at the default
-        self.audio.set_narration_volume(top.number("narration_volume", self.audio.narration_volume))
+        self.audio.set_narration_volume(top.number("narration_volume", NARRATION_VOLUME_DEFAULT))
         if not (readable and ng_ok and perm_ok and eco.valid and top.valid):
             if readable:
                 savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
