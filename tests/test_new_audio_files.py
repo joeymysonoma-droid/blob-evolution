@@ -30,7 +30,7 @@ NEW_SFX: Dict[str, Tuple[str, float, float]] = {
     "boss_spawn": ("d8f2ba9d05e86c43cced82ab684067932515c99524201ccf3f8e2768b8fcd4eb", 3.0, -4.0),
     "boss_warning": ("b35e119c12fccabfb578b39373dc4fccd014956c3f7598bcdca2f1268265d965", 1.5, -1.0),
     "defeat": ("dbc754ad68016eef5ccd05dfb871742dc98aa6df334c23f36f30ec38ed38bb3d", 4.0, -9.0),
-    "heal": ("d2a707fe7412ab0ae060ff551c4454867b4a6b1799c99d3baec758454cfa6366", 0.6, -33.0),
+    "heal": ("b77ef8036ec0c7c58fe06fd7c44d3c8debc992d53f8e9b7df248465230de0a47", 0.6, -18.5),   # +15 dB (TASK-035 r2)
     "levelup": ("68a43c53eecca0d00f34261fd8edff3d7e7377dcb001a9fc4448a64c377bc2d3", 1.2, -5.0),
     "merge": ("8e6f0e76838e7d45c55875541e125649e2e0aebe308687a826430583b56847b4", 3.0, -7.0),
     "shield_block": ("7de95c5c3979c21779208170242421d24eabb6565676603e7a90b19010420200", 0.3, -11.0),
@@ -109,7 +109,7 @@ def test_new_wav_matches_its_pinned_hash_format_length_peak_and_edges(name, chea
     a = _samples(snd)
     peak_db = 20 * math.log10(max(abs(v) for v in a) / 32768.0)
     assert peak_db <= cap_db + 0.5, peak_db
-    assert peak_db <= -1.0 or name == "heal", "never above -1 dBFS"
+    assert peak_db <= -1.0, "never above -1 dBFS"
     assert max(abs(a[0]), abs(a[-1])) <= 0.01 * 32768, "no edge click"
 
 
