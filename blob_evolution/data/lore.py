@@ -164,6 +164,9 @@ ACT_LORE: List[dict] = [
             "Once a Seedling who refused to leave the Rim. The Lattice made them a gatekeeper "
             "so that no pilgrim would rush growth again. They still plant soft forms in secret."
         ),
+        "card_line": (
+            "Once a Seedling who refused to leave the Rim. The Lattice made them a gatekeeper so that no pilgrim would rush growth again."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: soft green light, a cradle that never wanted you to leave. "
             "You ate anyway. The Rim forgives slowly."
@@ -180,6 +183,9 @@ ACT_LORE: List[dict] = [
             "They watched a whole lineage dissolve into toxin and called it kindness. "
             "Their memory tastes of green water and unfinished names."
         ),
+        "card_line": (
+            "They watched a whole lineage dissolve into toxin and called it kindness. Their memory tastes of green water and unfinished names."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: names dissolving in green water. Mercy that tastes like surrender. "
             "You wake still hungry."
@@ -196,6 +202,9 @@ ACT_LORE: List[dict] = [
             "A librarian of extinct shapes. They catalogued every pilgrim who died here — "
             "including versions of you that never reached the Core."
         ),
+        "card_line": (
+            "A librarian of extinct shapes. They catalogued every pilgrim who died here — including versions of you that never reached the Core."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: shelves of you that never finished. Crystal eyes watching. "
             "You promise not to become another file."
@@ -212,6 +221,9 @@ ACT_LORE: List[dict] = [
             "Forged themselves into a trial. They believe only what survives heat deserves "
             "a future. Their ash still remembers your heat signature."
         ),
+        "card_line": (
+            "Forged themselves into a trial. They believe only what survives heat deserves a future."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: your outline glowing, then cooling into something sharper. "
             "Ash applauds survival."
@@ -228,6 +240,9 @@ ACT_LORE: List[dict] = [
             "Closest ally of the Stillness. They were the first pilgrim to accept freezing "
             "as paradise. Their fragment is cold enough to slow other memories."
         ),
+        "card_line": (
+            "Closest ally of the Stillness. They were the first pilgrim to accept freezing as paradise."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: ice asking you to stay forever. Your pulse answers no, "
             "and the Expanse cracks a little."
@@ -244,6 +259,9 @@ ACT_LORE: List[dict] = [
             "Built the mirages so no one else would starve like they did. "
             "Peace was their weapon. Hunger was yours."
         ),
+        "card_line": (
+            "Built the mirages so no one else would starve like they did. Peace was their weapon."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: sweet water that never fills. Comfort without becoming. "
             "You spit it out and keep walking."
@@ -260,6 +278,9 @@ ACT_LORE: List[dict] = [
             "Wore every face they absorbed until none remained theirs. "
             "They envy your unfinished self — and fear it."
         ),
+        "card_line": (
+            "Wore every face they absorbed until none remained theirs. They envy your unfinished self — and fear it."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: a hundred faces that almost fit. You keep the unfinished one — "
             "the Seedling still becoming."
@@ -276,6 +297,9 @@ ACT_LORE: List[dict] = [
             "Speaks only in what is missing. Their gift is erasure. "
             "Their warning: not every shape deserves to return."
         ),
+        "card_line": (
+            "Speaks only in what is missing. Their gift is erasure."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: silence offering to keep you safe by deleting you. "
             "You clutch your scrap of name and crawl upward."
@@ -293,6 +317,9 @@ ACT_LORE: List[dict] = [
             "Three verdicts in one membrane: climb, remember, freeze. "
             "They argued for ages. Your arrival was the only motion they could not vote down."
         ),
+        "card_line": (
+            "Three verdicts in one membrane: climb, remember, freeze. They argued for ages. Your arrival was the only motion they could not vote down."
+        ),  # exact opening of the fragment above (Warden Encounter card)
         "journal": (
             "Dream: three voices voting on your right to exist. "
             "The tie-breaker is your next step."
@@ -309,6 +336,10 @@ ACT_LORE: List[dict] = [
             "The first blob that refused the Divide. Everything else is their unfinished "
             "children. Defeating them does not kill them — it asks the question again."
         ),
+        "card_line": (
+            "The first blob that refused the Divide. Everything else is their unfinished children. Defeating them does not kill them — it asks the question again."
+        ),  # exact opening of the fragment above (Warden Encounter card)
+        "warden_title": "Warden of the Divide",  # card title; the eyebrow shows the name "Prime Anchor"
         "journal": (
             "Dream: one body holding every possible future still. "
             "You are the question that body cannot answer alone."
@@ -622,9 +653,9 @@ def build_boss_intro_pages(act_index: int, ng_plus_level: int = 0, miniboss: boo
     quote = get_warden_quote(act_index, ng_plus_level)
     return [
         {
-            "eyebrow": "Warden Encounter",
-            "title": lore["warden"],
-            "body": f'"{quote}"\n\n{lore["intro"]}',
+            "eyebrow": lore["warden"] if "warden_title" in lore else "Warden Encounter",
+            "title": lore.get("warden_title", lore["warden"]),
+            "body": f'"{quote}"\n\n{lore["card_line"]}',
             "accent": accent,
         },
     ]
