@@ -208,6 +208,7 @@ class Game:
             ))
         self.story = StorySequence(pages=pages, resume_state=resume_state)
         self.state = GameState.STORY
+        self.audio.duck_music(0.5)  # music sits back while a story card is up
 
     def _advance_story(self) -> None:
         """Advance or finish the current story sequence."""
@@ -219,6 +220,7 @@ class Game:
             resume = self.story.resume_state or GameState.OVERWORLD
             self.story = None
             self.state = resume
+            self.audio.duck_music(1.0)
             if self._boss_spawn_scale:
                 self.audio.play("boss_spawn", self._boss_spawn_scale)
                 self._boss_spawn_scale = 0.0
@@ -245,6 +247,7 @@ class Game:
         self.economy.reset_run_bonuses()
         self.overworld = OverworldMap(act_index=0)
         self.overworld_selected = 0
+        self.audio.play_act_music(0)  # the first act's music starts under the opening cards
         opening = build_pilgrimage_pages() + build_act_descent_pages(0)
         self._start_story(opening, GameState.OVERWORLD)
 
@@ -894,6 +897,7 @@ class Game:
             next_act = self.overworld.act_index + 1
             self.overworld = OverworldMap(act_index=next_act)
             self.overworld_selected = 0
+            self.audio.play_act_music(next_act)  # crossfade into the new layer's music on the descent
             if next_act not in self._seen_acts:
                 self._seen_acts.add(next_act)
                 self._start_story(build_act_descent_pages(next_act), GameState.OVERWORLD)
@@ -1038,6 +1042,7 @@ class Game:
     def _update(self, dt: float) -> None:
         """Update game logic."""
         self.hud.update(dt)
+        self.audio.tick(dt)
         self._update_shake(dt)
 
         if self.state == GameState.STORY and self.story:
