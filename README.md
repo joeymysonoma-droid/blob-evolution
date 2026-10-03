@@ -70,7 +70,8 @@ The game runs until it is closed or killed, so a headless run needs a time limit
 
 ## Audio
 
-- **SFX are generated at runtime** (pure Python, no audio files). **Music is recorded**: the 11 mp3 files in `blob_evolution/assets/music/` (about 13 MB) are the one exception to "no audio files". They are loaded from the folder next to the package, so the working directory does not matter.
-- If a music file is missing or will not load, that track falls back to the generated theme, so the game always has music. If no audio device is available the game runs silent.
+- **Most SFX are generated at runtime** (pure Python). Eleven are recorded: the WAV files in `blob_evolution/assets/sfx/` (about 128 KB; shoot, hit, kill, explode, pickup, absorb, boss hit, dash, story and two UI sounds) replace the generated sound of the same name. **Music is recorded**: the 11 mp3 files in `blob_evolution/assets/music/` (about 13 MB). Together they are the exception to "no audio files". They are loaded from the folder next to the package, so the working directory does not matter.
+- If a music or SFX file is missing or will not load, the generated theme or sound is used instead, so the game always has sound. Rapid repeats of hit, pickup, kill, absorb, boss hit, hurt and the options-menu select sound are rate-limited so they cannot use up all the mixer channels. If no audio device is available the game runs silent.
 - **Volume:** there is no volume slider. Open Options from the main menu, select **Sound** and press Left/Right (or A/D) to switch all sound, music and SFX, ON or OFF. The choice is saved.
 - **Credits and licence:** the tracks' source (see `SOURCES.txt` in the hand-off) lists only file hashes, so author and licence are still to be confirmed by the Director before any public release. Add attribution here once it is known.
+- **SFX credits and licence:** the 11 sound-effect files were generated with wondercraft.ai (processed into WAV for the game). Their licence is still to be confirmed by the Director (it depends on the plan they were generated under) before any public release; add attribution here if it is required.
