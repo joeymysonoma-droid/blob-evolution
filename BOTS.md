@@ -12,13 +12,13 @@ If this file and your memory disagree, this file wins.
 - **Headless checks:** set `SDL_VIDEODRIVER=dummy` and `SDL_AUDIODRIVER=dummy`.
 - **Workspace path:** `/workspace/IAMBLOB`
 
-## Everything is procedural
+## Procedural graphics, synthesized audio
 
-There are no image or audio asset files, and the game has no loader for them.
+Graphics are procedural. Audio is synthesized in `audio.py`, plus Director-approved audio files in `assets/music/`, `assets/sfx/` and `assets/narration/`. No other asset files and no new dependencies without the Director.
 
 - **Graphics:** drawn with `pygame.draw` in `blob_evolution/utils/graphics.py`.
 - **Palettes:** `blob_evolution/ui/style.py` (UI) and `blob_evolution/config.py` (`MAP_THEMES`, entity colors).
-- **Audio:** synthesized in `blob_evolution/systems/audio.py` — sine/square/triangle/saw/noise, 22050 Hz mono.
+- **Audio:** synthesized in `blob_evolution/systems/audio.py` — sine/square/triangle/saw/noise — plus the approved music, SFX and narration files, which fall back to the generated sound when a file is missing or fails to load. Mixer is 22050 Hz mono: 18 SFX + 2 music + 1 narration channels (21 total).
   SFX use `_tone()` / `_chord()`; music uses `_sequence()` with note constants `C3`–`A5` and beat helpers `B`, `Q`, `H`, `W`.
 
 ## Layout
