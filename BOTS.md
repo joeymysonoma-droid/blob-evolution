@@ -47,7 +47,7 @@ Graphics are procedural. Audio is synthesized in `audio.py`, plus Director-appro
 | Lead Dev | All code changes. |
 | QA | Testing, bug reports, pytest tests, balance numbers. Never fixes bugs. |
 | Visual Designer | Palettes, shapes, UI layout, particles — delivered as RGB values and draw specs. |
-| Audio Designer | SFX and music — delivered as `_tone` / `_chord` / `_sequence` code. |
+| Audio Designer | SFX and music — `_tone` / `_chord` / `_sequence` code (the fallback) and Director-approved files in `assets/music`, `assets/sfx`, `assets/narration`. |
 | Narrative | Names, lore text, tone, and consistency. |
 
 The human is the **Director** and has final say.
