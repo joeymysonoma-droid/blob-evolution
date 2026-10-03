@@ -1,6 +1,7 @@
 """Procedural audio: layered SFX and looping act themes, synthesized with pygame.mixer.
 
-Sound effects are generated at runtime in pure Python (no numpy). Music plays from the mp3 files in
+Sound effects are generated at runtime in pure Python (no numpy); eleven of them are replaced by the recorded
+WAVs in blob_evolution/assets/sfx when those load (TASK-027), the generated sound stays as the fallback. Music plays from the mp3 files in
 blob_evolution/assets/music (TASK-026); the generated themes are the fallback when a file will not load.
 Rendering works on float buffers (lists of floats, nominal range -1..1) and only
 the last step (`_finish` / `_to_sound`) converts to 16-bit mono Sounds.
@@ -22,6 +23,7 @@ from __future__ import annotations
 import array
 import math
 import random
+import time
 from pathlib import Path
 from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
 
@@ -1289,6 +1291,45 @@ MENU_FADE_MS = 1500      # crossfade back to the menu theme (after game over / v
 DUCK_RAMP_S = 0.3        # how fast ducking changes the music level
 
 
+# --- Recorded sound effects (TASK-027) ---------------------------------------------------------------
+# Eleven pre-processed 22050 Hz mono 16-bit WAVs (gain, tail trim and edge fades baked in offline) replace
+# the generated sound of the same name. A file that is missing or will not load leaves the generated sound.
+SFX_DIR = Path(__file__).resolve().parent.parent / "assets" / "sfx"
+SFX_FILES: Tuple[str, ...] = (
+    "ui_select", "ui_confirm", "shoot", "dash", "hit", "kill", "explode", "pickup", "absorb", "boss_hit", "story",
+)                        # sfx name -> SFX_DIR / f"{name}.wav"
+SFX_MIN_S, SFX_MAX_S = 0.04, 1.5   # a file outside this length is treated as broken
+# Retrigger gate per sound name: (minimum ms between two starts, maximum simultaneous instances). Names that
+# are not listed (shoot, explode, dash, ...) are never gated. Applies whether the sound is a file or generated.
+SFX_GATES: Dict[str, Tuple[int, int]] = {
+    "hit": (50, 4), "pickup": (40, 4), "kill": (70, 3), "absorb": (80, 3),
+    "boss_hit": (80, 3), "hurt": (100, 3), "ui_select": (30, 2),
+}
+
+
+def _load_sfx_files(names: Sequence[str], sfx_dir: Path, failed: Optional[List[str]] = None
+                    ) -> Dict[str, pygame.mixer.Sound]:
+    """Load SFX_DIR/<name>.wav for each name. Names whose file is missing, unreadable, empty/silent or an odd
+    length are left out (and added to `failed`); nothing is raised or printed and nothing is retried."""
+    out: Dict[str, pygame.mixer.Sound] = {}
+    for name in names:
+        try:
+            path = Path(sfx_dir) / f"{name}.wav"
+            if not path.is_file():
+                raise FileNotFoundError(str(path))
+            snd = pygame.mixer.Sound(str(path))
+            if not (SFX_MIN_S <= snd.get_length() <= SFX_MAX_S):
+                raise ValueError("length out of range")
+            if not any(snd.get_raw()):
+                raise ValueError("silent")
+        except (pygame.error, OSError, ValueError, MemoryError):
+            if failed is not None:
+                failed.append(name)
+            continue
+        out[name] = snd
+    return out
+
+
 class FileTrack(NamedTuple):
     """One recorded track: file name, linear gain (<= 1.0) and the loop window in seconds of the decoded file."""
 
@@ -1355,6 +1396,10 @@ class AudioManager:
         self.music_volume = 0.32
         self._ready = False
         self._sfx: Dict[str, pygame.mixer.Sound] = {}
+        self._sfx_source: Dict[str, str] = {}          # sfx name -> "file" or "generated"
+        self._sfx_failed: List[str] = []               # file-backed names whose file did not load (never retried)
+        self._sfx_last: Dict[str, float] = {}          # retrigger gate: when each gated name last started
+        self._clock: Callable[[], float] = time.monotonic
         self._tracks: Dict[str, pygame.mixer.Sound] = {}      # generated themes (menu eager, acts lazy)
         self._files: Dict[str, pygame.mixer.Sound] = {}       # decoded file loops (current + previous only)
         self._file_failed: set = set()                        # keys whose file would not load: no retries
@@ -1391,6 +1436,10 @@ class AudioManager:
     def _build_library(self) -> None:
         """SFX and the menu theme are built at startup; act themes are built lazily."""
         self._sfx = _build_sfx()
+        self._sfx_source = {name: "generated" for name in self._sfx}
+        files = _load_sfx_files([n for n in SFX_FILES if n in self._sfx], SFX_DIR, self._sfx_failed)
+        self._sfx.update(files)
+        self._sfx_source.update({name: "file" for name in files})
         self._tracks["menu"] = _build_menu_theme()
         for sound in self._tracks.values():
             sound.set_volume(self.music_volume)
@@ -1450,10 +1499,28 @@ class AudioManager:
         if not self.enabled or not self._ready:
             return
         sound = self._sfx.get(name)
-        if not sound:
+        if not sound or not self._gate_allows(name, sound):
             return
         sound.set_volume(max(0.0, min(1.0, self.sfx_volume * volume_scale)))
         sound.play()
+
+    def sfx_source(self, name: str) -> Optional[str]:
+        """"file" if the recorded WAV is in use for this sound, "generated" if not, None for an unknown name."""
+        return self._sfx_source.get(name)
+
+    def _gate_allows(self, name: str, sound: pygame.mixer.Sound) -> bool:
+        """Retrigger gate (SFX_GATES): skip a start that is too soon after the last or has too many copies playing."""
+        limit = SFX_GATES.get(name)
+        if limit is None:
+            return True
+        min_gap_ms, max_instances = limit
+        now = self._clock()
+        if min_gap_ms and (now - self._sfx_last.get(name, -1e9)) * 1000.0 < min_gap_ms:
+            return False
+        if max_instances and sound.get_num_channels() >= max_instances:
+            return False
+        self._sfx_last[name] = now
+        return True
 
     def _level(self) -> float:
         """Volume of the current music channel (recorded music carries its gain on the Sound)."""
