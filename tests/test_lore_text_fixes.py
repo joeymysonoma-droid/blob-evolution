@@ -12,6 +12,7 @@ import pygame
 import pytest
 
 from blob_evolution.config import MAP_THEMES
+from blob_evolution.data import lore
 from blob_evolution.data.lore import (
     ACT_LORE,
     OPENING_BLURB,
@@ -150,3 +151,75 @@ def test_help_screen_broker_line(monkeypatch) -> None:
     assert lines == [("Reopen evolution, merge, or (once unlocked) become the Broker.", lines[0][1])]
     assert 80 + 200 + lines[0][1] <= 80 + (1200 - 160), "help line overflows the panel"
     assert "(later)" not in "".join(t for t, _ in seen)
+
+
+# --- Director decisions: the Warden card (layer_scripts.md items 5 and 6; TASK-029-narrative-decisions.md) -----
+
+CARD_LINES = [
+    "Once a Seedling who refused to leave the Rim. The Lattice made them a gatekeeper so that no pilgrim would rush growth again.",
+    "They watched a whole lineage dissolve into toxin and called it kindness. Their memory tastes of green water and unfinished names.",
+    "A librarian of extinct shapes. They catalogued every pilgrim who died here — including versions of you that never reached the Core.",
+    "Forged themselves into a trial. They believe only what survives heat deserves a future.",
+    "Closest ally of the Stillness. They were the first pilgrim to accept freezing as paradise.",
+    "Built the mirages so no one else would starve like they did. Peace was their weapon.",
+    "Wore every face they absorbed until none remained theirs. They envy your unfinished self — and fear it.",
+    "Speaks only in what is missing. Their gift is erasure.",
+    "Three verdicts in one membrane: climb, remember, freeze. They argued for ages. Your arrival was the only motion they could not vote down.",
+    "The first blob that refused the Divide. Everything else is their unfinished children. Defeating them does not kill them — it asks the question again.",
+]
+
+
+@pytest.mark.parametrize("act", ACTS)
+def test_card_line_text_is_the_decided_text_and_a_prefix_of_the_fragment(act: int) -> None:
+    """Each card_line is the exact string from the decisions file and the opening of the Archive fragment."""
+    lore_act = get_act_lore(act)
+    assert lore_act["card_line"] == CARD_LINES[act]
+    assert lore_act["fragment"].startswith(lore_act["card_line"])
+
+
+@pytest.mark.parametrize("act", [8, 9])
+def test_finale_layers_show_the_whole_fragment(act: int) -> None:
+    """Layers 9 and 10 give the card the full fragment (the decisions file: the finale shows all of it)."""
+    assert get_act_lore(act)["card_line"] == get_act_lore(act)["fragment"]
+
+
+@pytest.mark.parametrize("ng_level", [0, 2, 5, 10])
+@pytest.mark.parametrize("act", ACTS)
+def test_warden_card_body_is_quote_then_card_line_without_the_intro(act: int, ng_level: int) -> None:
+    (page,) = build_boss_intro_pages(act, ng_level)
+    lore_act = get_act_lore(act)
+    quote = lore.get_warden_quote(act, ng_level)
+    assert page["body"] == f'"{quote}"\n\n{lore_act["card_line"]}'
+    assert lore_act["intro"] not in page["body"]
+
+
+@pytest.mark.parametrize("act", range(9))
+def test_layers_one_to_nine_keep_the_warden_encounter_eyebrow_and_name_title(act: int) -> None:
+    (page,) = build_boss_intro_pages(act)
+    assert page["eyebrow"] == "Warden Encounter"
+    assert page["title"] == get_act_lore(act)["warden"] and "warden_title" not in get_act_lore(act)
+
+
+def test_layer_ten_card_title_and_eyebrow() -> None:
+    """The Prime Anchor card: eyebrow 'Prime Anchor', title 'Warden of the Divide' (keeps 'Warden' for the crown blob)."""
+    (page,) = build_boss_intro_pages(9)
+    assert page["eyebrow"] == "Prime Anchor" and page["title"] == "Warden of the Divide"
+    assert "Warden" in page["title"]
+
+
+def test_prime_anchor_name_is_unchanged_everywhere_else() -> None:
+    """HUD/boss name, descent card line and Archive tab keep 'Prime Anchor'; only the encounter card title changed."""
+    assert get_act_lore(9)["warden"] == "Prime Anchor"
+    assert lore.get_boss_name(9) == "Prime Anchor"
+    assert build_act_descent_pages(9)[0]["body"].endswith("Its Warden is the Prime Anchor.")
+
+
+def test_warden_card_layout_fits_the_longest_cards() -> None:
+    """Layer 9 at NG+ 5 and Layer 10 at NG+ 10 (the two longest) wrap to <= 2 quote lines + 3 card lines at 660 px."""
+    pygame.font.init()
+    font = pygame.font.SysFont("segoeui", 18)
+    for act, level in ((8, 5), (9, 10)):
+        (page,) = build_boss_intro_pages(act, level)
+        quote, card = page["body"].split("\n\n")
+        assert len(lore.wrap_text(quote, font, 660)) <= 2
+        assert len(lore.wrap_text(card, font, 660)) <= 3
