@@ -292,7 +292,7 @@ def test_sfx_never_land_on_the_music_channels_and_may_use_all_eighteen(manager, 
             manager.play(n)
         clock.t += 1.0
     assert not any(pygame.mixer.Channel(i).get_busy() for i in range(audio.MUSIC_CHANNELS))
-    assert pygame.mixer.get_num_channels() == audio.SFX_CHANNELS + audio.MUSIC_CHANNELS == 20
+    assert pygame.mixer.get_num_channels() == audio.TOTAL_CHANNELS == 21  # TASK-028: +1 reserved narration channel
 
 
 # --- the retrigger gate -------------------------------------------------------------------------------------

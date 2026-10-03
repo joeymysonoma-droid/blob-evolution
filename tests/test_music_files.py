@@ -119,7 +119,7 @@ def test_music_dir_is_relative_to_the_module_not_the_cwd(tmp_path, monkeypatch) 
 
 def test_channels_are_reserved_for_music_and_sfx_get_eighteen(manager) -> None:
     assert audio.MUSIC_CHANNELS == 2 and audio.SFX_CHANNELS == 18
-    assert pygame.mixer.get_num_channels() == 20
+    assert pygame.mixer.get_num_channels() == audio.TOTAL_CHANNELS == 21  # TASK-028: +1 reserved narration channel
     assert len(manager._chan) == 2
 
 
@@ -214,7 +214,7 @@ def test_a_mixer_opened_by_pygame_init_is_reopened_at_22050_mono(monkeypatch) ->
     assert mgr._ready and tuple(pygame.mixer.get_init()[:3]) == (22050, -16, 1)
     one_second = pygame.mixer.Sound(buffer=bytes(2 * 22050))
     assert one_second.get_length() == pytest.approx(1.0, abs=0.01), "a 22050-sample buffer lasts 1 s, not 0.25 s"
-    assert pygame.mixer.get_num_channels() == audio.SFX_CHANNELS + audio.MUSIC_CHANNELS
+    assert pygame.mixer.get_num_channels() == audio.TOTAL_CHANNELS  # TASK-028: SFX + music + narration
 
 
 def test_a_mixer_already_in_the_right_format_is_left_alone(monkeypatch) -> None:
