@@ -276,16 +276,25 @@ def test_negative_bonus_cannot_reduce_stats(make_game, isolated_save, fixture_da
 
 # --- BUG-048: partial vs recovered ----------------------------------------------------------------------
 
-def test_partial_notice_has_the_recovered_structure_and_is_marked_placeholder() -> None:
-    """partial is in both tables with the same keys as recovered; its copy is clearly placeholder text."""
+def test_partial_notice_has_the_recovered_structure_and_narratives_exact_copy() -> None:
+    """partial is in both tables with the same keys as recovered, and its copy is Narrative's, character for character."""
     from blob_evolution.ui import style
 
     assert set(lore.SAVE_NOTICES) == {"recovered", "partial", "saving_paused"}
-    assert set(lore.SAVE_NOTICES["partial"]) == set(lore.SAVE_NOTICES["recovered"]) == {"title", "body", "button"}
+    partial = lore.SAVE_NOTICES["partial"]
+    assert set(partial) == set(lore.SAVE_NOTICES["recovered"]) == {"title", "body", "button"}
     assert style.NOTICE_VARIANTS["partial"].keys() == style.NOTICE_VARIANTS["recovered"].keys()
-    assert all("PLACEHOLDER" in v for v in lore.SAVE_NOTICES["partial"].values())
-    assert lore.SAVE_NOTICES["partial"]["body"] != lore.SAVE_NOTICES["recovered"]["body"]
-    assert "TODO(Narrative)" in open(lore.__file__, encoding="utf-8").read()
+    assert partial == {
+        "title": "The Lattice Half-Remembers",
+        "body": "Part of your save was damaged.\nThat part began again. The rest was kept.\nYour original rests in a .bak file.",
+        "button": "Carry On",
+    }
+    assert [len(line) for line in partial["body"].split("\n")] == [30, 41, 35]
+    assert (len(partial["title"]), len(partial["button"])) == (26, 8)
+    assert partial["body"].isascii() and "\r" not in partial["body"]
+    source = open(lore.__file__, encoding="utf-8").read()
+    assert "PLACEHOLDER" not in source and "TODO(Narrative)" not in source
+    assert partial["body"] != lore.SAVE_NOTICES["recovered"]["body"]
 
 
 def _set(path: Tuple[str, ...], value: Any):
