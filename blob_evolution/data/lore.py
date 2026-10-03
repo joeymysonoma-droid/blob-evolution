@@ -8,7 +8,7 @@ TAGLINE = "Eat. Adapt. Remember."
 
 OPENING_BLURB = (
     "The Lattice is dying of sameness. You are a Seedling — unnamed, hungry, possible. "
-    "Ten layers stand between you and the Core where evolution began."
+    "Ten layers lead to the Core where evolution began."
 )
 
 PILGRIMAGE_OPENING = [
@@ -16,9 +16,9 @@ PILGRIMAGE_OPENING = [
         "eyebrow": "Pilgrimage Begins",
         "title": "You Wake Hungry",
         "body": (
-            "Membrane cools around a new Seedling. No name. No caste. Only appetite.\n"
-            "Above you, the Lattice stretches in ten layers toward a wound called the First Divide.\n"
-            "Wardens keep the peace of Stillness. You are the opposite of peace."
+            "Your membrane cools around a new Seedling. No name. No caste. Only appetite.\n"
+            "Above you, the Lattice stretches in ten layers. The last is a wound called the First Divide.\n"
+            "Wardens keep the peace of the Stillness. You are the opposite of peace."
         ),
     },
     {
@@ -232,9 +232,9 @@ ACT_LORE: List[dict] = [
     {
         "id": "warden_4",
         "lore_name": "The Still Expanse",
-        "intro": "Stillness touched this layer first. Motion itself feels like rebellion.",
+        "intro": "The Stillness touched this layer first. Motion itself feels like rebellion.",
         "warden": "Warden of Frost",
-        "warden_quote": "Stop moving. Stillness is the only shape that lasts.",
+        "warden_quote": "Stop moving. The Stillness is the only shape that lasts.",
         "fragment": (
             "Closest ally of the Stillness. They were the first pilgrim to accept freezing "
             "as paradise. Their fragment is cold enough to slow other memories."
@@ -296,7 +296,7 @@ ACT_LORE: List[dict] = [
     {
         "id": "warden_8",
         "lore_name": "The Ascending Strata",
-        "intro": "The wardens convene. Each layer you crossed was a verdict they could not agree on.",
+        "intro": "The Wardens convene. Each layer you crossed was a verdict they could not agree on.",
         "warden": "Warden of Ascent",
         "warden_quote": "You climbed through our judgments. We still cannot let you pass.",
         "triad_names": ["Warden of Ascent", "Warden of Echoes", "Warden of Stillness"],
@@ -605,7 +605,7 @@ def build_act_descent_pages(act_index: int) -> List[dict]:
         {
             "eyebrow": f"Layer {act_index + 1} of 10",
             "title": lore["lore_name"],
-            "body": f"{lore['intro']}\n\nThe Warden of this layer: {lore['warden']}.",
+            "body": f"{lore['intro']}\n\nIts Warden is the {lore['warden']}.",
             "accent": lore.get("accent", (52, 200, 120)),
         },
     ]
@@ -616,12 +616,15 @@ def build_boss_intro_pages(act_index: int, ng_plus_level: int = 0, miniboss: boo
     lore = get_act_lore(act_index)
     accent = lore.get("accent", (52, 200, 120))
     if miniboss:
+        layer_name = lore["lore_name"]
+        if layer_name.startswith("The "):
+            layer_name = "the " + layer_name[4:]  # mid-sentence: "of the Verdant Rim"
         return [
             {
                 "eyebrow": "Lattice Anchor",
                 "title": MINIBOSS_NAME,
                 "body": (
-                    f"A compressed memory of {lore['lore_name']} bars the path.\n"
+                    f"A compressed memory of {layer_name} bars the path.\n"
                     "It does not speak. It only tests whether you still remember how to change."
                 ),
                 "accent": accent,
