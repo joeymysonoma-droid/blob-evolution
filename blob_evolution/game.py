@@ -54,6 +54,13 @@ from blob_evolution.utils.enums import CreatureType, Difficulty, GameState, Node
 from blob_evolution.utils.vector2 import Vector2
 
 
+# Screens where ESC steps back out (plays the ui_back sound)
+BACK_OUT_STATES = (
+    GameState.HELP, GameState.ARCHIVE, GameState.META_SHOP, GameState.OPTIONS, GameState.PAUSED,
+    GameState.SKILLS, GameState.SHOP, GameState.BLACKSMITH, GameState.REST,
+)
+
+
 class Game:
     """Main game controller."""
 
@@ -114,6 +121,7 @@ class Game:
         self.shop_selected = 0
         self.options_selected = 0
         self.maps_cleared = 0
+        self._boss_spawn_scale = 0.0  # >0 while a boss intro plays: its boss_spawn sound fires when the cards end
         self.run_stats: dict = {}
         self.fps = 60.0
         self._load_save()
@@ -211,6 +219,9 @@ class Game:
             resume = self.story.resume_state or GameState.OVERWORLD
             self.story = None
             self.state = resume
+            if self._boss_spawn_scale:
+                self.audio.play("boss_spawn", self._boss_spawn_scale)
+                self._boss_spawn_scale = 0.0
             return
 
     def _start_new_run(self, ng_plus: bool = False) -> None:
@@ -302,11 +313,13 @@ class Game:
         self.player.pos.set(config.WORLD_WIDTH // 2, config.WORLD_HEIGHT // 2)
         self.audio.play_act_music(act)
         if node.node_type == NodeType.BOSS:
-            self.audio.play("boss_spawn")
+            self.audio.play("boss_warning")
+            self._boss_spawn_scale = 1.0
             pages = build_boss_intro_pages(act, self.ng_plus.ng_plus_level, miniboss=False)
             self._start_story(pages, GameState.PLAYING)
         elif node.node_type == NodeType.MINIBOSS:
-            self.audio.play("boss_spawn", 0.8)
+            self.audio.play("boss_warning", 0.8)
+            self._boss_spawn_scale = 0.8
             pages = build_boss_intro_pages(act, self.ng_plus.ng_plus_level, miniboss=True)
             self._start_story(pages, GameState.PLAYING)
         else:
@@ -355,6 +368,8 @@ class Game:
             self._handle_save_notice_event(event)
             return
         if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE and self.state in BACK_OUT_STATES:
+                self.audio.play("ui_back")
             if self.state == GameState.MAIN_MENU:
                 self._handle_main_menu_key(event.key)
             elif self.state == GameState.STORY:
@@ -716,6 +731,7 @@ class Game:
             return
         if item["type"] == "consumable":
             self.player.heal(25)
+            self.audio.play("heal")
             self.hud.show_notification("Healed 25 HP!")
         elif item["type"] == "skill_point":
             self.player.skill_points += 1
@@ -825,6 +841,7 @@ class Game:
                 self.state = GameState.PLAYING
         elif node.node_type == NodeType.REST:
             self.player.heal(self.player.max_hp * 0.4)
+            self.audio.play("heal")
             self.hud.show_notification("The membrane folds. You heal 40% HP.", 2.0)
             self.state = GameState.REST
         elif node.node_type == NodeType.SHOP:
@@ -1026,7 +1043,10 @@ class Game:
         if self.state == GameState.STORY and self.story:
             self.cinematic.update(self.story, dt)
         elif self.state == GameState.PLAYING:
+            shielded = bool(self.player and self.player.has_shield)
             self._update_playing(dt)
+            if shielded and self.player and not self.player.has_shield:
+                self.audio.play("shield_block")
             self._update_ambient(dt)
         elif self.state == GameState.SKILLS:
             pass  # Paused gameplay
@@ -1348,7 +1368,8 @@ class Game:
                 self.player._update_stats()
 
     def _unlock_artifact_archive(self, artifact_id: str) -> None:
-        """Record artifact lore in the Archive when first collected."""
+        """Play the artifact chime and record its lore in the Archive when first collected."""
+        self.audio.play("artifact")
         if self.permanent.unlock_artifact_lore(artifact_id):
             self._save_game()
 
@@ -1461,7 +1482,7 @@ class Game:
         for art_id in self.player.artifacts.collected:
             self.permanent.unlock_artifact_lore(art_id)
         self._save_game()
-        self.audio.play("victory")
+        self.audio.play("merge" if ending == "merge" else "victory")
         self.audio.play_menu_music()
         self.state = GameState.VICTORY
         self.victory_selected = 0
