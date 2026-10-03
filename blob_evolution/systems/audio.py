@@ -1,8 +1,11 @@
-"""Procedural audio: layered SFX and looping act themes, synthesized with pygame.mixer.
+"""Audio: synthesized sounds plus Director-approved files, with generated fallback (pygame.mixer).
 
-Sound effects are generated at runtime in pure Python (no numpy); eleven of them are replaced by the recorded
-WAVs in blob_evolution/assets/sfx when those load (TASK-027), the generated sound stays as the fallback. Music plays from the mp3 files in
-blob_evolution/assets/music (TASK-026); the generated themes are the fallback when a file will not load.
+Layered SFX and looping act themes are generated at runtime in pure Python (no numpy). Director-approved
+files override them where present: eleven SFX WAVs in blob_evolution/assets/sfx (TASK-027), the mp3 music in
+blob_evolution/assets/music (TASK-026) and optional narration clips in blob_evolution/assets/narration
+(TASK-028). When a file is missing or will not load, the generated sound or theme is used instead (narration
+has no generated fallback and stays silent).
+The mixer opens 21 channels: 18 SFX + 2 music + 1 narration.
 Rendering works on float buffers (lists of floats, nominal range -1..1) and only
 the last step (`_finish` / `_to_sound`) converts to 16-bit mono Sounds.
 
