@@ -37,7 +37,10 @@ from blob_evolution.entities.projectile import Projectile
 from blob_evolution.maps.generator import MapGenerator
 from blob_evolution.systems import savefile
 from blob_evolution.systems.artifacts import ARTIFACT_DEFINITIONS, ArtifactManager
-from blob_evolution.systems.audio import get_audio
+from blob_evolution.systems.audio import (
+    NARRATION_VOLUME_DEFAULT, NARRATION_VOLUME_STEP, OPENING_CLIPS, descent_clip, get_audio, miniboss_clip,
+    warden_clip,
+)
 from blob_evolution.systems.economy import EconomyManager, SHOP_ITEMS
 from blob_evolution.systems.events import EventManager
 from blob_evolution.systems.hazards import HazardManager
@@ -142,6 +145,8 @@ class Game:
             self.audio.set_enabled(top.boolean("audio_enabled", self.audio.enabled))
             if self.audio.enabled:
                 self.audio.play_menu_music()
+        self._narration_in_save = "narration_volume" in data  # a saved value is written back even at the default
+        self.audio.set_narration_volume(top.number("narration_volume", self.audio.narration_volume))
         if not (readable and ng_ok and perm_ok and eco.valid and top.valid):
             if readable:
                 savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
@@ -162,6 +167,8 @@ class Game:
                         "run_damage_boost": 0.0},
             "audio_enabled": self.audio.enabled,
         }
+        if self._narration_in_save or self.audio.narration_volume != NARRATION_VOLUME_DEFAULT:
+            data["narration_volume"] = self.audio.narration_volume
         savefile.write_save(config.SAVE_FILE, data)
 
     def _diff_mult(self) -> dict:
@@ -193,7 +200,7 @@ class Game:
         """Award shards for current run and permanent pool."""
         self.run_shards_earned += amount
 
-    def _start_story(self, page_dicts: list, resume_state: GameState) -> None:
+    def _start_story(self, page_dicts: list, resume_state: GameState, clips: Optional[list] = None) -> None:
         """Begin a cinematic story sequence."""
         pages = []
         for p in page_dicts:
@@ -206,9 +213,10 @@ class Game:
                 blob_color=accent,
                 blob_core=style.lerp_color(accent, (255, 255, 255), 0.35),
             ))
-        self.story = StorySequence(pages=pages, resume_state=resume_state)
+        self.story = StorySequence(pages=pages, resume_state=resume_state, clips=clips or [])
         self.state = GameState.STORY
         self.audio.duck_music(0.5)  # music sits back while a story card is up
+        self.audio.play_narration(self.story.clip)
 
     def _advance_story(self) -> None:
         """Advance or finish the current story sequence."""
@@ -221,10 +229,12 @@ class Game:
             self.story = None
             self.state = resume
             self.audio.duck_music(1.0)
+            self.audio.stop_narration()
             if self._boss_spawn_scale:
                 self.audio.play("boss_spawn", self._boss_spawn_scale)
                 self._boss_spawn_scale = 0.0
             return
+        self.audio.play_narration(self.story.clip)
 
     def _start_new_run(self, ng_plus: bool = False) -> None:
         """Initialize a new game run."""
@@ -249,7 +259,7 @@ class Game:
         self.overworld_selected = 0
         self.audio.play_act_music(0)  # the first act's music starts under the opening cards
         opening = build_pilgrimage_pages() + build_act_descent_pages(0)
-        self._start_story(opening, GameState.OVERWORLD)
+        self._start_story(opening, GameState.OVERWORLD, list(OPENING_CLIPS))
 
     def _essence_multiplier(self) -> float:
         """Combined essence gain multiplier for the current run."""
@@ -319,12 +329,12 @@ class Game:
             self.audio.play("boss_warning")
             self._boss_spawn_scale = 1.0
             pages = build_boss_intro_pages(act, self.ng_plus.ng_plus_level, miniboss=False)
-            self._start_story(pages, GameState.PLAYING)
+            self._start_story(pages, GameState.PLAYING, [warden_clip(act, self.ng_plus.ng_plus_level)])
         elif node.node_type == NodeType.MINIBOSS:
             self.audio.play("boss_warning", 0.8)
             self._boss_spawn_scale = 0.8
             pages = build_boss_intro_pages(act, self.ng_plus.ng_plus_level, miniboss=True)
-            self._start_story(pages, GameState.PLAYING)
+            self._start_story(pages, GameState.PLAYING, [miniboss_clip(act)])
         else:
             label = node.label
             if node.is_elite_marked:
@@ -564,7 +574,7 @@ class Game:
 
     def _confirm_options_menu(self) -> None:
         """Execute options menu selection."""
-        if self.options_selected == 4:
+        if self.options_selected == 5:
             self.audio.play("ui_confirm")
             self.state = GameState.MAIN_MENU
 
@@ -900,7 +910,7 @@ class Game:
             self.audio.play_act_music(next_act)  # crossfade into the new layer's music on the descent
             if next_act not in self._seen_acts:
                 self._seen_acts.add(next_act)
-                self._start_story(build_act_descent_pages(next_act), GameState.OVERWORLD)
+                self._start_story(build_act_descent_pages(next_act), GameState.OVERWORLD, [descent_clip(next_act)])
                 return
             next_lore = get_act_lore(next_act)
             self.hud.show_notification(f"Descended into {next_lore['lore_name']}", 3.0)
@@ -1001,10 +1011,10 @@ class Game:
     def _handle_options_key(self, key: int) -> None:
         """Options menu input."""
         if self._is_menu_up(key):
-            self.options_selected = (self.options_selected - 1) % 5
+            self.options_selected = (self.options_selected - 1) % 6
             self.audio.play("ui_select", 0.6)
         elif self._is_menu_down(key):
-            self.options_selected = (self.options_selected + 1) % 5
+            self.options_selected = (self.options_selected + 1) % 6
             self.audio.play("ui_select", 0.6)
         elif self._is_menu_left(key) or self._is_menu_right(key):
             if self.options_selected == 0:
@@ -1025,6 +1035,10 @@ class Game:
                 if enabled:
                     self.audio.play_menu_music()
                     self.audio.play("ui_confirm")
+            elif self.options_selected == 4:
+                step = NARRATION_VOLUME_STEP if self._is_menu_right(key) else -NARRATION_VOLUME_STEP
+                self.audio.set_narration_volume(self.audio.narration_volume + step)
+                self.audio.play("ui_select")
         elif self._is_menu_select(key):
             self._confirm_options_menu()
         elif key == pygame.K_ESCAPE:
@@ -1559,7 +1573,8 @@ class Game:
             )
         elif self.state == GameState.OPTIONS:
             self.menu.draw_options(self.screen, self.options_selected, self.difficulty,
-                                   self.hud.show_fps, self.hud.show_minimap, self.audio.enabled)
+                                   self.hud.show_fps, self.hud.show_minimap, self.audio.enabled,
+                                   self.audio.narration_volume)
         elif self.state == GameState.HELP:
             self.menu.draw_help(self.screen)
 

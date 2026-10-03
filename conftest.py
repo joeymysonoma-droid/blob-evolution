@@ -7,6 +7,9 @@ or a folder of their own point audio.MUSIC_DIR somewhere else with monkeypatch.
 
 The same goes for the recorded sound effects (TASK-027): audio.SFX_DIR points at a missing folder, so every
 sound is the generated one unless a test sets SFX_DIR itself.
+
+And for the recorded narration (TASK-028): audio.NARRATION_DIR points at a missing folder, so no clip plays
+unless a test sets NARRATION_DIR itself (to a folder of fake clips it generated).
 """
 from __future__ import annotations
 
@@ -25,3 +28,10 @@ def _no_sfx_files(monkeypatch, tmp_path_factory):
     from blob_evolution.systems import audio
 
     monkeypatch.setattr(audio, "SFX_DIR", tmp_path_factory.getbasetemp() / "no-sfx-files-here")
+
+
+@pytest.fixture(autouse=True)
+def _no_narration_files(monkeypatch, tmp_path_factory):
+    from blob_evolution.systems import audio
+
+    monkeypatch.setattr(audio, "NARRATION_DIR", tmp_path_factory.getbasetemp() / "no-narration-files-here")

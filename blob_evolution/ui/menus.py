@@ -213,13 +213,14 @@ class MenuRenderer:
         return btn
 
     def draw_options(self, surface: pygame.Surface, selected: int, difficulty: Difficulty,
-                     show_fps: bool, show_minimap: bool, sound_on: bool = True) -> None:
+                     show_fps: bool, show_minimap: bool, sound_on: bool = True,
+                     narration_volume: float = 0.8) -> None:
         """Draw options menu."""
         self._begin_items()
         style.draw_ambient_bg(surface, seed_offset=2.0)
         style.draw_title_block(surface, self.menu_font, self.small_font, "OPTIONS", y=70)
 
-        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 220, 140, 440, 340)
+        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 220, 140, 440, 392)
         style.draw_panel(surface, panel)
 
         items = [
@@ -227,6 +228,7 @@ class MenuRenderer:
             f"Show FPS: {'ON' if show_fps else 'OFF'}",
             f"Show Minimap: {'ON' if show_minimap else 'OFF'}",
             f"Sound: {'ON' if sound_on else 'OFF'}",
+            f"Narration: {f'{round(narration_volume * 100)}%' if narration_volume > 0 else 'OFF'}",
             "Back",
         ]
         for i, item in enumerate(items):

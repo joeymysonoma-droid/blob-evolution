@@ -36,6 +36,12 @@ class StorySequence:
     index: int = 0
     resume_state: object = None
     age: float = 0.0
+    clips: List[str] = field(default_factory=list)   # narration clip key per page ("" = none)
+
+    @property
+    def clip(self) -> Optional[str]:
+        """Narration clip key of the current page, if it has one."""
+        return self.clips[self.index] if 0 <= self.index < len(self.clips) and self.clips[self.index] else None
 
     @property
     def current(self) -> Optional[StoryPage]:

@@ -15,7 +15,8 @@ Layout:
   5. SFX library  (_build_sfx)
   6. music        (menu + 10 act themes)
   7. recorded music (TRACK_FILES, _loop_from_sound)
-  8. AudioManager / get_audio  (public API unchanged; act tracks are built lazily)
+  8. recorded narration (NARRATION_DIR, clip keys, one reserved channel; TASK-028)
+  9. AudioManager / get_audio  (public API unchanged; act tracks are built lazily)
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from pathlib import Path
 from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import pygame
+
+from blob_evolution.data.lore import NG_WARDEN_QUOTES
 
 
 SAMPLE_RATE = 22050
@@ -1285,7 +1288,9 @@ MUSIC_DIR = Path(__file__).resolve().parent.parent / "assets" / "music"
 CROSSFADE_S = 2.0        # equal-power seam crossfade baked into the in-memory loop
 TARGET_LUFS = -21.0      # every gain below is TARGET_LUFS minus the loop's measured loudness
 MUSIC_CHANNELS = 2       # mixer channels 0 and 1 are reserved for music; SFX use the rest
-SFX_CHANNELS = 18        # channels left for sound effects (the mixer opens SFX_CHANNELS + MUSIC_CHANNELS = 20)
+SFX_CHANNELS = 18        # channels left for sound effects
+NARRATION_CHANNELS = 1   # one reserved voice channel (index MUSIC_CHANNELS), never used by SFX or music
+TOTAL_CHANNELS = SFX_CHANNELS + MUSIC_CHANNELS + NARRATION_CHANNELS   # the mixer opens 21
 ACT_FADE_MS = 1200       # crossfade when the music changes
 MENU_FADE_MS = 1500      # crossfade back to the menu theme (after game over / victory / quit to menu)
 DUCK_RAMP_S = 0.3        # how fast ducking changes the music level
@@ -1328,6 +1333,62 @@ def _load_sfx_files(names: Sequence[str], sfx_dir: Path, failed: Optional[List[s
             continue
         out[name] = snd
     return out
+
+
+# --- Recorded narration (TASK-028) -------------------------------------------------------------------
+# Voice clips (.wav or .ogg) in blob_evolution/assets/narration play on their own reserved channel while a
+# story card is up. Files are supplied separately and are not in the repo: a clip that is missing or will not
+# load is silently skipped (and never retried), the card just shows without a voice.
+NARRATION_DIR = Path(__file__).resolve().parent.parent / "assets" / "narration"
+NARRATION_EXTS: Tuple[str, ...] = (".wav", ".ogg")    # tried in this order: NARRATION_DIR / f"{key}{ext}"
+NARRATION_VOLUME_DEFAULT = 0.8
+NARRATION_VOLUME_STEP = 0.1     # one left/right press in Options
+NARRATION_CUT_MS = 80           # a skipped or replaced clip fades out this fast (no click) before the next starts
+NARRATION_MIN_S, NARRATION_MAX_S = 0.05, 120.0   # a file outside this length is treated as broken
+OPENING_CLIPS: Tuple[str, ...] = ("intro_card1", "intro_card2", "layer01_descent")   # the three opening cards
+
+
+def descent_clip(act: int) -> str:
+    """Key of the descent-card clip for a layer (act index 0-9); script clip 'NA'."""
+    return f"layer{act + 1:02d}_descent"
+
+
+def miniboss_clip(act: int) -> str:
+    """Key of the Lattice Anchor (mini-boss) card clip for a layer."""
+    return f"layer{act + 1:02d}_miniboss"
+
+
+def warden_clip(act: int, ng_plus_level: int = 0) -> str:
+    """Key of the Warden Encounter clip: the NG+ tier at or below the level (as get_warden_quote picks), else base."""
+    tiers = [m for m, _ in NG_WARDEN_QUOTES.get(act, []) if ng_plus_level >= m]
+    base = f"layer{act + 1:02d}_warden"
+    return f"{base}_ng{max(tiers)}" if tiers else base
+
+
+def all_narration_keys() -> List[str]:
+    """Every key the game can ask for (opening, per-layer descent/warden/mini-boss, NG+ warden tiers)."""
+    keys = list(OPENING_CLIPS)
+    for act in range(10):
+        keys += [descent_clip(act), f"layer{act + 1:02d}_warden"]
+        keys += [f"layer{act + 1:02d}_warden_ng{m}" for m, _ in sorted(NG_WARDEN_QUOTES.get(act, []))]
+        keys.append(miniboss_clip(act))
+    return list(dict.fromkeys(keys))
+
+
+def _load_narration(key: str, narration_dir: Path) -> Optional[pygame.mixer.Sound]:
+    """Load NARRATION_DIR/<key>.wav (or .ogg). Returns None if no file exists, it will not load, or its length is
+    out of range; nothing is raised or printed."""
+    for ext in NARRATION_EXTS:
+        try:
+            path = Path(narration_dir) / f"{key}{ext}"
+            if not path.is_file():
+                continue
+            snd = pygame.mixer.Sound(str(path))
+            if NARRATION_MIN_S <= snd.get_length() <= NARRATION_MAX_S:
+                return snd
+        except (pygame.error, OSError, ValueError, MemoryError, RuntimeError):
+            continue
+    return None
 
 
 class FileTrack(NamedTuple):
@@ -1411,6 +1472,12 @@ class AudioManager:
         self._duck = 1.0
         self._duck_target = 1.0
         self._fade_left = 0.0
+        self.narration_volume = NARRATION_VOLUME_DEFAULT
+        self._narr_chan: Optional[pygame.mixer.Channel] = None    # the reserved voice channel
+        self._narr_failed: set = set()                            # keys with no usable file: never retried
+        self._narr_sound: Optional[pygame.mixer.Sound] = None     # the clip on the channel (or about to be)
+        self._narr_key: Optional[str] = None
+        self._narr_pending = False                                # a clip waits for the old one's fade-out
         self._init_mixer()
 
     def _init_mixer(self) -> None:
@@ -1424,10 +1491,11 @@ class AudioManager:
             if not opened:
                 pygame.mixer.pre_init(SAMPLE_RATE, -16, 1, 512)
                 pygame.mixer.init()
-            pygame.mixer.set_num_channels(SFX_CHANNELS + MUSIC_CHANNELS)
-            pygame.mixer.set_reserved(MUSIC_CHANNELS)
+            pygame.mixer.set_num_channels(TOTAL_CHANNELS)
+            pygame.mixer.set_reserved(MUSIC_CHANNELS + NARRATION_CHANNELS)
             self._build_library()
             self._chan = [pygame.mixer.Channel(i) for i in range(MUSIC_CHANNELS)]
+            self._narr_chan = pygame.mixer.Channel(MUSIC_CHANNELS)
             self._music_channel = self._chan[0]
             self._ready = True
         except pygame.error:
@@ -1487,9 +1555,64 @@ class AudioManager:
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
         if not enabled:
+            self._narr_pending = False
+            self._narr_key = None
             self.stop_music()
             if self._ready:
                 pygame.mixer.stop()
+
+    def set_narration_volume(self, volume: float) -> float:
+        """Set the narration level (0 = off, 1 = full), clamped to 0..1; applies to a clip that is playing."""
+        self.narration_volume = round(max(0.0, min(1.0, float(volume))), 2)
+        if self._narr_sound is not None:
+            self._narr_sound.set_volume(self.narration_volume)
+        if self.narration_volume == 0.0:
+            self.stop_narration()
+        return self.narration_volume
+
+    def play_narration(self, key: Optional[str]) -> None:
+        """Play the clip for a story card, replacing the previous clip (it fades out first); None just stops.
+
+        Silent when Sound is off, the volume is 0, or the clip has no usable file (that is remembered, no retry)."""
+        if not key:
+            self.stop_narration()
+            return
+        if not self.enabled or not self._ready or self._narr_chan is None or self.narration_volume <= 0.0:
+            self.stop_narration()
+            return
+        snd = None
+        if key not in self._narr_failed:
+            snd = _load_narration(key, NARRATION_DIR)
+            if snd is None:
+                self._narr_failed.add(key)
+        self.stop_narration()
+        if snd is None:
+            return
+        self._narr_sound, self._narr_key, self._narr_pending = snd, key, True
+        if not self._narr_chan.get_busy():
+            self._start_narration()
+
+    def _start_narration(self) -> None:
+        """Start the waiting clip on the (now idle) voice channel."""
+        self._narr_pending = False
+        if self._narr_sound is None or self._narr_chan is None:
+            return
+        self._narr_sound.set_volume(self.narration_volume)
+        self._narr_chan.set_volume(1.0)
+        self._narr_chan.play(self._narr_sound)
+
+    def stop_narration(self, fade_ms: int = NARRATION_CUT_MS) -> None:
+        """Cut the current (and any waiting) clip with a short fade so the cut does not click."""
+        self._narr_pending = False
+        if self._narr_chan is not None and self._narr_chan.get_busy():
+            self._narr_chan.fadeout(fade_ms)
+        self._narr_sound = None
+        self._narr_key = None
+
+    def narration_playing(self) -> Optional[str]:
+        """Key of the clip that is playing or about to start, else None."""
+        busy = self._narr_chan is not None and self._narr_chan.get_busy()
+        return self._narr_key if (busy or self._narr_pending) and self._narr_key else None
 
     def toggle(self) -> bool:
         self.set_enabled(not self.enabled)
@@ -1544,6 +1667,8 @@ class AudioManager:
             step = dt / DUCK_RAMP_S
             self._duck += max(-step, min(step, self._duck_target - self._duck))
             self._apply_volume()
+        if self._narr_pending and self._narr_chan is not None and not self._narr_chan.get_busy():
+            self._start_narration()
         self._fade_left -= dt
         if self._fade_left <= 0 and self._ready and self._chan:
             # SDL_mixer drives the channel volume itself while a fade-in runs and restores the volume it had
