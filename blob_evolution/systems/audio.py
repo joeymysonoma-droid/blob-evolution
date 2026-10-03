@@ -1296,14 +1296,22 @@ MENU_FADE_MS = 1500      # crossfade back to the menu theme (after game over / v
 DUCK_RAMP_S = 0.3        # how fast ducking changes the music level
 
 
-# --- Recorded sound effects (TASK-027) ---------------------------------------------------------------
-# Eleven pre-processed 22050 Hz mono 16-bit WAVs (gain, tail trim and edge fades baked in offline) replace
-# the generated sound of the same name. A file that is missing or will not load leaves the generated sound.
+# --- Recorded sound effects (TASK-027, TASK-035) -----------------------------------------------------
+# Twenty-two pre-processed 22050 Hz mono 16-bit WAVs replace the generated sound of the same name (the first
+# eleven have gain, tail trim and edge fades baked in offline; the TASK-035 cues are untrimmed). Only "hurt" is
+# still generated. A file that is missing or will not load leaves the generated sound.
 SFX_DIR = Path(__file__).resolve().parent.parent / "assets" / "sfx"
 SFX_FILES: Tuple[str, ...] = (
     "ui_select", "ui_confirm", "shoot", "dash", "hit", "kill", "explode", "pickup", "absorb", "boss_hit", "story",
+    "artifact", "boss_phase", "boss_spawn", "boss_warning", "defeat", "heal", "levelup", "merge", "shield_block",
+    "ui_back", "victory",
 )                        # sfx name -> SFX_DIR / f"{name}.wav"
 SFX_MIN_S, SFX_MAX_S = 0.04, 1.5   # a file outside this length is treated as broken
+# The long fanfare/sting cues may be longer than SFX_MAX_S: name -> longest accepted length in seconds
+# (files are 1.5-4.0 s; every other name keeps SFX_MAX_S).
+SFX_MAX_S_LONG: Dict[str, float] = {
+    "boss_warning": 2.0, "boss_phase": 2.5, "boss_spawn": 3.5, "merge": 3.5, "victory": 4.5, "defeat": 4.5,
+}
 # Retrigger gate per sound name: (minimum ms between two starts, maximum simultaneous instances). Names that
 # are not listed (shoot, explode, dash, ...) are never gated. Applies whether the sound is a file or generated.
 SFX_GATES: Dict[str, Tuple[int, int]] = {
@@ -1315,7 +1323,8 @@ SFX_GATES: Dict[str, Tuple[int, int]] = {
 def _load_sfx_files(names: Sequence[str], sfx_dir: Path, failed: Optional[List[str]] = None
                     ) -> Dict[str, pygame.mixer.Sound]:
     """Load SFX_DIR/<name>.wav for each name. Names whose file is missing, unreadable, empty/silent or an odd
-    length are left out (and added to `failed`); nothing is raised or printed and nothing is retried."""
+    length (SFX_MIN_S..SFX_MAX_S, or up to SFX_MAX_S_LONG[name] for the long cues) are left out (and added to
+    `failed`); nothing is raised or printed and nothing is retried."""
     out: Dict[str, pygame.mixer.Sound] = {}
     for name in names:
         try:
@@ -1323,7 +1332,7 @@ def _load_sfx_files(names: Sequence[str], sfx_dir: Path, failed: Optional[List[s
             if not path.is_file():
                 raise FileNotFoundError(str(path))
             snd = pygame.mixer.Sound(str(path))
-            if not (SFX_MIN_S <= snd.get_length() <= SFX_MAX_S):
+            if not (SFX_MIN_S <= snd.get_length() <= SFX_MAX_S_LONG.get(name, SFX_MAX_S)):
                 raise ValueError("length out of range")
             if not any(snd.get_raw()):
                 raise ValueError("silent")
