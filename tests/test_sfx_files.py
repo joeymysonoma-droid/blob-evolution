@@ -22,9 +22,12 @@ from blob_evolution.systems import audio
 from blob_evolution.systems.audio import AudioManager
 
 REAL_DIR = Path(audio.__file__).resolve().parent.parent / "assets" / "sfx"
-FILE_NAMES = ["ui_select", "ui_confirm", "shoot", "dash", "hit", "kill", "explode", "pickup", "absorb", "boss_hit", "story"]
-GENERATED_NAMES = ["hurt", "ui_back", "shield_block", "heal", "artifact", "merge", "boss_warning",
-                   "levelup", "boss_phase", "boss_spawn", "victory", "defeat"]
+ORIGINAL_NAMES = ["ui_select", "ui_confirm", "shoot", "dash", "hit", "kill", "explode", "pickup", "absorb", "boss_hit", "story"]
+# TASK-035: the eleven cues that used to be generated-only now have files too (only "hurt" stays generated)
+NEW_NAMES = ["ui_back", "shield_block", "heal", "artifact", "merge", "boss_warning",
+             "levelup", "boss_phase", "boss_spawn", "victory", "defeat"]
+FILE_NAMES = ORIGINAL_NAMES + NEW_NAMES
+GENERATED_NAMES = ["hurt"]
 GATES = {"hit": (50, 4), "pickup": (40, 4), "kill": (70, 3), "absorb": (80, 3),
          "boss_hit": (80, 3), "hurt": (100, 3), "ui_select": (30, 2)}
 # shipped file -> (sha256, keep ms, peak cap as a fraction of full scale)
@@ -126,8 +129,8 @@ def _samples(snd: pygame.mixer.Sound) -> array.array:
 
 # --- the mapping and the folder -------------------------------------------------------------------------
 
-def test_mapping_covers_exactly_the_eleven_file_backed_names() -> None:
-    assert sorted(audio.SFX_FILES) == sorted(FILE_NAMES) and len(audio.SFX_FILES) == 11
+def test_mapping_covers_exactly_the_file_backed_names() -> None:
+    assert sorted(audio.SFX_FILES) == sorted(FILE_NAMES) and len(audio.SFX_FILES) == 22
     assert set(audio.SFX_FILES) <= set(audio.SFX_BUILDERS), "every file-backed name has a generated fallback"
     assert sorted(set(audio.SFX_BUILDERS) - set(audio.SFX_FILES)) == sorted(GENERATED_NAMES)
 
@@ -151,7 +154,7 @@ def test_play_signature_is_unchanged() -> None:
 
 # --- file lookup and fallback ---------------------------------------------------------------------------
 
-def test_files_replace_exactly_the_eleven_names_and_the_rest_stay_generated(cheap_library, sfx_dir) -> None:
+def test_files_replace_exactly_the_file_backed_names_and_the_rest_stay_generated(cheap_library, sfx_dir) -> None:
     generated = audio._build_sfx()
     mgr = AudioManager()
     assert mgr._sfx_failed == []
@@ -361,11 +364,11 @@ def test_the_gate_uses_the_injectable_clock_and_defaults_to_monotonic(cheap_libr
 
 # --- the shipped files -----------------------------------------------------------------------------------------
 
-def test_shipped_folder_has_exactly_the_eleven_files_with_the_pinned_hashes(real_files) -> None:
+def test_shipped_folder_has_exactly_the_files_and_the_original_eleven_have_the_pinned_hashes(real_files) -> None:
     assert sorted(p.name for p in real_files.iterdir()) == sorted(f"{n}.wav" for n in FILE_NAMES)
     for n, (digest, _, _) in REAL.items():
         assert hashlib.sha256((real_files / f"{n}.wav").read_bytes()).hexdigest() == digest, n
-    assert sum(p.stat().st_size for p in real_files.iterdir()) == 128316
+    assert sum((real_files / f"{n}.wav").stat().st_size for n in ORIGINAL_NAMES) == 128316
 
 
 def test_shipped_files_load_at_the_mixer_format_with_safe_levels_and_clean_edges(real_files, cheap_library) -> None:
@@ -397,9 +400,9 @@ def test_every_name_plays_twice_and_rapid_fire_never_raises_with_the_real_files(
     pygame.mixer.stop()
 
 
-def test_loading_the_eleven_files_is_quick(real_files, cheap_library) -> None:
+def test_loading_all_the_files_is_quick(real_files, cheap_library) -> None:
     t0 = time.perf_counter()
     loaded = audio._load_sfx_files(audio.SFX_FILES, real_files)
     ms = (time.perf_counter() - t0) * 1000.0
-    assert len(loaded) == 11
+    assert len(loaded) == 22
     assert ms < 50.0, ms
