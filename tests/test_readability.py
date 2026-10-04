@@ -590,11 +590,13 @@ MAIN_SCENE_DIGEST = "0fda1e820191a165c3515982009120fce681cf59"
 
 
 def test_toggle_off_renders_the_same_frame_as_main(monkeypatch):
+    monkeypatch.setattr(config, "GFX_ENEMY_SHAPES", False)       # TASK-046: the scene holds creatures; main drew the pre-046 ones
     monkeypatch.setattr(config, "GFX_READABILITY", False)
     assert _scene_digest() == MAIN_SCENE_DIGEST
 
 
 def test_toggle_on_renders_a_different_frame_and_off_is_repeatable(monkeypatch):
+    monkeypatch.setattr(config, "GFX_ENEMY_SHAPES", False)       # TASK-046: keep this test about the 043 toggle only
     on = _scene_digest()
     assert on != MAIN_SCENE_DIGEST and on == _scene_digest()
     monkeypatch.setattr(config, "GFX_READABILITY", False)
