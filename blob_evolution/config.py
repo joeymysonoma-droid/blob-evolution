@@ -188,6 +188,40 @@ AMBIENT_LAYERS = [
 AMBIENT_RINGS = {7: {"color": (90, 70, 140), "every": (3.0, 5.0), "radius": 90, "life": 2.0, "alpha": 60, "max": 2}}
 AMBIENT_RING_STEPS = 12                 # prebuilt ring sprites per act (radius and alpha steps together)
 
+# Depth layers (TASK-041): a half-speed fog / parallax layer above the ground and a cached screen-space light overlay.
+GFX_LAYERS = True                       # Producer A/B switch: False builds and draws neither layer
+FOG_TILE = 512                          # seamless fog tile size; pre-tiled to (screen + tile) so one blit covers the screen
+FOG_PARALLAX = 0.5                      # the fog slides at this share of the camera speed
+# Fog groups per act, drawn in order into the tile. kind: blob (soft disc), ellipse (soft horizontal ellipse),
+# caustic (wavy 1 px lines, additive). color; alpha (lo, hi); radius (lo, hi) for blobs / size (w, h) for ellipses; n.
+FOG_LAYERS = [
+    [{"kind": "blob", "color": (4, 16, 8), "alpha": (40, 60), "radius": (40, 90), "n": 14}],            # 0 leaf-shadow dapple
+    [{"kind": "blob", "color": (110, 140, 70), "alpha": (26, 40), "radius": (60, 120), "n": 10}],       # 1 marsh mist
+    [{"kind": "caustic", "color": (90, 150, 230), "alpha": (16, 24), "n": 30}],                         # 2 caustic light
+    [{"kind": "blob", "color": (20, 8, 6), "alpha": (50, 70), "radius": (70, 130), "n": 10}],           # 3 smoke
+    [{"kind": "blob", "color": (170, 205, 235), "alpha": (22, 34), "radius": (80, 140), "n": 10}],      # 4 cold haze
+    [{"kind": "blob", "color": (210, 170, 100), "alpha": (22, 36), "radius": (80, 140), "n": 10}],      # 5 dust haze
+    [{"kind": "blob", "color": (150, 90, 220), "alpha": (24, 38), "radius": (70, 120), "n": 10}],       # 6 spore fog
+    [{"kind": "blob", "color": (0, 0, 0), "alpha": (60, 90), "radius": (90, 160), "n": 8},              # 7 dark fog ...
+     {"kind": "blob", "color": (70, 50, 110), "alpha": (20, 20), "radius": (90, 160), "n": 4}],         #   ... + violet wisps
+    [{"kind": "ellipse", "color": (150, 180, 255), "alpha": (16, 26), "size": (220, 40), "n": 12}],     # 8 cloud streaks
+    [{"kind": "blob", "color": (180, 30, 120), "alpha": (24, 40), "radius": (80, 140), "n": 8},         # 9 blood haze ...
+     {"kind": "blob", "color": (12, 2, 14), "alpha": (50, 50), "radius": (80, 140), "n": 4}],           #   ... + dark
+]
+FOG_HALO = 1.35                         # soft edge: a larger circle at a third of the alpha
+# Screen-space light overlay: (tint, max alpha) per act; alpha = max * smoothstep(0.35, 1.0, d) from the screen centre
+LIGHT_GRID = (16, 10)
+LIGHT_START = 0.35
+LIGHT_OVERLAYS = [
+    ((2, 10, 6), 120), ((8, 12, 2), 130), ((2, 4, 18), 130), ((24, 4, 0), 120), ((6, 14, 26), 110),
+    ((30, 18, 4), 110), ((14, 4, 26), 130), ((0, 0, 4), 170), ((2, 4, 16), 120), ((22, 0, 16), 140),
+]
+LOW_HP_RATIO = 0.30                     # below this share of max HP the overlay turns red
+LOW_HP_OVERLAY = ((120, 10, 20), 150)   # tint, max alpha
+LOW_HP_PULSE = (0.6, 1.0, 1.0)          # brightness factor low, high, Hz (<= 1 Hz: R5)
+HEARTBEAT = (1.0, 1.15, 0.8)            # act 9: overlay max alpha scale low, high, Hz
+PULSE_LEVELS = 3                        # prebuilt strengths a pulse steps through (each is one 1200x800 overlay)
+
 SAVE_FILE = "blob_evolution_save.json"
 SAVE_BACKUP_SUFFIX = ".bak"  # unreadable saves are copied to SAVE_FILE + suffix before overwrite
 SAVE_BACKUP_LIMIT = 10  # backup slots: .bak, .bak.1 ... .bak.9; existing backups are never overwritten
