@@ -553,3 +553,62 @@ def test_headless_draw_works_in_every_act(game, act):
     game._draw_game()
     game.player.hp = 1
     game._draw_game()
+
+
+# --- readability: the real draw_blob over the real bake with everything on --------------------------------------
+
+def _lin(c: float) -> float:
+    c /= 255
+    return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _lum(rgb) -> float:
+    return 0.2126 * _lin(rgb[0]) + 0.7152 * _lin(rgb[1]) + 0.0722 * _lin(rgb[2])
+
+
+def _mean(px):
+    return tuple(sum(p[i] for p in px) / len(px) for i in range(3))
+
+
+def _contrast(a, b) -> float:
+    hi, lo = max(_lum(a), _lum(b)), min(_lum(a), _lum(b))
+    return (hi + 0.05) / (lo + 0.05)
+
+
+@pytest.mark.parametrize("low_hp", [False, True])
+@pytest.mark.parametrize("act", ACTS)
+def test_player_body_keeps_3_to_1_contrast_with_fog_and_overlay_everywhere(act, low_hp):
+    """Producer rule: min rendered contrast >= 3:1 at every position in every act (r2 draw order: overlay under the player).
+
+    Samples the screen centre, the four corners and a few seeded positions; the full 120-position table is in the report.
+    """
+    import math
+    from blob_evolution.maps.generator import MapGenerator
+    from blob_evolution.utils.graphics import draw_blob
+
+    screen = pygame.Surface((W, H))
+    mg = MapGenerator()
+    mg.load_map(act, 7)
+    d = DepthLayers(act, 7)
+    d.t = 0.0                                               # darkest/strongest pulse phase is alpha 255: use it
+    overlay = layers.build_overlay(*config.LOW_HP_OVERLAY) if low_hp else d.vignette
+    rng = random.Random(act)
+    spots = [(W // 2, H // 2), (80, 80), (W - 80, 80), (80, H - 80), (W - 80, H - 80)]
+    spots += [(rng.randint(70, W - 70), rng.randint(70, H - 70)) for _ in range(6)]
+    ring = [(dx, dy) for dy in range(-19, 20) for dx in range(-19, 20) if 15 <= math.hypot(dx, dy) <= 19]
+    around = [(dx, dy) for dy in range(-30, 31) for dx in range(-30, 31) if 23 <= math.hypot(dx, dy) <= 30]
+    worst = 99.0
+    for k, (px, py) in enumerate(spots):
+        cam = Vector2(700 + 97 * k, 650 + 131 * k)
+        def scene(blob: bool) -> None:
+            mg.draw_background(screen, cam, NO_SHAKE)
+            d.blit_fog(screen, cam, NO_SHAKE)
+            screen.blit(overlay, (0, 0))
+            if blob:
+                draw_blob(screen, (px, py), 20, config.COLOR_PLAYER, config.COLOR_PLAYER_CORE, look=(1, 0))
+        scene(False)
+        bg = _mean([screen.get_at((px + dx, py + dy)) for dx, dy in around])
+        scene(True)
+        body = _mean([screen.get_at((px + dx, py + dy)) for dx, dy in ring])
+        worst = min(worst, _contrast(body, bg))
+    assert worst >= 3.0, (act, low_hp, worst)
