@@ -308,8 +308,9 @@ class Creature:
         flash = self.hit_flash > 0
         colors = ((255, 255, 255), (255, 200, 200)) if flash else self.COLORS.get(self.ctype, ((200, 60, 60), (255, 120, 120)))
         ticks = pygame.time.get_ticks()
-        shapes.draw_under(surface, kind, sx, sy, self.size, self.face_dir, self.vel,
-                          self.fuse_timer, self.explosion_radius, flash, ticks)
+        if kind in shapes.UNDER_KINDS:
+            shapes.draw_under(surface, kind, sx, sy, self.size, self.face_dir, self.vel,
+                              self.fuse_timer, self.explosion_radius, flash, ticks)
         if config.GFX_READABILITY and not self.phased:
             draw_contact_shadow(surface, sx, sy, self.size)
         target, bx, by = surface, sx, sy
@@ -323,9 +324,10 @@ class Creature:
         )
         pygame.draw.circle(target, (255, 255, 255) if flash else shapes.RIM.get(kind, (241, 177, 177)),
                            (int(bx), int(by)), int(self.size), config.ENEMY_RIM_WIDTH)
-        shapes.draw_over(target, kind, bx, by, self.size, self.face_dir, self.orbit_angle,
-                         (self.shield_hp / self.shield_max) if self.shield_max else 0.0,
-                         self.fuse_timer, flash, ticks)
+        if kind in shapes.OVER_KINDS:
+            shapes.draw_over(target, kind, bx, by, self.size, self.face_dir, self.orbit_angle,
+                             (self.shield_hp / self.shield_max) if self.shield_max else 0.0,
+                             self.fuse_timer, flash, ticks)
         if self.phased:
             shapes.blit_phased(surface, sx, sy)
         if self.ctype == CreatureType.BOMBER and self.fuse_timer < 2.0:
@@ -335,8 +337,7 @@ class Creature:
                 (int(sx), int(sy)), int(self.size * (1.2 + pulse * 0.3)), 2,
             )
         if self.charge_telegraph > 0:
-            ring = shapes.telegraph_ring(self.size)
-            surface.blit(ring, (int(sx) - ring.get_width() // 2, int(sy) - ring.get_height() // 2))
+            shapes.draw_telegraph(surface, sx, sy, self.size)
             tip_x = int(sx + self.charge_dir.x * self.size * 2.2)
             tip_y = int(sy + self.charge_dir.y * self.size * 2.2)
             pygame.draw.line(surface, (255, 120, 100), (int(sx), int(sy)), (tip_x, tip_y), 2)
