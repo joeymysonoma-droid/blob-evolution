@@ -8,6 +8,7 @@ from typing import Dict, Optional, Tuple
 
 import pygame
 
+from blob_evolution.utils import terrain
 from blob_evolution.utils.vector2 import Vector2
 
 Color = Tuple[int, int, int]
@@ -280,180 +281,23 @@ def generate_map_texture(
     seed: int,
     theme_index: int = 0,
 ) -> pygame.Surface:
-    """Procedurally generate a themed map background texture."""
+    """Procedurally generate a themed map background texture (tone-ramp macro noise, grit, decals, vignette)."""
     rng = random.Random(seed)
-    surface = pygame.Surface((width, height))
-    surface.fill(base_color)
+    ramp = terrain.ramp_for_act(theme_index)
 
-    # Soft gradient wash
-    wash = pygame.Surface((width, height), pygame.SRCALPHA)
-    for y in range(0, height, 6):
-        t = y / max(1, height)
-        shade = tuple(int(base_color[i] * (1 - t * 0.15) + accent_color[i] * t * 0.12) for i in range(3))
-        pygame.draw.line(wash, (*shade, 90), (0, y), (width, y), 6)
-    surface.blit(wash, (0, 0))
+    # Macro noise ground and grit (base stream: Random(seed))
+    surface = terrain.macro_noise_ground(width, height, ramp, rng)
+    terrain.add_grit(surface, ramp, rng)
 
-    # Soft membrane blobs
-    for _ in range(rng.randint(70, 160)):
-        bx = rng.randint(0, width)
-        by = rng.randint(0, height)
-        br = rng.randint(28, 110)
-        shade = tuple(min(255, c + rng.randint(-25, 25)) for c in accent_color)
-        alpha_surf = pygame.Surface((br * 2, br * 2), pygame.SRCALPHA)
-        pygame.draw.circle(alpha_surf, (*shade, rng.randint(28, 70)), (br, br), br)
-        pygame.draw.circle(alpha_surf, (*_shade(shade, 30), 25), (int(br * 0.7), int(br * 0.65)), int(br * 0.45))
-        surface.blit(alpha_surf, (bx - br, by - br))
-
-    # Speckles / grit
-    for _ in range(rng.randint(800, 1800)):
-        sx = rng.randint(0, width - 1)
-        sy = rng.randint(0, height - 1)
-        brightness = rng.randint(-35, 35)
-        speckle = tuple(max(0, min(255, c + brightness)) for c in base_color)
-        surface.set_at((sx, sy), speckle)
-
-    # Theme-specific overlays
-    _draw_theme_details(surface, width, height, base_color, accent_color, seed, theme_index, rng)
+    # Clustered decals and landmark (stamp stream: Random(seed ^ 0x5EED), so the ground above never shifts)
+    stamp_rng = random.Random(seed ^ 0x5EED)
+    scatter = terrain.make_scatter(width, height, stamp_rng)
+    terrain.ACT_DECALS[max(0, min(theme_index, len(terrain.ACT_DECALS) - 1))](surface, stamp_rng, scatter)
 
     # Soft vignette (small alpha map scaled up)
     surface.blit(_make_vignette(width, height), (0, 0))
 
     return surface
-
-
-def _draw_theme_details(
-    surface: pygame.Surface,
-    width: int,
-    height: int,
-    base_color: Color,
-    accent_color: Color,
-    seed: int,
-    theme_index: int,
-    rng: random.Random,
-) -> None:
-    """Draw per-act environmental flourishes."""
-    if theme_index == 0:  # Verdant Rim — soft grass arcs
-        for _ in range(90):
-            gx = rng.randint(0, width)
-            gy = rng.randint(0, height)
-            gl = rng.randint(8, 22)
-            green = (40 + rng.randint(0, 40), 120 + rng.randint(0, 60), 50)
-            pygame.draw.arc(
-                surface, green,
-                (gx, gy, gl, gl * 2),
-                0.2, 2.2, 1,
-            )
-    elif theme_index == 1:  # Sinking Garden — toxic pools + ripples
-        for _ in range(18):
-            px = rng.randint(40, width - 40)
-            py = rng.randint(40, height - 40)
-            pr = rng.randint(30, 80)
-            pool = pygame.Surface((pr * 2, pr * 2), pygame.SRCALPHA)
-            pygame.draw.ellipse(pool, (60, 140, 40, 70), (0, 0, pr * 2, pr))
-            pygame.draw.ellipse(pool, (90, 180, 50, 40), (pr // 3, pr // 4, pr, pr // 2), 2)
-            surface.blit(pool, (px - pr, py - pr // 2))
-        for y in range(0, height, 10):
-            offset = int(math.sin(y * 0.04 + seed) * 18)
-            pygame.draw.line(surface, (*_shade(accent_color, 20),), (offset, y), (width + offset, y), 1)
-    elif theme_index == 2:  # Memory Vaults — crystal shards
-        for _ in range(70):
-            cx = rng.randint(0, width)
-            cy = rng.randint(0, height)
-            pts = [
-                (cx, cy - rng.randint(12, 28)),
-                (cx + rng.randint(4, 12), cy + rng.randint(6, 16)),
-                (cx - rng.randint(4, 12), cy + rng.randint(6, 16)),
-            ]
-            crystal = (100 + rng.randint(0, 80), 170 + rng.randint(0, 50), 230)
-            pygame.draw.polygon(surface, crystal, pts)
-            pygame.draw.polygon(surface, (220, 240, 255), pts, 1)
-    elif theme_index == 3:  # Forge Veins — embers + cracks
-        for _ in range(40):
-            x1 = rng.randint(0, width)
-            y1 = rng.randint(0, height)
-            x2 = x1 + rng.randint(-60, 60)
-            y2 = y1 + rng.randint(20, 90)
-            pygame.draw.line(surface, (180, 60, 20), (x1, y1), (x2, y2), 2)
-            pygame.draw.line(surface, (255, 140, 40), (x1, y1), (x2, y2), 1)
-        for _ in range(120):
-            surface.set_at(
-                (rng.randint(0, width - 1), rng.randint(0, height - 1)),
-                (255, 120 + rng.randint(0, 80), 40),
-            )
-    elif theme_index == 4:  # Still Expanse — frost veins
-        for _ in range(140):
-            fx = rng.randint(0, width)
-            fy = rng.randint(0, height)
-            fl = rng.randint(12, 48)
-            frost = (210, 230, 255)
-            pygame.draw.line(surface, frost, (fx, fy), (fx + fl, fy - fl // 2), 1)
-            pygame.draw.line(surface, frost, (fx + fl // 2, fy), (fx + fl // 2 + fl // 3, fy - fl // 3), 1)
-    elif theme_index == 5:  # Mirage Basin — dunes + heat shimmer
-        for y in range(0, height, 14):
-            offset = int(math.sin(y * 0.03 + seed * 0.1) * 30)
-            dune = tuple(min(255, c + 18) for c in accent_color)
-            pygame.draw.line(surface, dune, (offset, y), (width + offset, y), 2)
-        for _ in range(12):
-            ox = rng.randint(50, width - 50)
-            oy = rng.randint(50, height - 50)
-            oasis = pygame.Surface((80, 40), pygame.SRCALPHA)
-            pygame.draw.ellipse(oasis, (40, 140, 120, 55), (0, 0, 80, 40))
-            surface.blit(oasis, (ox - 40, oy - 20))
-    elif theme_index == 6:  # Dreaming Thicket — mystic swirls
-        for _ in range(35):
-            sx = rng.randint(0, width)
-            sy = rng.randint(0, height)
-            sr = rng.randint(20, 70)
-            swirl = pygame.Surface((sr * 2, sr * 2), pygame.SRCALPHA)
-            for a in range(0, 360, 40):
-                rad = math.radians(a)
-                pygame.draw.circle(
-                    swirl, (160, 90, 220, 50),
-                    (int(sr + math.cos(rad) * sr * 0.55), int(sr + math.sin(rad) * sr * 0.55)),
-                    max(2, sr // 8),
-                )
-            surface.blit(swirl, (sx - sr, sy - sr))
-        for y in range(0, height, 9):
-            offset = int(math.sin(y * 0.06 + seed) * 22)
-            pygame.draw.line(surface, (*_shade(accent_color, 25),), (offset, y), (width + offset, y), 1)
-    elif theme_index == 7:  # Hollow — void wells
-        for _ in range(25):
-            vx = rng.randint(0, width)
-            vy = rng.randint(0, height)
-            vr = rng.randint(20, 70)
-            well = pygame.Surface((vr * 2, vr * 2), pygame.SRCALPHA)
-            pygame.draw.circle(well, (0, 0, 0, 90), (vr, vr), vr)
-            pygame.draw.circle(well, (80, 60, 120, 70), (vr, vr), int(vr * 0.55), 2)
-            surface.blit(well, (vx - vr, vy - vr))
-    elif theme_index == 8:  # Ascending Strata — stars + light bands
-        for _ in range(280):
-            sx = rng.randint(0, width - 1)
-            sy = rng.randint(0, height - 1)
-            brightness = rng.randint(170, 255)
-            surface.set_at((sx, sy), (brightness, brightness, 255))
-            if rng.random() < 0.08:
-                pygame.draw.circle(surface, (220, 230, 255), (sx, sy), 2)
-        for i in range(6):
-            y = int(height * (0.15 + i * 0.12))
-            band = pygame.Surface((width, 8), pygame.SRCALPHA)
-            band.fill((180, 200, 255, 28))
-            surface.blit(band, (0, y))
-    else:  # First Divide / Core — pulsing wound motif
-        for _ in range(20):
-            cx = rng.randint(width // 4, 3 * width // 4)
-            cy = rng.randint(height // 4, 3 * height // 4)
-            rr = rng.randint(40, 120)
-            wound = pygame.Surface((rr * 2, rr * 2), pygame.SRCALPHA)
-            pygame.draw.circle(wound, (180, 40, 140, 55), (rr, rr), rr)
-            pygame.draw.circle(wound, (255, 80, 180, 70), (rr, rr), int(rr * 0.4))
-            surface.blit(wound, (cx - rr, cy - rr))
-        for _ in range(60):
-            x1 = rng.randint(0, width)
-            y1 = rng.randint(0, height)
-            pygame.draw.line(
-                surface, (220, 60, 160),
-                (x1, y1), (x1 + rng.randint(-40, 40), y1 + rng.randint(-40, 40)), 1,
-            )
 
 
 def draw_star(

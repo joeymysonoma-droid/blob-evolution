@@ -12,6 +12,7 @@ from blob_evolution import config
 from blob_evolution.entities.boss import Boss
 from blob_evolution.entities.creature import Creature
 from blob_evolution.utils.enums import CreatureType
+from blob_evolution.utils import terrain
 from blob_evolution.utils.graphics import generate_map_texture
 from blob_evolution.utils.vector2 import Vector2
 
@@ -68,7 +69,7 @@ class MapGenerator:
         self.current_map_index = 0
         self.background: pygame.Surface | None = None
         self.theme: dict = config.MAP_THEMES[0]
-        self.void_color: Tuple[int, int, int] = self._void_color_for(self.theme)
+        self.void_color: Tuple[int, int, int] = self._void_color_for(0)
 
     def load_map(self, map_index: int, seed: int | None = None) -> dict:
         """Load a map theme and generate background."""
@@ -76,7 +77,7 @@ class MapGenerator:
         self.theme = config.MAP_THEMES[self.current_map_index]
         if seed is None:
             seed = random.randint(0, 999999)
-        self.void_color = self._void_color_for(self.theme)
+        self.void_color = self._void_color_for(self.current_map_index)
         self.background = generate_map_texture(
             config.WORLD_WIDTH, config.WORLD_HEIGHT,
             self.theme["color"], self.theme["accent"],
@@ -85,9 +86,9 @@ class MapGenerator:
         return self.theme
 
     @staticmethod
-    def _void_color_for(theme: dict) -> Tuple[int, int, int]:
-        """Dark fill shown beyond the world edge, derived from the act colour."""
-        r, g, b = (int(c * config.VOID_COLOR_SCALE) for c in theme["color"])
+    def _void_color_for(map_index: int) -> Tuple[int, int, int]:
+        """Dark fill shown beyond the world edge: the act's DARK ground tone x VOID_COLOR_SCALE."""
+        r, g, b = (int(c * config.VOID_COLOR_SCALE) for c in terrain.ramp_for_act(map_index)[0])
         return (r, g, b)
 
     def _weights_for_act(self, elite: bool = False) -> List[Tuple[CreatureType, int]]:
