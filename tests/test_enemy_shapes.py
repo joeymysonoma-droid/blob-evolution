@@ -330,6 +330,16 @@ def test_sprite_cache_bounded_over_every_size_and_aim_step():
     assert peak <= config.ENEMY_SPRITE_CACHE_MAX == 1500
 
 
+def test_cached_sprites_are_cropped_to_their_visible_pixels():
+    """Baked sprites carry no empty margin (cheaper blits, smaller cache): the bounding rect of each is the whole surface."""
+    screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    _workload([0])(screen, 0)
+    assert shapes.cache_size() > 10
+    for key, (spr, ox, oy) in shapes._cache.items():
+        assert spr.get_bounding_rect(1).size == spr.get_size(), key
+        assert abs(ox) <= 3.2 * 30 and abs(oy) <= 3.2 * 30
+
+
 # ---- 8. cull ------------------------------------------------------------------------------------------------------------------
 
 def test_offscreen_creature_draws_nothing(monkeypatch):

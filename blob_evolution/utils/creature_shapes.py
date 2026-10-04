@@ -38,7 +38,11 @@ N_ORBIT = config.ENEMY_ORBIT_STEPS              # 3 satellites repeat every 120 
 N_TENDRIL = config.ENEMY_TENDRIL_PHASES
 MAX_SPRITES = config.ENEMY_SPRITE_CACHE_MAX
 
-_cache: Dict[tuple, pygame.Surface] = {}
+UNDER_KINDS = frozenset({"BOMBER", "SPLITTER", "PHANTOM"})                       # kinds with something behind the body
+OVER_KINDS = frozenset({"SHOOTER", "CHARGER", "SHIELDER", "ORBITER", "SPLITTER", "BOMBER", "LEECH"})   # kinds with something in front
+
+Sprite = Tuple[pygame.Surface, int, int]                      # (cropped surface, x offset, y offset from the centre it is drawn at)
+_cache: Dict[tuple, Sprite] = {}
 
 
 def cache_size() -> int:
@@ -46,11 +50,14 @@ def cache_size() -> int:
     return len(_cache)
 
 
-def _put(key: tuple, surf: pygame.Surface) -> pygame.Surface:
+def _put(key: tuple, surf: pygame.Surface) -> Sprite:
+    """Store surf cropped to its visible pixels (less to blit, less memory); the offset keeps it centred on the draw point."""
     if len(_cache) >= MAX_SPRITES:
         _cache.clear()
-    _cache[key] = surf
-    return surf
+    rect = surf.get_bounding_rect(1)
+    spr = (surf.subsurface(rect).copy(), rect.x - surf.get_width() // 2, rect.y - surf.get_height() // 2)
+    _cache[key] = spr
+    return spr
 
 
 def _canvas(r: int) -> Tuple[pygame.Surface, int]:
@@ -174,40 +181,17 @@ def _bake_leech(r: int, phase: int, flash: bool) -> pygame.Surface:
     return s
 
 
-def _blast(radius: int) -> pygame.Surface:
-    """Cached blast disc whose edge sits at the explosion radius."""
-    q = max(8, (radius + 2) // 4 * 4)
-    key = ("blast", q)
-    s = _cache.get(key)
-    if s is None:
-        s = pygame.Surface((q * 2 + 4, q * 2 + 4), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*BLAST, config.ENEMY_BLAST_ALPHA[0]), (q + 2, q + 2), q)
-        pygame.draw.circle(s, (*BLAST, config.ENEMY_BLAST_ALPHA[1]), (q + 2, q + 2), q, 2)
-        _put(key, s)
+def _bake_blast(q: int) -> pygame.Surface:
+    s = pygame.Surface((q * 2 + 4, q * 2 + 4), pygame.SRCALPHA)
+    pygame.draw.circle(s, (*BLAST, config.ENEMY_BLAST_ALPHA[0]), (q + 2, q + 2), q)
+    pygame.draw.circle(s, (*BLAST, config.ENEMY_BLAST_ALPHA[1]), (q + 2, q + 2), q, 2)
     return s
 
 
-def _disc(radius: int, color: Color, alpha: int) -> pygame.Surface:
-    """Cached translucent disc (phantom wisp)."""
-    key = ("disc", radius, color, alpha)
-    s = _cache.get(key)
-    if s is None:
-        s = pygame.Surface((radius * 2 + 2, radius * 2 + 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*color, alpha), (radius + 1, radius + 1), radius)
-        _put(key, s)
+def _bake_disc(radius: int, color: Color, alpha: int) -> pygame.Surface:
+    s = pygame.Surface((radius * 2 + 2, radius * 2 + 2), pygame.SRCALPHA)
+    pygame.draw.circle(s, (*color, alpha), (radius + 1, radius + 1), radius)
     return s
-
-
-def _get(key: tuple, fn, *args) -> pygame.Surface:
-    """Cached sprite for key, baked lazily."""
-    s = _cache.get(key)
-    return s if s is not None else _put(key, fn(*args))
-
-
-def telegraph_ring(size: float) -> pygame.Surface:
-    """Cached charger telegraph ring (replaces the per-frame Surface of the old draw)."""
-    radius = int(size * 1.6)
-    return _get(("ring", radius), _bake_ring, radius)
 
 
 def _bake_ring(radius: int) -> pygame.Surface:
@@ -216,9 +200,21 @@ def _bake_ring(radius: int) -> pygame.Surface:
     return s
 
 
-def _blit_c(dst: pygame.Surface, spr: pygame.Surface, x: float, y: float) -> None:
-    """Blit spr centred on (x, y)."""
-    dst.blit(spr, (int(x) - spr.get_width() // 2, int(y) - spr.get_height() // 2))
+def _get(key: tuple, fn, *args) -> Sprite:
+    """Cached sprite for key, baked lazily."""
+    s = _cache.get(key)
+    return s if s is not None else _put(key, fn(*args))
+
+
+def _blit_c(dst: pygame.Surface, spr: Sprite, x: float, y: float) -> None:
+    """Blit a cached sprite centred on (x, y)."""
+    dst.blit(spr[0], (int(x) + spr[1], int(y) + spr[2]))
+
+
+def draw_telegraph(dst: pygame.Surface, sx: float, sy: float, size: float) -> None:
+    """Blit the cached charger telegraph ring (replaces the per-frame Surface of the old draw)."""
+    radius = int(size * 1.6)
+    _blit_c(dst, _get(("ring", radius), _bake_ring, radius), sx, sy)
 
 
 # ---------------------------------------------------------------- public API
@@ -227,7 +223,8 @@ def draw_under(dst: pygame.Surface, kind: str, sx: float, sy: float, size: float
     """Draw what sits behind the body (blast disc, bulbs, wisps); call before the contact shadow and draw_blob."""
     r = max(6, int(size))
     if kind == "BOMBER" and fuse_timer < 1.0:
-        _blit_c(dst, _blast(int(explosion_radius)), sx, sy)
+        q = max(8, (int(explosion_radius) + 2) // 4 * 4)       # blast radius in steps of 4 px
+        _blit_c(dst, _get(("blast", q), _bake_blast, q), sx, sy)
     elif kind == "SPLITTER":
         _blit_c(dst, _get(("bulbs", r, flash), _bake_bulbs, r, flash), sx, sy)
     elif kind == "PHANTOM":
@@ -238,7 +235,8 @@ def draw_under(dst: pygame.Surface, kind: str, sx: float, sy: float, size: float
         t = ticks_ms * 0.0044            # 0.7 Hz sway
         for k, (d, rr, al) in enumerate(((0.9, 0.55, 150), (1.3, 0.4, 100), (1.65, 0.25, 60))):
             sway = math.sin(t + k * 1.3) * 0.18 * r
-            _blit_c(dst, _disc(max(2, int(rr * r)), (120, 100, 160), al),
+            rad = max(2, int(rr * r))
+            _blit_c(dst, _get(("disc", rad, al), _bake_disc, rad, (120, 100, 160), al),
                     sx + bx * d * r + px * sway, sy + by * d * r + py * sway)
 
 
