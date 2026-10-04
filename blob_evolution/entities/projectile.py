@@ -29,6 +29,12 @@ def get_shot_sprite(kind: str, color: Color) -> pygame.Surface:
     return sprite
 
 
+def _luminance(color: Color) -> float:
+    """WCAG relative luminance of an sRGB colour."""
+    lin = [(v / 255) / 12.92 if v / 255 <= 0.03928 else (((v / 255) + 0.055) / 1.055) ** 2.4 for v in color[:3]]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
 def shot_sprite_count() -> int:
     """Number of cached shot sprites."""
     return len(_SPRITES)
@@ -40,7 +46,11 @@ def _build_shot_sprite(kind: str, r: int, color: Color) -> pygame.Surface:
     surf = pygame.Surface((size, size), pygame.SRCALPHA)
     c = (size // 2, size // 2)
     pygame.draw.circle(surf, (*color, config.SHOT_HALO_ALPHA), c, 2 * r)
-    pygame.draw.circle(surf, (*config.XP_OUTLINE, 215), c, r + 2)
+    if _luminance(color) < config.DARK_SHOT_LUMINANCE:      # a dark shot would vanish into the dark outline: ring it in light instead
+        pygame.draw.circle(surf, (*config.SHOT_LIGHT_OUTLINE, 120), c, r + 3)
+        pygame.draw.circle(surf, (*config.SHOT_LIGHT_OUTLINE, 230), c, r + 2)
+    else:
+        pygame.draw.circle(surf, (*config.XP_OUTLINE, 215), c, r + 2)
     pygame.draw.circle(surf, color, c, r)
     if kind == "player":
         mark, mark_r = (255, 255, 255), max(2, r // 2)

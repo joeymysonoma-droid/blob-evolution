@@ -31,7 +31,7 @@ from blob_evolution.data.lore import (
 from blob_evolution.entities.boss import Boss
 from blob_evolution.entities.creature import Creature
 from blob_evolution.entities.particle import ParticleSystem
-from blob_evolution.entities.pickups import XPOrb
+from blob_evolution.entities.pickups import XPOrb, set_xp_act
 from blob_evolution.entities.player import Player
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.maps.generator import MapGenerator
@@ -300,6 +300,7 @@ class Game:
         seed = random.randint(0, 999999)
         act = self.overworld.act_index
         self.map_gen.load_map(act, seed)
+        set_xp_act(act)                                       # orb tiers scale with the act's median orb value
         self.ambient = AmbientField(act, seed ^ 0xA3B1E7)   # own rng: no global random draws
         self.layers = DepthLayers(act, seed ^ 0x5F0C1D) if config.GFX_LAYERS else None   # own rng as well
         params = self.overworld.get_encounter_params(node)
