@@ -426,7 +426,8 @@ def test_layers_are_not_saved(game, isolated_save):
     assert set(json.loads(text)) <= {"ng_plus", "permanent", "economy", "audio_enabled", "narration_volume"}
 
 
-def test_draw_order_is_fog_then_motes_then_player_then_overlay_then_hud(game):
+def test_draw_order_is_fog_then_motes_then_overlay_then_entities_then_player_then_hud(game):
+    """Visual Designer order: the overlay sits under orbs / creatures / projectiles / particles, front motes, player, HUD."""
     _enter_fight(game)
     order: List[str] = []
     game.map_gen.draw_background = lambda *a: order.append("ground")
@@ -435,10 +436,34 @@ def test_draw_order_is_fog_then_motes_then_player_then_overlay_then_hud(game):
     game.layers.blit_vignette = lambda *a: order.append("overlay")
     game.ambient.draw_back = lambda *a: order.append("back")
     game.ambient.draw_front = lambda *a: order.append("front")
+    game.particles.draw = lambda *a: order.append("particles")
+    game.xp_orbs = [type("Orb", (), {"active": True, "draw": lambda self, *a: order.append("orb")})()]
+    game.creatures = [type("Cr", (), {"active": True, "draw": lambda self, *a: order.append("creature")})()]
+    game.bosses = [type("Bo", (), {"active": True, "draw": lambda self, *a: order.append("boss")})()]
+    game.projectiles = [type("Pr", (), {"active": True, "draw": lambda self, *a: order.append("projectile")})()]
     game.hud.draw = lambda *a, **k: order.append("hud")
     game.player.draw = lambda *a, **k: order.append("player")
     game._draw_game()
-    assert order == ["ground", "hazards", "fog", "back", "front", "player", "overlay", "hud"]
+    assert order == ["ground", "hazards", "fog", "back", "overlay", "orb", "creature", "boss", "projectile",
+                     "particles", "front", "player", "hud"]
+
+
+def test_the_overlay_no_longer_darkens_the_player_or_enemies_at_the_screen_edge(game):
+    """The player drawn near a corner looks identical with and without the overlay (the overlay is under it)."""
+    _enter_fight(game)
+    game.hud.draw = lambda *a, **k: None
+    game.ambient = None
+    game.creatures = []
+    game.player.pos.set(game.camera.x - 520, game.camera.y - 330)       # screen position (80, 70)
+    spots = [(80 + dx, 70 + dy) for dx in (-6, 0, 6) for dy in (-6, 0, 6)]
+    game._draw_game()
+    with_overlay = [game.screen.get_at(p)[:3] for p in spots]
+    ground_only = layers_vignette = game.layers.vignette
+    game.layers.vignette = None
+    game._draw_game()
+    without = [game.screen.get_at(p)[:3] for p in spots]
+    game.layers.vignette = layers_vignette
+    assert with_overlay == without and ground_only is not None
 
 
 def test_the_overlay_never_covers_the_hud(game):
@@ -455,7 +480,7 @@ def test_the_overlay_never_covers_the_hud(game):
 
 def test_the_player_centre_pixel_is_unchanged_by_the_overlay(game):
     _enter_fight(game)
-    game.layers.fog = None                                # isolate the overlay (fog sits under the player)
+    game.layers.fog = None                                # isolate the overlay
     game.hud.draw = lambda *a, **k: None
     game._draw_game()
     with_overlay = game.screen.get_at((W // 2, H // 2))[:3]

@@ -1755,6 +1755,8 @@ class Game:
             self.layers.blit_fog(self.screen, self.camera, self.shake)
         if self.ambient:
             self.ambient.draw_back(self.screen, self.camera, self.shake)
+        if self.layers and self.player:   # light overlay under the entities: it must not darken the player or enemies
+            self.layers.blit_vignette(self.screen, self.player.hp / max(1.0, self.player.max_hp))
 
         for orb in self.xp_orbs:
             if orb.active:
@@ -1783,8 +1785,6 @@ class Game:
                 mouse[1] - (self.player.pos.y - self.camera.y + config.SCREEN_HEIGHT // 2 + self.shake.y),
             )
             self.player.draw(self.screen, self.camera, self.shake, look_target=look)
-            if self.layers:
-                self.layers.blit_vignette(self.screen, self.player.hp / max(1.0, self.player.max_hp))
             self.hud.draw(
                 self.screen, self.player, self.creatures, self.bosses,
                 self.xp_orbs, self.hazards, self.camera, self.fps,
