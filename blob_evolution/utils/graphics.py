@@ -253,6 +253,25 @@ def draw_health_bar(
     pygame.draw.rect(surface, (90, 110, 130), (x, y, width, height), 1, border_radius=4)
 
 
+# World-edge vignette: a VIGNETTE_GRID x VIGNETTE_GRID alpha map scaled to the world size
+VIGNETTE_GRID = 20
+VIGNETTE_START = 0.45      # fraction of the centre-to-corner distance where darkening begins
+VIGNETTE_MAX_ALPHA = 110
+
+
+def _make_vignette(width: int, height: int) -> pygame.Surface:
+    """Build the black edge-darkening overlay (alpha 0 in the middle, up to 110 at the corners)."""
+    n = VIGNETTE_GRID
+    small = pygame.Surface((n, n), pygame.SRCALPHA)
+    for j in range(n):
+        for i in range(n):
+            d = math.hypot((i + 0.5) / n - 0.5, (j + 0.5) / n - 0.5) / 0.7071   # 0 centre .. 1 corner
+            a = 0 if d < VIGNETTE_START else int(min(
+                VIGNETTE_MAX_ALPHA, (d - VIGNETTE_START) / (1 - VIGNETTE_START) * VIGNETTE_MAX_ALPHA))
+            small.set_at((i, j), (0, 0, 0, a))
+    return pygame.transform.smoothscale(small, (width, height))
+
+
 def generate_map_texture(
     width: int,
     height: int,
@@ -296,18 +315,8 @@ def generate_map_texture(
     # Theme-specific overlays
     _draw_theme_details(surface, width, height, base_color, accent_color, seed, theme_index, rng)
 
-    # Soft vignette (sampled)
-    vignette = pygame.Surface((width, height), pygame.SRCALPHA)
-    cx, cy = width // 2, height // 2
-    max_dist = math.hypot(cx, cy)
-    step = 5
-    for vy in range(0, height, step):
-        for vx in range(0, width, step):
-            dist = math.hypot(vx - cx, vy - cy) / max_dist
-            if dist > 0.45:
-                alpha = int((dist - 0.45) / 0.55 * 110)
-                pygame.draw.rect(vignette, (0, 0, 0, min(110, alpha)), (vx, vy, step, step))
-    surface.blit(vignette, (0, 0))
+    # Soft vignette (small alpha map scaled up)
+    surface.blit(_make_vignette(width, height), (0, 0))
 
     return surface
 
