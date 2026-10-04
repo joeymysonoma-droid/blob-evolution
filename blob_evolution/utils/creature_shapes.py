@@ -280,8 +280,14 @@ SCRATCH = 160
 _scratch: Optional[pygame.Surface] = None
 
 
-def phase_scratch() -> pygame.Surface:
-    """The one shared, cleared buffer a phased phantom's body is drawn into."""
+def _phase_rect(size: float) -> pygame.Rect:
+    """The part of the scratch buffer a creature of this size can touch (glow 1.55 r, rim, blob layers), centred in it."""
+    half = min(SCRATCH // 2, int(size * 1.7) + 4)
+    return pygame.Rect(SCRATCH // 2 - half, SCRATCH // 2 - half, half * 2, half * 2)
+
+
+def phase_scratch(size: float = 30.0) -> pygame.Surface:
+    """The one shared, cleared buffer a phased phantom's body is drawn into (a whole-surface fill is a memset: far cheaper than a rect fill)."""
     global _scratch
     if _scratch is None:
         _scratch = pygame.Surface((SCRATCH, SCRATCH), pygame.SRCALPHA)
@@ -289,8 +295,9 @@ def phase_scratch() -> pygame.Surface:
     return _scratch
 
 
-def blit_phased(dst: pygame.Surface, sx: float, sy: float) -> None:
+def blit_phased(dst: pygame.Surface, sx: float, sy: float, size: float = 30.0) -> None:
     """Blit the phased phantom buffer see-through (alpha 110) centred on (sx, sy)."""
-    scratch = _scratch if _scratch is not None else phase_scratch()
+    scratch = _scratch if _scratch is not None else phase_scratch(size)
     scratch.set_alpha(config.ENEMY_PHASED_ALPHA)
-    dst.blit(scratch, (int(sx) - SCRATCH // 2, int(sy) - SCRATCH // 2))
+    rect = _phase_rect(size)
+    dst.blit(scratch, (int(sx) - SCRATCH // 2 + rect.x, int(sy) - SCRATCH // 2 + rect.y), rect)
