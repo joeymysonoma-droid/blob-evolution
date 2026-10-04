@@ -36,6 +36,7 @@ from blob_evolution.entities.player import Player
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.maps.generator import MapGenerator
 from blob_evolution.systems import savefile
+from blob_evolution.systems.ambient import AmbientField
 from blob_evolution.systems.artifacts import ARTIFACT_DEFINITIONS, ArtifactManager
 from blob_evolution.systems.audio import (
     NARRATION_VOLUME_DEFAULT, NARRATION_VOLUME_STEP, OPENING_CLIPS, descent_clip, get_audio, miniboss_clip,
@@ -101,7 +102,7 @@ class Game:
         self.core_choice_selected = 0
         self.run_ending = "reopen"
         self._boss_touch_cooldown = 0.0
-        self._ambient_timer = 0.0
+        self.ambient: Optional[AmbientField] = None   # visual mote field of the current encounter
         self._seen_acts: set = set()
         self._shoot_sound_cd = 0.0
         self.audio.play_menu_music()
@@ -297,6 +298,7 @@ class Game:
         seed = random.randint(0, 999999)
         act = self.overworld.act_index
         self.map_gen.load_map(act, seed)
+        self.ambient = AmbientField(act, seed ^ 0xA3B1E7)   # own rng: no global random draws
         params = self.overworld.get_encounter_params(node)
         self.current_node_params = params
         diff = self._diff_mult()
@@ -1071,20 +1073,10 @@ class Game:
             pass  # Paused gameplay
 
     def _update_ambient(self, dt: float) -> None:
-        """Emit soft theme-colored ambient motes while exploring."""
-        self._ambient_timer -= dt
-        if self._ambient_timer > 0 or not self.player:
-            return
-        self._ambient_timer = 0.35
-        theme = self.map_gen.theme
-        accent = theme.get("accent", config.COLOR_PLAYER)
-        for _ in range(2):
-            offset = Vector2(random.uniform(-400, 400), random.uniform(-300, 300))
-            self.particles.emit(
-                self.player.pos + offset, 1, accent,
-                speed_range=(5, 25), size_range=(1.5, 3.5),
-                lifetime=1.8, gravity=False,
-            )
+        """Advance the per-act ambient mote field while exploring."""
+        if self.ambient:
+            self.ambient.update(dt, self.camera)
+
     def _update_playing(self, dt: float) -> None:
         """Update active gameplay."""
         if not self.player:
@@ -1754,6 +1746,8 @@ class Game:
         """Draw gameplay scene."""
         self.map_gen.draw_background(self.screen, self.camera, self.shake)
         self.hazards.draw(self.screen, self.camera, self.shake)
+        if self.ambient:
+            self.ambient.draw_back(self.screen, self.camera, self.shake)
 
         for orb in self.xp_orbs:
             if orb.active:
@@ -1772,6 +1766,8 @@ class Game:
                 proj.draw(self.screen, self.camera, self.shake)
 
         self.particles.draw(self.screen, self.camera, self.shake)
+        if self.ambient:
+            self.ambient.draw_front(self.screen, self.camera, self.shake)
 
         if self.player:
             mouse = pygame.mouse.get_pos()
