@@ -451,3 +451,50 @@ def test_act_smoke_update_and_draw_every_enemy(act):
         for c in creatures:
             c.draw(screen, cam, NO_SHAKE)
     assert shapes.cache_size() <= config.ENEMY_SPRITE_CACHE_MAX
+
+
+# ---- slow: rim contrast on the real, fully composed frame of every act --------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.parametrize("act", range(10))
+@pytest.mark.parametrize("lowhp", [False, True])
+def test_rim_contrast_on_composed_frame_every_act(act, lowhp, monkeypatch):
+    """Ground + fog + ambient + vignette (or the red low-HP overlay) + creature: the rim of every type keeps >= 3:1 against the ground around it."""
+    from blob_evolution.systems.ambient import AmbientField
+    from blob_evolution.utils import layers
+    monkeypatch.setattr(config, "GFX_READABILITY", False)
+    screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    mg = MapGenerator()
+    mg.load_map(act, 7)
+    dl = layers.DepthLayers(act, 7)
+    overlay = layers.build_overlay(*config.LOW_HP_OVERLAY) if lowhp else dl.vignette
+    rng = random.Random(100 + act)
+    spots = [(CX, CY), (90, 90), (config.SCREEN_WIDTH - 90, config.SCREEN_HEIGHT - 90)] + \
+            [(rng.randint(90, config.SCREEN_WIDTH - 90), rng.randint(90, config.SCREEN_HEIGHT - 90)) for _ in range(9)]
+    cam = Vector2(1000, 1000)
+    amb = AmbientField(act, 5)
+    for _ in range(120):
+        amb.update(1 / 60, cam)
+
+    def base() -> None:
+        mg.draw_background(screen, cam, NO_SHAKE)
+        dl.blit_fog(screen, cam, NO_SHAKE)
+        amb.draw_back(screen, cam, NO_SHAKE)
+        screen.blit(overlay, (0, 0))
+    worst = 99.0
+    for kind in ENEMY_TYPES:
+        rim = shapes.RIM[kind.name]
+        for i, (px, py) in enumerate(spots):
+            size = (12, 20, 28)[i % 3]
+            base()
+            ground = [screen.get_at((px + int(math.cos(a / 8 * math.tau) * (size + 6)), py + int(math.sin(a / 8 * math.tau) * (size + 6))))[:3]
+                      for a in range(8)]
+            mean = tuple(sum(g[k] for g in ground) / len(ground) for k in range(3))
+            c = make(kind, size)
+            c.pos = Vector2(1000 - CX + px, 1000 - CY + py)
+            c.draw(screen, cam, NO_SHAKE)
+            x, y = int(px - 0.96 * (size - 1)), int(py - 0.29 * (size - 1))                    # rim pixel on the side away from the extras
+            seen = [screen.get_at((x + dx, y + dy))[:3] for dx in (-1, 0, 1) for dy in (-1, 0, 1)]
+            assert rim in seen, (kind, act, i)
+            worst = min(worst, contrast(rim, mean))
+    assert worst >= 3.0, worst
