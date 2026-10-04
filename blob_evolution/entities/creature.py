@@ -315,7 +315,7 @@ class Creature:
             draw_contact_shadow(surface, sx, sy, self.size)
         target, bx, by = surface, sx, sy
         if self.phased:
-            target = shapes.phase_scratch()
+            target = shapes.phase_scratch(self.size)
             bx = by = shapes.SCRATCH // 2
         draw_blob(
             target, (bx, by), self.size, colors[0], colors[1], self.vel,
@@ -329,7 +329,7 @@ class Creature:
                              (self.shield_hp / self.shield_max) if self.shield_max else 0.0,
                              self.fuse_timer, flash, ticks)
         if self.phased:
-            shapes.blit_phased(surface, sx, sy)
+            shapes.blit_phased(surface, sx, sy, self.size)
         if self.ctype == CreatureType.BOMBER and self.fuse_timer < 2.0:
             pulse = 0.5 + 0.5 * math.sin(self.fuse_timer * 12)
             pygame.draw.circle(
