@@ -1250,7 +1250,12 @@ class Game:
             for creature in self.creatures:
                 if creature.active and proj.collides_with(creature.pos, creature.radius):
                     killed = creature.take_damage(hit_damage, ignore_def, hit_from=proj.pos)
-                    self.particles.emit_sparkle(creature.pos, (255, 200, 100))
+                    hit_pt = creature.pos
+                    if config.GFX_READABILITY:
+                        d = proj.pos - creature.pos
+                        if d.length() > 1:
+                            hit_pt = creature.pos + d.normalize() * creature.radius
+                    self.particles.emit_sparkle(hit_pt, (255, 200, 100))
                     self.audio.play("hit", 0.45)
                     if killed:
                         self._on_creature_killed(creature)

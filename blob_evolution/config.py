@@ -41,8 +41,10 @@ COLOR_BG = (15, 23, 42)          # slate-900
 COLOR_PLAYER = (34, 197, 94)   # green-500
 COLOR_PLAYER_CORE = (74, 222, 128)
 COLOR_XP = (250, 204, 21)      # yellow
-COLOR_PROJECTILE_PLAYER = (34, 197, 94)
-COLOR_PROJECTILE_ENEMY = (249, 115, 22)
+COLOR_PROJECTILE_PLAYER = (120, 255, 170)   # TASK-043: lighter than the player body so shots read against it
+COLOR_PROJECTILE_ENEMY = (255, 150, 50)
+COLOR_PROJECTILE_PLAYER_LEGACY = (34, 197, 94)   # pre-043 colours, used when GFX_READABILITY is False
+COLOR_PROJECTILE_ENEMY_LEGACY = (249, 115, 22)
 COLOR_UI_BG = (30, 41, 59)
 COLOR_UI_BORDER = (71, 85, 105)
 COLOR_TEXT = (226, 232, 240)
@@ -230,3 +232,23 @@ SAVE_FILE = "blob_evolution_save.json"
 SAVE_BACKUP_SUFFIX = ".bak"  # unreadable saves are copied to SAVE_FILE + suffix before overwrite
 SAVE_BACKUP_LIMIT = 10  # backup slots: .bak, .bak.1 ... .bak.9; existing backups are never overwritten
 SAVE_TEMP_SUFFIX = ".tmp"  # saves are written to SAVE_FILE + suffix, then atomically renamed
+
+# Readability pass (TASK-043): contact shadows, outlined shots, XP orbs by value. Visual only.
+GFX_READABILITY = True                  # Producer A/B switch: False restores the pre-043 drawing exactly
+XP_TIER_THRESHOLDS = (20, 60, 120)      # orb value cut-offs between tiers 1|2, 2|3 and 3|4
+XP_BLINK_SECONDS = 3.0                  # an orb blinks during the last seconds of its life
+XP_BLINK_HZ = 0.9                       # at most 0.9 Hz (R5)
+# XP tier look: body colour, core colour. Shape cue: 1 disc, 2 disc + ring, 3 diamond, 4 four-point star.
+XP_TIER_STYLE = (
+    {"body": (250, 204, 21), "core": (255, 245, 180)},
+    {"body": (255, 240, 140), "core": (255, 255, 255)},
+    {"body": (120, 225, 255), "core": (230, 250, 255)},
+    {"body": (255, 130, 225), "core": (255, 230, 250)},
+)
+XP_DIAMOND_REACH = 1.45                 # tier 3 diamond half-diagonal in radii (spec 1.25, widened so the 4 tier areas differ >= 12 %)
+XP_STAR_REACH = (1.45, 0.55)            # tier 4 star outer / inner radius in radii
+XP_OUTLINE = (10, 10, 16)               # dark outline shared by orbs and shots
+SHOT_DRAW_RADIUS = {"player": 5, "enemy": 6, "boss": 8}   # sprite size only; the hitbox stays 5 / 6 / 6
+SHOT_HALO_ALPHA = 55
+SHADOW_ALPHAS = (38, 90)                # outer soft ellipse, inner ellipse
+SHADOW_MIN_RADIUS = 4
