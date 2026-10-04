@@ -190,8 +190,8 @@ def test_macro_noise_stacks_the_three_configured_octaves(monkeypatch):
 
     monkeypatch.setattr(terrain, "noise_layer", spy)
     ground = terrain.macro_noise_ground(100, 100, config.GROUND_RAMPS[0], random.Random(3))
-    assert calls == [(9, 0.0, 1.0), (22, 0.15, 0.85), (60, 0.30, 0.70)]
-    assert config.GROUND_NOISE_OCTAVES[1][3] == 110 and config.GROUND_NOISE_OCTAVES[2][3] == 70
+    assert calls == [(9, 0.0, 1.0), (22, 0.05, 0.95), (60, 0.25, 0.75)]
+    assert config.GROUND_NOISE_OCTAVES[1][3] == 90 and config.GROUND_NOISE_OCTAVES[2][3] == 50
     assert ground.get_size() == (100, 100) and ground.get_at((5, 5))[3] == 255
 
 

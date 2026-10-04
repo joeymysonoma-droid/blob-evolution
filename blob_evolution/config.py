@@ -99,7 +99,7 @@ GROUND_RAMPS = [
     ((30, 11, 34), (42, 16, 48), (76, 24, 68)),     # 9 First Divide
 ]
 # Macro noise octaves: (cells per side, lowest ramp position, highest ramp position, blit alpha; None = opaque base)
-GROUND_NOISE_OCTAVES = ((9, 0.0, 1.0, None), (22, 0.15, 0.85, 110), (60, 0.30, 0.70, 70))
+GROUND_NOISE_OCTAVES = ((9, 0.0, 1.0, None), (22, 0.05, 0.95, 90), (60, 0.25, 0.75, 50))
 GROUND_GRIT_COUNT = (1000, 1600)    # single-pixel grit specks per bake (min, max)
 GROUND_GRIT_SPREAD = 14             # grit = MID +/- this per channel (never darker than 0.6 x DARK)
 GROUND_CLUSTER_COUNT = (7, 10)      # decal cluster centres per act (plus one at the world centre)
