@@ -24,6 +24,7 @@ from blob_evolution.utils.graphics import generate_map_texture
 
 ACTS = range(len(config.MAP_THEMES))
 SEEDS = (0, 7, 145, 999)
+DECAL_ACTS_DONE = 5          # acts 0-4 have their TASK-038 decals; 5-9 still draw none until TASK-039
 W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
 PLAYER_BODY = config.COLOR_PLAYER
 
@@ -85,7 +86,7 @@ def _ground_stats(act: int, seed: int) -> Dict[str, object]:
     floor = tuple(math.ceil(c * 0.6) for c in dark)
     ceiling = tuple(max(light[c], mid[c] + config.GROUND_GRIT_SPREAD) + 1 for c in range(3))
     return {
-        "p95": lums[int(n * 0.95)], "p99": lums[int(n * 0.99)],
+        "p95": lums[int(n * 0.95)], "p99": lums[int(n * 0.99)], "bright_share": sum(1 for v in lums if v > 0.104) / n,
         "above_floor": _all_at_least(surf, floor), "below_ceiling": _all_at_most(surf, ceiling),
     }
 
@@ -143,7 +144,11 @@ def test_ground_luma_stays_readable(act, seed):
 def test_no_pixel_darker_than_06_dark_or_outside_the_ramp(act, seed):
     st = _ground_stats(act, seed)
     assert st["above_floor"], "a pixel is darker than 0.6 x DARK (before the vignette)"
-    assert st["below_ceiling"], "a pixel is brighter than LIGHT (or MID + grit step)"
+    if act >= DECAL_ACTS_DONE:
+        assert st["below_ceiling"], "a pixel is brighter than LIGHT (or MID + grit step)"
+    else:
+        # 038 decals use the plan's own highlight colours (brighter than LIGHT): R1 allows thin highlights < 1% of pixels
+        assert st["bright_share"] < 0.01, st
 
 
 def test_mask_helpers_really_detect_a_single_bad_pixel():
@@ -270,15 +275,17 @@ def test_stamp_centres_rotates_scales_and_fades_without_touching_the_sprite():
     assert sprite.get_alpha() in (None, 255) and sprite.get_at((0, 0))[3] == 255
 
 
-def test_placeholder_decals_exist_for_every_act_and_draw_nothing():
+def test_decal_passes_exist_for_every_act_and_only_acts_5_to_9_are_still_placeholders():
     assert len(terrain.ACT_DECALS) == 10
     assert [getattr(terrain, f"decals_act_{i}") for i in range(10)] == list(terrain.ACT_DECALS)
-    surf = pygame.Surface((50, 50))
-    surf.fill((9, 9, 9))
-    before = pygame.image.tobytes(surf, "RGB")
-    for decals in terrain.ACT_DECALS:
-        decals(surf, random.Random(1), terrain.make_scatter(50, 50, random.Random(1)))
-    assert pygame.image.tobytes(surf, "RGB") == before
+    for act, decals in enumerate(terrain.ACT_DECALS):
+        surf = pygame.Surface((2000, 2000))
+        surf.fill((9, 9, 9))
+        before = pygame.image.tobytes(surf, "RGB")
+        rng = random.Random(1)
+        decals(surf, rng, terrain.make_scatter(2000, 2000, rng))
+        changed = pygame.image.tobytes(surf, "RGB") != before
+        assert changed == (act < DECAL_ACTS_DONE), act
 
 
 def test_old_theme_flourishes_and_membrane_blobs_are_gone():
