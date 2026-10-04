@@ -21,14 +21,14 @@ def set_xp_act(act: int) -> None:
 
 
 def xp_thresholds(act: Optional[int] = None) -> Tuple[float, float, float]:
-    """Tier cut-offs (0.75 m, 1.4 m, 2.5 m) of an act's median orb value m; None means the current act."""
-    m = config.XP_TIER_MEDIAN[_ACT[0] if act is None else max(0, min(act, len(config.XP_TIER_MEDIAN) - 1))]
-    f = config.XP_TIER_FACTORS
+    """Tier cut-offs (factors x m) of an act's median orb value m (default 0.75, 1.4, 2.5; act 7 has its own); None: the current act."""
+    i = _ACT[0] if act is None else max(0, min(act, len(config.XP_TIER_MEDIAN) - 1))
+    m, f = config.XP_TIER_MEDIAN[i], config.XP_TIER_FACTORS[i]
     return (f[0] * m, f[1] * m, f[2] * m)
 
 
 def xp_tier(value: int, act: Optional[int] = None) -> int:
-    """Return the orb tier 1..4 for an XP value in an act (None: the current act): below 0.75 m, 1.4 m, 2.5 m, above."""
+    """Return the orb tier 1..4 for an XP value in an act (None: the current act) from its three cut-offs."""
     return 1 + sum(1 for t in xp_thresholds(act) if value >= t)
 
 
