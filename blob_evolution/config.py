@@ -36,6 +36,7 @@ CAMERA_SMOOTH = 0.12
 SCREEN_SHAKE_DECAY = 0.85
 
 # Colors
+VOID_COLOR_SCALE = 0.4          # ground edge fill (outside the world) = theme colour x this
 COLOR_BG = (15, 23, 42)          # slate-900
 COLOR_PLAYER = (34, 197, 94)   # green-500
 COLOR_PLAYER_CORE = (74, 222, 128)

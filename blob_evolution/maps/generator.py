@@ -68,6 +68,7 @@ class MapGenerator:
         self.current_map_index = 0
         self.background: pygame.Surface | None = None
         self.theme: dict = config.MAP_THEMES[0]
+        self.void_color: Tuple[int, int, int] = self._void_color_for(self.theme)
 
     def load_map(self, map_index: int, seed: int | None = None) -> dict:
         """Load a map theme and generate background."""
@@ -75,12 +76,19 @@ class MapGenerator:
         self.theme = config.MAP_THEMES[self.current_map_index]
         if seed is None:
             seed = random.randint(0, 999999)
+        self.void_color = self._void_color_for(self.theme)
         self.background = generate_map_texture(
             config.WORLD_WIDTH, config.WORLD_HEIGHT,
             self.theme["color"], self.theme["accent"],
             seed, self.current_map_index,
         )
         return self.theme
+
+    @staticmethod
+    def _void_color_for(theme: dict) -> Tuple[int, int, int]:
+        """Dark fill shown beyond the world edge, derived from the act colour."""
+        r, g, b = (int(c * config.VOID_COLOR_SCALE) for c in theme["color"])
+        return (r, g, b)
 
     def _weights_for_act(self, elite: bool = False) -> List[Tuple[CreatureType, int]]:
         idx = min(self.current_map_index, len(_ACT_WEIGHTS) - 1)
@@ -160,9 +168,14 @@ class MapGenerator:
         if not self.background:
             surface.fill(config.COLOR_BG)
             return
-        cam_x = int(camera.x - config.SCREEN_WIDTH // 2 + shake.x)
-        cam_y = int(camera.y - config.SCREEN_HEIGHT // 2 + shake.y)
-        surface.blit(self.background, (-cam_x, -cam_y))
+        # Same sign as entities (world - camera + half + shake) so the ground shakes with them
+        cam_x = int(camera.x - config.SCREEN_WIDTH // 2 - shake.x)
+        cam_y = int(camera.y - config.SCREEN_HEIGHT // 2 - shake.y)
+        bw, bh = self.background.get_size()
+        x0, y0 = -cam_x, -cam_y
+        if x0 > 0 or y0 > 0 or x0 + bw < config.SCREEN_WIDTH or y0 + bh < config.SCREEN_HEIGHT:
+            surface.fill(self.void_color)   # a world edge is on screen: no stale pixels
+        surface.blit(self.background, (x0, y0))
 
     @property
     def hazard_types(self) -> List[str]:
