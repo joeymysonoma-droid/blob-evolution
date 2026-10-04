@@ -337,7 +337,7 @@ def test_cached_sprites_are_cropped_to_their_visible_pixels():
     assert shapes.cache_size() > 10
     for key, (spr, ox, oy) in shapes._cache.items():
         assert spr.get_bounding_rect(1).size == spr.get_size(), key
-        assert abs(ox) <= 3.2 * 30 and abs(oy) <= 3.2 * 30
+        assert abs(ox) <= 3.6 * 30 + 10 and abs(oy) <= 3.6 * 30 + 10        # the blast disc is the widest (3.5 size)
 
 
 # ---- 8. cull ------------------------------------------------------------------------------------------------------------------
