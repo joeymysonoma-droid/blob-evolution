@@ -277,7 +277,10 @@ def test_toggle_off_draws_no_shadows(monkeypatch):
 
 def test_new_colours_and_constants():
     assert config.COLOR_PROJECTILE_PLAYER == (120, 255, 170) and config.COLOR_PROJECTILE_ENEMY == (255, 150, 50)
-    assert config.XP_TIER_FACTORS == (0.75, 1.4, 2.5) and config.GFX_READABILITY is True
+    assert config.XP_TIER_FACTORS_DEFAULT == (0.75, 1.4, 2.5) and config.GFX_READABILITY is True
+    assert len(config.XP_TIER_FACTORS) == 10 and config.XP_TIER_FACTORS[7] == (0.85, 1.1, 1.5)
+    assert all(config.XP_TIER_FACTORS[a] == (0.75, 1.4, 2.5) for a in range(10) if a != 7)
+    assert config.DARK_SHOT_LUMINANCE == 0.25
     assert len(config.XP_TIER_MEDIAN) == 10 and all(isinstance(m, int) and m > 0 for m in config.XP_TIER_MEDIAN)
     assert not hasattr(config, "XP_TIER_THRESHOLDS")
     assert config.SHOT_DRAW_RADIUS == {"player": 5, "enemy": 6, "boss": 8}
@@ -311,13 +314,13 @@ def test_player_and_enemy_shots_differ_by_shape_not_only_colour():
 
 def test_shot_sprite_layout_matches_the_spec():
     r = 6
-    sprite = get_shot_sprite("enemy", (200, 100, 40))
+    sprite = get_shot_sprite("enemy", (250, 160, 60))
     assert sprite.get_size() == (4 * 6 + 4, 4 * 6 + 4) and sprite.get_flags() & pygame.SRCALPHA
     c = sprite.get_width() // 2
     assert sprite.get_at((c + r + 1, c))[:3] == config.XP_OUTLINE and sprite.get_at((c + r + 1, c))[3] == 215       # dark ring at R + 2
-    assert sprite.get_at((c + 2 * r - 1, c))[:4] == (200, 100, 40, config.SHOT_HALO_ALPHA)                          # halo
-    assert sprite.get_at((c + r - 3, c))[:3] == (200, 100, 40)                                                        # body
-    boss = get_shot_sprite("boss", (200, 100, 40))
+    assert sprite.get_at((c + 2 * r - 1, c))[:4] == (250, 160, 60, config.SHOT_HALO_ALPHA)                          # halo
+    assert sprite.get_at((c + r - 3, c))[:3] == (250, 160, 60)                                                        # body
+    boss = get_shot_sprite("boss", (250, 160, 60))
     assert boss.get_width() == 4 * 8 + 4
 
 
@@ -358,11 +361,6 @@ def _boss_shot_colours(act: int) -> set:
     return found
 
 
-# colours that are not "dark" (luminance >= 0.12) but still sit just under 3:1 against their act's LIGHT ground tone, a worst case:
-# the secondary rot ring (act 1), the echo ghost shots (act 2) and the phase-3 radial (act 9). Reported to the Visual Designer.
-NOT_DARK_BUT_UNDER_3 = {(1, (100, 150, 40)), (2, (90, 130, 200)), (9, (200, 50, 150))}
-
-
 def _edge_over(act: int, kind: str, colour) -> Tuple[float, tuple]:
     """Contrast of a shot's outline (composited over the act's LIGHT ground tone) with that tone."""
     light = config.GROUND_RAMPS[act][2]
@@ -375,6 +373,7 @@ def _edge_over(act: int, kind: str, colour) -> Tuple[float, tuple]:
 
 @pytest.mark.parametrize("act", range(10))
 def test_every_boss_shot_colour_reads_against_its_acts_light_ground_tone(act):
+    """Dark (luminance < 0.25) shots are carried by their light edge; a bright shot may be carried by its body. Both worst-case at the LIGHT tone."""
     light = config.GROUND_RAMPS[act][2]
     colours = _boss_shot_colours(act)
     assert colours
@@ -382,20 +381,22 @@ def test_every_boss_shot_colour_reads_against_its_acts_light_ground_tone(act):
         edge, pixel = _edge_over(act, kind, colour)
         if projectile_module._luminance(colour) < config.DARK_SHOT_LUMINANCE:
             assert pixel[:3] == config.SHOT_LIGHT_OUTLINE
-            assert edge >= 3.0, (act, colour, edge)                                         # dark shots are carried by the light edge
+            assert edge >= 3.0, (act, colour, edge)
             if act == 7:
                 assert edge >= 6.0, (act, colour, edge)
-        elif (act, colour) in NOT_DARK_BUT_UNDER_3:
-            assert max(edge, _contrast(colour, light)) >= 2.8, (act, colour)
         else:
-            assert max(edge, _contrast(colour, light)) >= 3.0, (act, colour)                # a bright body carries these
+            assert pixel[:3] == config.XP_OUTLINE
+            assert _contrast(colour, light) >= 3.0, (act, colour)
 
 
-def test_the_colours_listed_as_not_dark_are_really_not_dark_and_really_under_3():
-    for act, colour in NOT_DARK_BUT_UNDER_3:
-        assert projectile_module._luminance(colour) >= config.DARK_SHOT_LUMINANCE
-        light = config.GROUND_RAMPS[act][2]
-        assert max(_edge_over(act, "boss", colour)[0], _contrast(colour, light)) < 3.0
+def test_the_three_borderline_colours_now_get_the_light_outline_and_the_default_enemy_shot_keeps_the_dark_one():
+    for act, colour in ((1, (100, 150, 40)), (2, (90, 130, 200)), (9, (200, 50, 150))):
+        assert colour in {c for _, c in _boss_shot_colours(act)}
+        edge, pixel = _edge_over(act, "boss", colour)
+        assert pixel[:3] == config.SHOT_LIGHT_OUTLINE and edge >= 3.0
+    assert 0.25 <= projectile_module._luminance(config.COLOR_PROJECTILE_ENEMY)
+    for kind in ("enemy", "boss"):
+        assert _edge_over(0, kind, config.COLOR_PROJECTILE_ENEMY)[1][:3] == config.XP_OUTLINE
 
 
 def test_dark_outline_does_not_add_allocations(monkeypatch):
@@ -422,7 +423,8 @@ def test_shot_cache_is_bounded_and_keyed_by_kind_and_colour():
 @pytest.mark.parametrize("act", range(10))
 def test_xp_tiers_scale_with_the_acts_median_orb_value(act):
     m = config.XP_TIER_MEDIAN[act]
-    cuts = (0.75 * m, 1.4 * m, 2.5 * m)
+    f = config.XP_TIER_FACTORS[act]
+    cuts = (f[0] * m, f[1] * m, f[2] * m)
     assert xp_thresholds(act) == cuts
     for tier, (lo, hi) in enumerate(((0, cuts[0]), (cuts[0], cuts[1]), (cuts[1], cuts[2]), (cuts[2], 10 * m)), start=1):
         for value in range(int(lo) - 1, int(hi) + 2):
@@ -433,6 +435,15 @@ def test_xp_tiers_scale_with_the_acts_median_orb_value(act):
     assert xp_tier(0, act) == 1 and xp_tier(int(cuts[0]) - 1 if cuts[0] > 1 else 0, act) == 1
     assert xp_tier(math.ceil(cuts[0]), act) == 2 and xp_tier(math.ceil(cuts[1]), act) == 3 and xp_tier(math.ceil(cuts[2]), act) == 4
     assert xp_tier(m, act) == 2                                                          # the median orb is a tier 2 orb
+
+
+def test_act_7_has_its_own_closer_cut_offs():
+    cuts = xp_thresholds(7)
+    assert [round(c, 1) for c in cuts] == [45.9, 59.4, 81.0]
+    assert [xp_tier(v, 7) for v in (34, 45, 46, 54, 59, 60, 80, 81, 400)] == [1, 1, 2, 2, 2, 3, 3, 4, 4]
+    assert xp_thresholds(6) == (0.75 * 70, 1.4 * 70, 2.5 * 70) and xp_thresholds(8) == (0.75 * 94, 1.4 * 94, 2.5 * 94)
+    set_xp_act(7)
+    assert xp_thresholds() == cuts and XPOrb(Vector2(), 70).tier == 3
 
 
 def test_the_current_act_sets_the_tier_of_new_orbs_and_each_orb_keeps_its_tier():
@@ -767,8 +778,8 @@ def _items(act: int = 0):
         "enemy shot": (shot("enemy"), config.COLOR_PROJECTILE_ENEMY),
         "boss shot": (shot("boss"), config.COLOR_PROJECTILE_ENEMY),
     }
-    m = config.XP_TIER_MEDIAN[act]
-    for tier, value in enumerate((int(0.5 * m), m, int(2 * m), int(3 * m)), start=1):
+    c = xp_thresholds(act)
+    for tier, value in enumerate((int(0.5 * c[0]), int((c[0] + c[1]) / 2), int((c[1] + c[2]) / 2), int(1.2 * c[2])), start=1):
         assert xp_tier(value, act) == tier
         items[f"xp tier {tier}"] = (orb(value), style[tier - 1]["body"])
     return {k: (draw, *_body_offsets(draw, colour)) for k, (draw, colour) in items.items()}
