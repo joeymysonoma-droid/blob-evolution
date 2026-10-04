@@ -10,6 +10,7 @@ import pygame
 
 from blob_evolution import config
 from blob_evolution.entities.projectile import Projectile
+from blob_evolution.utils import creature_shapes as shapes
 from blob_evolution.utils.enums import CreatureType
 from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow
 from blob_evolution.utils.vector2 import Vector2
@@ -27,8 +28,9 @@ class Creature:
         CreatureType.ORBITER: ((220, 180, 60), (255, 230, 120)),
         CreatureType.BOMBER: ((230, 90, 40), (255, 160, 60)),
         CreatureType.PHANTOM: ((120, 100, 160), (180, 160, 220)),
-        CreatureType.LEECH: ((60, 160, 100), (120, 230, 160)),
+        CreatureType.LEECH: config.ENEMY_LEECH_COLORS,
     }
+    LEGACY_LEECH_COLORS = ((60, 160, 100), (120, 230, 160))      # used when config.GFX_ENEMY_SHAPES is False
 
     def __init__(
         self,
@@ -60,6 +62,7 @@ class Creature:
         self.slow_factor = 1.0
         self.face_dir = Vector2(1, 0)
         self.shield_hp = 40.0 * diff["hp"] if creature_type == CreatureType.SHIELDER else 0.0
+        self.shield_max = self.shield_hp                  # visual only: 0 for non-shielders
         self.orbit_angle = random.uniform(0, math.tau)
         self.phase_timer = random.uniform(1.5, 3.0)
         self.phased = False
@@ -292,10 +295,59 @@ class Creature:
             self.hp = min(self.max_hp, self.hp + 8 * dt)
 
     def draw(self, surface: pygame.Surface, camera: Vector2, shake: Vector2) -> None:
-        """Draw creature."""
+        """Draw creature (silhouette per type; the pre-046 look when GFX_ENEMY_SHAPES is False)."""
+        if not config.GFX_ENEMY_SHAPES:
+            self._draw_legacy(surface, camera, shake)
+            return
+        sx = self.pos.x - camera.x + config.SCREEN_WIDTH // 2 + shake.x
+        sy = self.pos.y - camera.y + config.SCREEN_HEIGHT // 2 + shake.y
+        m = self.size * 3.6 + 10                  # nothing of it can be visible: skip every draw
+        if sx < -m or sx > config.SCREEN_WIDTH + m or sy < -m or sy > config.SCREEN_HEIGHT + m:
+            return
+        kind = self.ctype.name
+        flash = self.hit_flash > 0
+        colors = ((255, 255, 255), (255, 200, 200)) if flash else self.COLORS.get(self.ctype, ((200, 60, 60), (255, 120, 120)))
+        ticks = pygame.time.get_ticks()
+        shapes.draw_under(surface, kind, sx, sy, self.size, self.face_dir, self.vel,
+                          self.fuse_timer, self.explosion_radius, flash, ticks)
+        if config.GFX_READABILITY and not self.phased:
+            draw_contact_shadow(surface, sx, sy, self.size)
+        target, bx, by = surface, sx, sy
+        if self.phased:
+            target = shapes.phase_scratch()
+            bx = by = shapes.SCRATCH // 2
+        draw_blob(
+            target, (bx, by), self.size, colors[0], colors[1], self.vel,
+            look=(self.face_dir.x, self.face_dir.y), variant="default",
+            eyes=not self.phased, glow=self.phased,
+        )
+        pygame.draw.circle(target, (255, 255, 255) if flash else shapes.RIM.get(kind, (241, 177, 177)),
+                           (int(bx), int(by)), int(self.size), config.ENEMY_RIM_WIDTH)
+        shapes.draw_over(target, kind, bx, by, self.size, self.face_dir, self.orbit_angle,
+                         (self.shield_hp / self.shield_max) if self.shield_max else 0.0,
+                         self.fuse_timer, flash, ticks)
+        if self.phased:
+            shapes.blit_phased(surface, sx, sy)
+        if self.ctype == CreatureType.BOMBER and self.fuse_timer < 2.0:
+            pulse = 0.5 + 0.5 * math.sin(self.fuse_timer * 12)
+            pygame.draw.circle(
+                surface, (255, int(100 + 100 * pulse), 40),
+                (int(sx), int(sy)), int(self.size * (1.2 + pulse * 0.3)), 2,
+            )
+        if self.charge_telegraph > 0:
+            ring = shapes.telegraph_ring(self.size)
+            surface.blit(ring, (int(sx) - ring.get_width() // 2, int(sy) - ring.get_height() // 2))
+            tip_x = int(sx + self.charge_dir.x * self.size * 2.2)
+            tip_y = int(sy + self.charge_dir.y * self.size * 2.2)
+            pygame.draw.line(surface, (255, 120, 100), (int(sx), int(sy)), (tip_x, tip_y), 2)
+
+    def _draw_legacy(self, surface: pygame.Surface, camera: Vector2, shake: Vector2) -> None:
+        """Pre-046 creature drawing (kept for the GFX_ENEMY_SHAPES A/B switch)."""
         sx = self.pos.x - camera.x + config.SCREEN_WIDTH // 2 + shake.x
         sy = self.pos.y - camera.y + config.SCREEN_HEIGHT // 2 + shake.y
         colors = self.COLORS.get(self.ctype, ((200, 60, 60), (255, 120, 120)))
+        if self.ctype == CreatureType.LEECH:
+            colors = self.LEGACY_LEECH_COLORS
         if self.hit_flash > 0:
             colors = ((255, 255, 255), (255, 200, 200))
         if self.phased:
