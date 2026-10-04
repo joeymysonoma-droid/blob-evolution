@@ -236,10 +236,12 @@ SAVE_TEMP_SUFFIX = ".tmp"  # saves are written to SAVE_FILE + suffix, then atomi
 # Readability pass (TASK-043): contact shadows, outlined shots, XP orbs by value. Visual only.
 GFX_READABILITY = True                  # Producer A/B switch: False restores the pre-043 drawing exactly
 # Median orb value per act (180 s headless sims, real spawn / kill flow, acts 0..9); tier cut-offs are factors of it:
-# tier 1 below 0.75 m, tier 2 below 1.4 m, tier 3 below 2.5 m, tier 4 from 2.5 m on
+# cut-offs = factors x m: tier 1 below the first, tier 2 below the second, tier 3 below the third, tier 4 from there on
 XP_TIER_MEDIAN = (29, 42, 39, 64, 61, 66, 70, 54, 94, 93)
-XP_TIER_FACTORS = (0.75, 1.4, 2.5)
-DARK_SHOT_LUMINANCE = 0.12             # shots darker than this (WCAG relative luminance) get a light outline ring
+XP_TIER_FACTORS_DEFAULT = (0.75, 1.4, 2.5)
+XP_TIER_FACTORS_OVERRIDE = {7: (0.85, 1.1, 1.5)}      # act 7 orbs sit in a narrow band (34..68), so its cut-offs are closer to the median
+XP_TIER_FACTORS = tuple(XP_TIER_FACTORS_OVERRIDE.get(a, XP_TIER_FACTORS_DEFAULT) for a in range(10))   # per act
+DARK_SHOT_LUMINANCE = 0.25             # shots darker than this (WCAG relative luminance) get a light outline ring
 SHOT_LIGHT_OUTLINE = (225, 220, 245)   # ring colour for dark shots: alpha 230 at R + 2, plus a 1 px ring at R + 3 (alpha 120)
 XP_BLINK_SECONDS = 3.0                  # an orb blinks during the last seconds of its life
 XP_BLINK_HZ = 0.9                       # at most 0.9 Hz (R5)
