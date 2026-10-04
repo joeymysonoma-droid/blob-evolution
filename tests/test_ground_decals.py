@@ -1,4 +1,4 @@
-"""TASK-038 acceptance: act decals + landmarks, acts 0-4 (decals are baked into the ground texture: no per-frame cost)."""
+"""TASK-038 / TASK-039 acceptance: act decals + landmarks, all ten acts (baked into the ground texture: no per-frame cost)."""
 from __future__ import annotations
 
 import functools
@@ -19,7 +19,7 @@ from blob_evolution.utils.graphics import draw_blob, generate_map_texture
 from blob_evolution.utils.vector2 import Vector2
 
 W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
-DECAL_ACTS = range(5)
+DECAL_ACTS = range(10)
 SEEDS = (0, 7, 145, 999)
 LUMA_LIMIT = 0.104
 
@@ -88,7 +88,7 @@ class _StampSpy:
 def test_stamps_per_act_stay_inside_the_500_cap(act, monkeypatch):
     spy = _StampSpy(monkeypatch)
     _, scatter, _ = _run_decals(act)
-    assert len(spy.calls) > 20                                    # the act really is decorated
+    assert len(spy.calls) > 10                                    # the act really is decorated (act 5 draws its ripples directly)
     assert len(spy.calls) <= config.MAX_STAMPS_PER_ACT == 500
     assert scatter.total <= config.MAX_STAMPS_PER_ACT
 
@@ -342,17 +342,20 @@ def test_the_act_4_lake_stays_in_the_middle_band_and_the_act_2_dais_is_at_the_ce
         assert 650 <= x <= 1350 and 650 <= y <= 1350
 
 
-def test_acts_5_to_9_are_untouched_by_the_decal_work():
-    for act in (5, 9):
-        surf, scatter, _ = _run_decals(act)
-        assert scatter.total == 0
-        assert pygame.image.tobytes(surf, "RGB") == pygame.image.tobytes(_flat(act), "RGB")
+# sha1[:16] of the full texture (vignette included) at seeds 7 and 145, taken at the TASK-038 tip (dd4bccd)
+ACTS_0_4_PINNED = {
+    0: ("4a24928a7812698e", "3633e2338e8b0ed4"),
+    1: ("0876fe1889b74a4b", "6819ae4040346e30"),
+    2: ("1ebe22e98f37056d", "d0b9ab5ec5ac7425"),
+    3: ("00a6c0bd10a543d6", "e1954e966d9b1e7c"),
+    4: ("1f1c7aa7afb2f977", "a9df146da8e95e6c"),
+}
 
 
-def _flat(act: int) -> pygame.Surface:
-    surf = _ground()
-    surf.fill(config.GROUND_RAMPS[act][1])
-    return surf
+@pytest.mark.parametrize("act", sorted(ACTS_0_4_PINNED))
+def test_acts_0_to_4_ground_is_pixel_identical_to_the_038_tip(act):
+    """TASK-039 only adds acts 5-9: the acts 0-4 textures of a seed must not move by a single pixel."""
+    assert (_digest(act, 7)[:16], _digest(act, 145)[:16]) == ACTS_0_4_PINNED[act]
 
 
 # --- 38 acceptance: decals must not hide gameplay-critical visuals (contrast with everything on) -------------------

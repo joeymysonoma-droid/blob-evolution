@@ -679,12 +679,484 @@ def decals_act_4(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
     stamp(surface, _lake_sprite(act, rng), (rng.randint(650, 1350), rng.randint(650, 1350)))
 
 
-# Acts 5-9 arrive in TASK-039; until then they draw no decals.
+# --- shared helpers for acts 5-9 (TASK-039) ----------------------------------------------------------------------
+
+def _luma(rgb) -> float:
+    def lin(c: float) -> float:
+        c /= 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])
+
+
+def _fit_alpha(act: int, color: Color, limit: float = 0.100) -> int:
+    """Largest alpha (<= 255) at which `color` composited over the act's MID tone stays at or under `limit` luma."""
+    mid = config.GROUND_RAMPS[act][1]
+    for alpha in range(255, 0, -5):
+        k = alpha / 255
+        if _luma([mid[c] * (1 - k) + color[c] * k for c in range(3)]) <= limit:
+            return alpha
+    return 5
+
+
+def _blend(act: int, color: Color, alpha: int) -> Color:
+    """`color` at `alpha` pre-mixed with the act's MID tone: a thin line drawn opaque in this colour looks the same."""
+    mid = config.GROUND_RAMPS[act][1]
+    k = alpha / 255
+    return _ink(act, tuple(round(mid[c] * (1 - k) + color[c] * k) for c in range(3)))  # type: ignore[arg-type]
+
+
+def _arc_points(p0: Tuple[float, float], p1: Tuple[float, float], sagitta: float, steps: int = 16) -> List[Tuple[float, float]]:
+    """Points p0 -> p1 along a circular arc bulging `sagitta` px to the left of the chord (negative = right)."""
+    mx, my = (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2
+    dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+    chord = math.hypot(dx, dy) or 1.0
+    nx, ny = dy / chord, -dx / chord
+    pts = []
+    for k in range(steps + 1):
+        t = k / steps
+        bulge = sagitta * (1 - (2 * t - 1) ** 2)               # parabola: close enough to a circular arc for a flat tint
+        pts.append((p0[0] + dx * t + nx * bulge, p0[1] + dy * t + ny * bulge))
+    return pts
+
+
+def _clay_web(draw_on: pygame.Surface, rng: random.Random, cx: float, cy: float, radius: float, lines: int, rgba, width: int = 1) -> None:
+    """A web of `lines` straight 1 px cracks joining random points inside the circle (each point joins its nearest neighbours)."""
+    count = max(4, lines // 2 + 2)
+    pts = [(cx + math.cos(a) * r, cy + math.sin(a) * r)
+           for a, r in ((rng.uniform(0, TAU), math.sqrt(rng.random()) * radius * 0.95) for _ in range(count))]
+    pairs = []
+    for i in range(1, count):
+        near = sorted(range(i), key=lambda j: (pts[i][0] - pts[j][0]) ** 2 + (pts[i][1] - pts[j][1]) ** 2)
+        pairs.append((i, near[0]))
+        if len(near) > 1 and rng.random() < 0.7:
+            pairs.append((i, near[1]))
+    while len(pairs) < lines:
+        a, b = rng.sample(range(count), 2)
+        pairs.append((a, b))
+    for a, b in pairs[:lines]:
+        pygame.draw.line(draw_on, rgba, pts[a], pts[b], width)
+
+
+# --- Act 5, The Mirage Basin: dune ripples, crescents, cracked clay, false water, the dry lake bed -------------------
+
+def _clay_sprite(radius: int, act: int, rng: random.Random, rings: bool) -> pygame.Surface:
+    """A cracked-clay disc: faint tint, the crack web and (for the landmark) three faint concentric rings.
+
+    Drawn at 1x (no supersampling): the shapes are faint and the sprites big, so the smoothscale would cost more than it gains."""
+    dark = config.GROUND_RAMPS[act][0]
+    web, ring = _ink(act, (60, 44, 28)), _ink(act, (96, 72, 42))
+    size = radius * 2 + 6
+    c = size // 2
+    layer = _layer(size, size)
+    pygame.draw.circle(layer, (*dark, 110 if rings else 60), (c, c), radius)
+    if rings:
+        for k in (0.55, 0.78, 1.0):
+            pygame.draw.circle(layer, (*ring, 90), (c, c), round(radius * k), 2)
+    _clay_web(layer, rng, c, c, radius, 40 if rings else rng.randint(18, 30), (*web, 160))
+    return layer
+
+
+def _water_sprite(act: int, rng: random.Random) -> pygame.Surface:
+    w, h = 160, 60
+    fill, wobble = _ink(act, (90, 150, 160)), _ink(act, (110, 170, 175))
+
+    def draw(big: pygame.Surface) -> None:
+        pygame.draw.ellipse(big, (*fill, 30), (4 * SS, 4 * SS, w * SS, h * SS))
+        for k in range(4):
+            y = 4 + h * (k + 1) / 5
+            phase = rng.uniform(0, TAU)
+            half = math.sqrt(max(0.0, 1 - ((y - 4 - h / 2) / (h / 2)) ** 2)) * w / 2 * 0.8
+            pts = [(SS * (4 + w / 2 + (x / 12 - 0.5) * 2 * half), SS * (y + 1.5 * math.sin(x * 0.9 + phase))) for x in range(13)]
+            pygame.draw.lines(big, (*wobble, 60), False, pts, SS)
+
+    return make_sprite(w + 8, h + 8, draw, bg=fill)
+
+
+def decals_act_5(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
+    """The Mirage Basin: real dune ripples, flat dune crescents, cracked clay, false water and the dry lake bed."""
+    act = 5
+    width, height = surface.get_size()
+    lit, lee = _ink(act, (118, 92, 56)), _ink(act, (46, 32, 20))
+    # ripples: sine polylines spaced 38-70 px down the whole map (the plan's 28 only reach 3/4 of the 2000 px world)
+    y0, last_phase = rng.uniform(-6, 30), -9.0
+    while y0 < height + 20:
+        amp, freq = rng.uniform(6, 14), rng.uniform(0.012, 0.02)
+        phase = rng.uniform(0, TAU)
+        while abs((phase - last_phase + math.pi) % TAU - math.pi) < 0.6:         # adjacent lines never share a phase
+            phase = rng.uniform(0, TAU)
+        last_phase = phase
+        pts = [(x, y0 + amp * math.sin(x * freq + phase) + rng.uniform(-2, 2)) for x in range(-20, width + 21, 24)]
+        top = int(min(p[1] for p in pts)) - 3
+        bottom = int(max(p[1] for p in pts)) + 8
+        layer = _layer(width + 40, bottom - top)
+        shifted = [(p[0] + 20, p[1] - top) for p in pts]
+        pygame.draw.lines(layer, (*lee, 110), False, [(x, y + 3) for x, y in shifted], 1)    # lee-side shadow, +3 px
+        pygame.draw.lines(layer, (*lit, 110), False, shifted, 2)
+        surface.blit(layer, (-20, top))
+        y0 += rng.uniform(38, 70)
+    # dune crescents: lit bulge plus a lee shadow, both flat tints
+    wind = rng.uniform(0, TAU)
+    for x, y in scatter(10, 220):
+        length = rng.uniform(220, 420)
+        ang = wind + math.radians(rng.uniform(-25, 25))
+        ux, uy = math.cos(ang), math.sin(ang)
+        p0, p1 = (-length / 2 * ux, -length / 2 * uy), (length / 2 * ux, length / 2 * uy)
+        outer = rng.uniform(28, 44)
+        inner = outer - 24
+        lit_poly = _arc_points(p0, p1, outer) + _arc_points(p0, p1, inner)[::-1]
+        lee_poly = _arc_points(p0, p1, inner) + _arc_points(p0, p1, inner - 14)[::-1]
+        half = int(length / 2) + 8
+        layer = _layer(2 * half, 2 * half)
+        for poly, colour in ((lit_poly, _ink(act, (112, 86, 52))), (lee_poly, _ink(act, (52, 38, 22)))):
+            pygame.draw.polygon(layer, (*colour, 140), [(px + half, py + half) for px, py in poly])
+        surface.blit(layer, (x - half, y - half))
+    # cracked clay patches
+    for x, y in scatter(6, 200):
+        stamp(surface, _clay_sprite(180, act, rng, False), (x, y))
+    # false water: faint desaturated ellipses
+    for x, y in scatter(8, 220):
+        stamp(surface, _water_sprite(act, rng), (x, y))
+    # landmark: the dry lake bed
+    stamp(surface, _clay_sprite(260, act, rng, True), (rng.randint(700, 1300), rng.randint(700, 1300)))
+
+
+# --- Act 6, The Dreaming Thicket: bioluminescent roots, mushroom rings, true spirals ---------------------------------
+
+def _spiral_points(cx: float, cy: float, radius: float, turns: float, step: float = 0.18) -> List[Tuple[float, float]]:
+    n = max(8, int(turns * TAU / step))
+    return [(cx + math.cos(t) * radius * t / (turns * TAU), cy + math.sin(t) * radius * t / (turns * TAU))
+            for t in (k * turns * TAU / n for k in range(n + 1))]
+
+
+def _spiral_sprite(radius: int, turns: float, width: int, alpha: int, act: int) -> pygame.Surface:
+    colour = _ink(act, (110, 70, 170))
+    size = radius * 2 + 6
+
+    def draw(big: pygame.Surface) -> None:
+        c = size * SS / 2
+        pygame.draw.lines(big, (*colour, alpha), False, _spiral_points(c, c, radius * SS, turns), width * SS)
+
+    return make_sprite(size, size, draw, bg=colour)
+
+
+def _cap_sprite(radius: int, spots: List[Tuple[float, float]], act: int) -> pygame.Surface:
+    """A mushroom cap: glow disc r14 (alpha 45), the cap (alpha fitted to the luma limit) and 1 px spots."""
+    cap, spot, glow = (150, 90, 210), (230, 200, 255), _ink(act, (120, 60, 180))
+    alpha = _fit_alpha(act, cap)
+    size = 34
+
+    def draw(big: pygame.Surface) -> None:
+        c = size * SS // 2
+        pygame.draw.circle(big, (*glow, 45), (c, c), 14 * SS)
+        pygame.draw.circle(big, (*cap, alpha), (c, c), radius * SS)
+        for sx, sy in spots:
+            pygame.draw.circle(big, (*spot, 255), (c + sx * radius * SS, c + sy * radius * SS), SS)
+
+    return make_sprite(size, size, draw, bg=cap)
+
+
+def _mushroom_ring(surface: pygame.Surface, rng: random.Random, caps: List[pygame.Surface], cx: float, cy: float, radius: float) -> None:
+    n = rng.randint(8, 12)
+    base = rng.uniform(0, TAU)
+    for k in range(n):
+        a = base + k * TAU / n + rng.uniform(-0.12, 0.12)
+        r = radius * rng.uniform(0.92, 1.08)
+        stamp(surface, rng.choice(caps), (round(cx + math.cos(a) * r), round(cy + math.sin(a) * r)))
+
+
+def decals_act_6(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
+    """The Dreaming Thicket: tapered glowing roots, mushroom rings, 30 true spirals and the 'dreaming heart'."""
+    act = 6
+    root_dark, root_light = _ink(act, (30, 14, 50)), _ink(act, (90, 50, 140))
+    tip = make_sprite(
+        20, 20,
+        lambda big: (pygame.draw.circle(big, (*_ink(act, (180, 120, 255)), 40), (20, 20), 6 * SS),
+                     pygame.draw.circle(big, (*_ink(act, (180, 120, 255)), 255), (20, 20), 2 * SS)),
+        bg=_ink(act, (180, 120, 255)))
+    tips = []
+    for x, y in scatter(22, 260):
+        heading = rng.uniform(0, TAU)
+        pts = [(float(x), float(y))]
+        for _ in range(6):
+            heading += math.radians(rng.uniform(-35, 35))
+            step = rng.uniform(60, 90)
+            pts.append((pts[-1][0] + math.cos(heading) * step, pts[-1][1] + math.sin(heading) * step))
+        segs = [(pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1]) for k in range(6)]
+        for seg, w in zip(segs, (5, 4, 3, 2, 1, 1)):
+            _stroke(surface, [seg], w, root_dark)
+        _stroke(surface, segs, 1, root_light)
+        tips.append((round(pts[-1][0]), round(pts[-1][1])))
+    for pos in tips:
+        stamp(surface, tip, pos)
+    caps = [_cap_sprite(r, [(rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5)) for _ in range(2)], act)
+            for r in (5, 6, 7, 8) for _ in range(2)]
+    for x, y in scatter(9, 240):
+        _mushroom_ring(surface, rng, caps, x, y, rng.uniform(60, 90))
+    spirals = {r: _spiral_sprite(r, 2.2, 1, 140, act) for r in (14, 19, 24, 30, 35, 40)}
+    for x, y in scatter(30):
+        stamp(surface, spirals[rng.choice(sorted(spirals))], (x, y), angle=rng.uniform(0, 360))
+    # landmark: the dreaming heart, a 3-turn spiral at the world centre with six mushroom clusters along it
+    width, height = surface.get_size()
+    stamp(surface, _spiral_sprite(220, 3.0, 2, 90, act), (width // 2, height // 2))
+    ring_pts = _spiral_points(width / 2, height / 2, 220, 3.0)
+    for k in range(6):
+        px, py = ring_pts[round((0.3 + 0.7 * k / 5) * (len(ring_pts) - 1))]
+        _mushroom_ring(surface, rng, caps, px, py, rng.uniform(34, 50))
+
+
+# --- Act 7, The Hollow Undermembrane: creases, pores, void wells, warp arcs, the unlit sink ------------------------
+
+def _well_sprite(radius: int, act: int, ring_alphas=(150, 110, 70), fill_alpha: int = 220, fill=(6, 5, 12), width: int = 1) -> pygame.Surface:
+    fill_c, ring = _ink(act, fill), _ink(act, (60, 46, 92))
+    size = radius * 2 + 6
+
+    def draw(big: pygame.Surface) -> None:
+        c = size * SS // 2
+        pygame.draw.circle(big, (*fill_c, fill_alpha), (c, c), radius * SS)
+        for k, a in zip((1.0, 0.55, 0.25), ring_alphas):
+            pygame.draw.circle(big, (*ring, a), (c, c), max(SS, round(radius * k * SS)), width * SS)
+
+    return make_sprite(size, size, draw, bg=fill_c)
+
+
+def decals_act_7(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
+    """The Hollow Undermembrane: a near-black floor that still scrolls (creases, pores), void wells and the unlit sink."""
+    act = 7
+    crease = _blend(act, (36, 28, 56), 160)
+    # membrane creases: curved 1 px polylines (alpha 160, pre-mixed with MID since the floor is almost flat)
+    for x, y in scatter(60, 420):
+        length, heading = rng.uniform(200, 500), rng.uniform(0, TAU)
+        bend = rng.choice((-1, 1)) * rng.uniform(0.0015, 0.005)
+        pts = [(x, y)]
+        for _ in range(int(length / 10)):
+            heading += bend * 10 + rng.uniform(-0.05, 0.05)
+            pts.append((pts[-1][0] + math.cos(heading) * 10, pts[-1][1] + math.sin(heading) * 10))
+        pygame.draw.lines(surface, crease, False, pts, 1)
+    pores = [_dot_sprite(r, _ink(act, (80, 64, 120)), 160) for r in (1, 1, 2)]
+    for x, y in scatter(140, 140):
+        stamp(surface, rng.choice(pores), (x, y))
+    # void wells, with sprites shared per 5 px radius step
+    wells = {}
+    centres = []
+    for x, y in scatter(22, 300):
+        radius = 5 * rng.randint(4, 14)
+        if radius not in wells:
+            wells[radius] = _well_sprite(radius, act)
+        stamp(surface, wells[radius], (x, y))
+        centres.append((x, y))
+    # warp arcs: long 1 px arcs that leave random wells
+    arc_col = _blend(act, (54, 42, 84), 90)
+    for _ in range(8):
+        wx, wy = rng.choice(centres)
+        radius, sweep = rng.uniform(300, 600), math.radians(rng.uniform(40, 70))
+        phi = rng.uniform(0, TAU)
+        cx, cy = wx + math.cos(phi) * radius, wy + math.sin(phi) * radius
+        start = phi + math.pi
+        side = rng.choice((-1, 1))
+        pts = [(cx + math.cos(start + side * sweep * k / 40) * radius, cy + math.sin(start + side * sweep * k / 40) * radius)
+               for k in range(41)]
+        pygame.draw.lines(surface, arc_col, False, pts, 1)
+    # landmark: the unlit sink
+    sink = _well_sprite(300, act, ring_alphas=(150, 120, 100), fill_alpha=120, fill=(4, 3, 8), width=2)
+    stamp(surface, sink, (rng.randint(600, 1400), rng.randint(600, 1400)))
+
+
+# --- Act 8, The Ascending Strata: layered stone bands, glints, light shafts, the stair ----------------------------------
+
+def decals_act_8(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
+    """The Ascending Strata: strata bands, four-point glints, pixel stars, faint light shafts and the stair plan."""
+    act = 8
+    dark, mid, _ = config.GROUND_RAMPS[act]
+    width, height = surface.get_size()
+    edge = _ink(act, (60, 76, 120))
+    tops: List[List[Tuple[float, float]]] = []
+    y = rng.uniform(40, 120)
+    while y < height + 120:
+        amp, wave = rng.uniform(10, 30), rng.uniform(300, 700)
+        phase = rng.uniform(0, TAU)
+        ripple, ripple_wave, ripple_phase = rng.uniform(2, 4), rng.uniform(70, 130), rng.uniform(0, TAU)   # smooth 'noise'
+        tops.append([(x, y + amp * math.sin(x / wave * TAU + phase) + ripple * math.sin(x / ripple_wave * TAU + ripple_phase))
+                     for x in range(-20, width + 41, 10)])
+        y += rng.uniform(110, 200)
+    for i, top in enumerate(tops):
+        bottom = tops[i + 1] if i + 1 < len(tops) else [(x, height + 60) for x, _ in top]
+        y0 = int(min(p[1] for p in top)) - 2
+        y1 = min(height + 80, int(max(p[1] for p in bottom)) + 3)
+        if y1 <= 0 or y0 >= height:
+            continue
+        layer = _layer(width + 40, y1 - y0)
+        poly = [(x + 20, yy - y0) for x, yy in top] + [(x + 20, yy - y0) for x, yy in reversed(bottom)]
+        pygame.draw.polygon(layer, (*(dark if i % 2 == 0 else mid), 150), poly)
+        pygame.draw.lines(layer, (*edge, 140), False, [(x + 20, yy - y0) for x, yy in top], 1)
+        surface.blit(layer, (-20, y0))
+    # glints: 60 four-point sparkles (two crossed 1 px lines) and 200 single-pixel stars
+    glint = _ink(act, (190, 210, 255))
+    sparkles = []
+    for length in (6, 8, 10, 12):
+        def draw(big: pygame.Surface, length=length) -> None:
+            c, h = 14 * SS, length * SS // 2
+            pygame.draw.line(big, (*glint, 255), (c - h, c), (c + h, c), SS)
+            pygame.draw.line(big, (*glint, 255), (c, c - h), (c, c + h), SS)
+        sparkles.append(make_sprite(28, 28, draw, bg=glint))
+    for x, y in scatter(60):
+        stamp(surface, rng.choice(sparkles), (x, y), alpha=200)
+    star = pygame.Surface((1, 1), pygame.SRCALPHA)
+    star.fill((*glint, 255))
+    for x, y in scatter(200):
+        stamp(surface, star, (x, y), alpha=rng.randint(140, 255))
+    # light shafts: five faint diagonal polygons at 70 degrees
+    shaft_dir = (math.cos(math.radians(70)), math.sin(math.radians(70)))
+    side = (-shaft_dir[1], shaft_dir[0])
+    for _ in range(5):
+        length, w = rng.uniform(600, 1400), rng.uniform(60, 120)
+        cx, cy = rng.uniform(0, width), rng.uniform(0, height)
+        corners = [(cx + shaft_dir[0] * s * length + side[0] * t * w / 2, cy + shaft_dir[1] * s * length + side[1] * t * w / 2)
+                   for s, t in ((0, -1), (0, 1), (1, 1), (1, -1))]
+        x0, y0 = int(min(p[0] for p in corners)), int(min(p[1] for p in corners))
+        x1, y1 = int(max(p[0] for p in corners)) + 1, int(max(p[1] for p in corners)) + 1
+        layer = _layer(x1 - x0, y1 - y0)
+        pygame.draw.polygon(layer, (*_ink(act, (150, 180, 255)), 14), [(px - x0, py - y0) for px, py in corners])
+        surface.blit(layer, (x0, y0))
+    # landmark: the stair, nine nested squares (flat ziggurat plan)
+    half_max = 240
+    layer = _layer(2 * half_max + 6, 2 * half_max + 6)
+    c = half_max + 3
+    # nine nested squares from half-size 80 to 240; the plan's even 20 px steps are a rigid stripe pattern on every row
+    # that crosses the stair (autocorrelation ~0.8), so each step wanders 12-28 px (scaled to still span 80..240)
+    gaps = [rng.uniform(12, 28) for _ in range(8)]
+    halves = [240.0]
+    for gap in gaps:
+        halves.append(halves[-1] - gap * 160 / sum(gaps))
+    for k, half in enumerate(round(h) for h in halves):
+        rect = (c - half, c - half, 2 * half + 1, 2 * half + 1)
+        if k % 2 == 1:
+            pygame.draw.rect(layer, (*mid, 60), rect)
+        pygame.draw.rect(layer, (*edge, 130), rect, 2)
+    surface.blit(layer, (width // 2 - c, height // 2 - c))
+
+
+# --- Act 9, The First Divide: vein network, wound craters, pustules, the stitched seam ------------------------------
+
+def _vein_tree(rng: random.Random, start: Tuple[float, float], target: Tuple[float, float]) -> List[List[Segment]]:
+    """Trunk (level 0) from `start` toward `target`, with three levels of side branches: returns segments per level."""
+    levels: List[List[Segment]] = [[], [], [], []]
+    nodes: List[Tuple[float, float, float]] = []                     # (x, y, heading) of trunk nodes
+    heading = math.atan2(target[1] - start[1], target[0] - start[0])
+    x, y = start
+    for _ in range(9):
+        heading += math.radians(rng.uniform(-14, 14))
+        nx, ny = x + math.cos(heading) * 110, y + math.sin(heading) * 110
+        levels[0].append((x, y, nx, ny))
+        nodes.append((nx, ny, heading))
+        x, y = nx, ny
+
+    def branch(level: int, bx: float, by: float, bh: float, length: float) -> None:
+        h = bh + math.radians(rng.choice((-1, 1)) * rng.uniform(30, 60))
+        px, py = bx, by
+        pts = [(px, py)]
+        for _ in range(3):
+            h += math.radians(rng.uniform(-12, 12))
+            px, py = px + math.cos(h) * length / 3, py + math.sin(h) * length / 3
+            pts.append((px, py))
+            levels[level].append((pts[-2][0], pts[-2][1], px, py))
+        if level < 3:
+            for k in (1, 3):
+                if rng.random() < 0.8:
+                    branch(level + 1, pts[k][0], pts[k][1], h, length * 0.5)
+
+    for bx, by, bh in nodes[1::2]:
+        branch(1, bx, by, bh, 220)
+        if rng.random() < 0.7:
+            branch(1, bx, by, bh, 180)
+    return levels
+
+
+def _crater_sprite(radius: int, act: int) -> pygame.Surface:
+    outer, ring, dot = _ink(act, (18, 4, 20)), _ink(act, (90, 18, 66)), _ink(act, (52, 10, 40))
+    size = radius * 2 + 6
+
+    def draw(big: pygame.Surface) -> None:
+        c = size * SS // 2
+        pygame.draw.circle(big, (*outer, 200), (c, c), radius * SS)
+        pygame.draw.circle(big, (*ring, 150), (c, c), radius * SS, 6 * SS)
+        pygame.draw.circle(big, (*dot, 255), (c, c), max(SS, round(radius * 0.35 * SS)))
+
+    return make_sprite(size, size, draw, bg=outer)
+
+
+def _pustule_sprite(radius: int, act: int) -> pygame.Surface:
+    body, spark = _ink(act, (150, 40, 110)), _ink(act, (230, 100, 180))
+    size = radius * 2 + 4
+
+    def draw(big: pygame.Surface) -> None:
+        c = size * SS // 2
+        pygame.draw.circle(big, (*body, 255), (c, c), radius * SS)
+        off = round(radius * 0.35 * SS)
+        pygame.draw.circle(big, (*spark, 255), (c - off, c - off), SS // 2 or 1)
+
+    return make_sprite(size, size, draw, bg=body)
+
+
+def decals_act_9(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
+    """The First Divide: a living wound -- veins, craters and pustules over the whole map, and the stitched seam."""
+    act = 9
+    width, height = surface.get_size()
+    shadow, body, light = _ink(act, (24, 6, 26)), _ink(act, (120, 26, 80)), _ink(act, (200, 50, 140))
+    # vein network: three trunks from three of the four edges toward (not into) the centre
+    centre = (width / 2, height / 2)
+    starts = {"top": (rng.uniform(450, 1550), 0.0), "bottom": (rng.uniform(450, 1550), float(height)),
+              "left": (0.0, rng.uniform(450, 1550)), "right": (float(width), rng.uniform(450, 1550))}
+    all_levels: List[List[Segment]] = [[], [], [], []]
+    for name in rng.sample(sorted(starts), 3):
+        sx, sy = starts[name]
+        d = math.hypot(centre[0] - sx, centre[1] - sy)
+        stop = (sx + (centre[0] - sx) * (d - 330) / d, sy + (centre[1] - sy) * (d - 330) / d)       # keeps 330 px from the centre
+        for level, segs in enumerate(_vein_tree(rng, (sx, sy), stop)):
+            all_levels[level].extend(segs)
+    widths = (10, 6, 3, 1)
+    for level in (0, 1, 2):
+        _stroke(surface, all_levels[level], widths[level] + 4, shadow)
+    for level in (0, 1, 2, 3):
+        _stroke(surface, all_levels[level], widths[level], body)
+    for level in (0, 1, 2):
+        off = widths[level] // 4
+        _stroke(surface, [(x0, y0 - off, x1, y1 - off) for x0, y0, x1, y1 in all_levels[level]], 1, light)
+    # wound craters spread over a 4 x 3 grid of the map
+    craters = {r: _crater_sprite(r, act) for r in (40, 55, 70, 85, 100, 120)}
+    cells = [(i, j) for i in range(4) for j in range(3)]
+    for i, j in cells:
+        cx = (i + rng.uniform(0.2, 0.8)) * width / 4
+        cy = (j + rng.uniform(0.2, 0.8)) * height / 3
+        stamp(surface, craters[rng.choice(sorted(craters))], (round(cx), round(cy)))
+    # pustules
+    pustules = {r: _pustule_sprite(r, act) for r in range(3, 8)}
+    for x, y in scatter(150, 130):
+        stamp(surface, pustules[rng.randint(3, 7)], (x, y))
+    # landmark: the stitched seam, a healed scar from (900, 0) to (1100, 2000)
+    count = rng.randint(10, 14)
+    pts = []
+    for k in range(count):
+        lateral = rng.uniform(60, 120) * (1 if k % 2 else -1)
+        pts.append((1000.0 + (-100 + 200 * k / (count - 1)) + lateral, 2000.0 * k / (count - 1)))
+    pts[0], pts[-1] = (900.0, 0.0), (1100.0, 2000.0)
+    ridge = _layer(520, height)
+    shifted = [(x - 740, y) for x, y in pts]
+    segs = [(shifted[k][0], shifted[k][1], shifted[k + 1][0], shifted[k + 1][1]) for k in range(count - 1)]
+    _stroke(ridge, segs, 10, (*_ink(act, (120, 30, 90)), 160))
+    stitch = (*_ink(act, (170, 44, 124)), 150)
+    for x0, y0, x1, y1 in segs:
+        length = math.hypot(x1 - x0, y1 - y0)
+        ux, uy = (x1 - x0) / length, (y1 - y0) / length
+        for s in range(0, int(length), 40):
+            px, py = x0 + ux * s, y0 + uy * s
+            pygame.draw.line(ridge, stitch, (px - uy * 7, py + ux * 7), (px + uy * 7, py - ux * 7), 1)
+    surface.blit(ridge, (740, 0))
+    _stroke(surface, [(x0 + 740, y0, x1 + 740, y1) for x0, y0, x1, y1 in segs], 2, _ink(act, (60, 12, 46)))
+
+
 def _no_decals(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
-    """Placeholder decal pass."""
+    """Placeholder decal pass (every act has real decals now; kept for tests that swap a pass out)."""
 
-
-decals_act_5 = decals_act_6 = decals_act_7 = decals_act_8 = decals_act_9 = _no_decals
 
 ACT_DECALS: Tuple[Decals, ...] = (
     decals_act_0, decals_act_1, decals_act_2, decals_act_3, decals_act_4,

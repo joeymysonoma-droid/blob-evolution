@@ -24,7 +24,7 @@ from blob_evolution.utils.graphics import generate_map_texture
 
 ACTS = range(len(config.MAP_THEMES))
 SEEDS = (0, 7, 145, 999)
-DECAL_ACTS_DONE = 5          # acts 0-4 have their TASK-038 decals; 5-9 still draw none until TASK-039
+DECAL_ACTS_DONE = 10         # every act has its decals (038: acts 0-4, 039: acts 5-9)
 W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
 PLAYER_BODY = config.COLOR_PLAYER
 
@@ -275,7 +275,7 @@ def test_stamp_centres_rotates_scales_and_fades_without_touching_the_sprite():
     assert sprite.get_alpha() in (None, 255) and sprite.get_at((0, 0))[3] == 255
 
 
-def test_decal_passes_exist_for_every_act_and_only_acts_5_to_9_are_still_placeholders():
+def test_decal_passes_exist_for_every_act_and_every_one_of_them_draws():
     assert len(terrain.ACT_DECALS) == 10
     assert [getattr(terrain, f"decals_act_{i}") for i in range(10)] == list(terrain.ACT_DECALS)
     for act, decals in enumerate(terrain.ACT_DECALS):
