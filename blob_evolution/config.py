@@ -108,6 +108,22 @@ GROUND_CLUSTER_SIGMA = (110, 170)   # gaussian spread of a cluster (min, max)
 GROUND_CLUSTER_SHARE = 0.7          # share of scattered decals that sit in clusters (rest uniform)
 MAX_STAMPS_PER_ACT = 500            # decal budget per bake (checked via scatter.total)
 
+# Hazard art (TASK-042): redraw only, collision (distance < radius) and effects are untouched. Colours per hazard type;
+# every shape stays inside its radius (a 1 px outline may touch it). Zones bake their sprite once; frames animate with
+# a few cached blits / 1 px circles. Pulses stay inside 0.5-1.0 and nothing blinks faster than 0.4 Hz (R5).
+HAZARD_SPRITE_PAD = 6               # transparent border around the baked zone sprite
+HAZARD_CORE_FRAMES = 6              # cached lava core sizes (50% -> 60% of the radius)
+HAZARD_SPARKLE = (0.7, 2.0)         # ice sparkle seconds on / off
+HAZARD_STYLE = {     # fills are darker than the plan's (150,44,12) / (60,170,50) / (100,180,255): the player stands in them (>= 3:1)
+    "lava": {"fill": (110, 30, 10, 150), "crust": (40, 14, 8), "edge": (255, 170, 60), "core": (180, 80, 20, 80),
+             "crack": (255, 200, 80), "bubble": (255, 200, 80)},
+    "toxic": {"fill": (24, 80, 30, 130), "rim": (14, 40, 16), "edge": (190, 255, 90), "ring": (120, 210, 70, 50),
+              "bubble": (210, 255, 150), "bubble_fade": (60, 150, 55)},
+    "ice": {"fill": (18, 44, 100, 140), "edge": (225, 245, 255), "facet": (225, 245, 255), "facet_alpha": (8, 16),
+            "shine": (255, 255, 255, 80), "spark": (255, 255, 255)},
+}
+HAZARD_MINIMAP = {"lava": (255, 80, 30), "ice": (100, 200, 255), "toxic": (80, 255, 80)}
+
 # Ambient mote field (TASK-040): purely visual world-space motes per act, drawn as prebuilt sprites.
 # Layer keys: name, cap, colors, [end_color: colour lerp over life], shape (disc | streak_h | streak_v),
 #   size (disc radius range in px, or streak (w, h)), vx / vy / life ranges, blend (add | alpha), peak alpha,
