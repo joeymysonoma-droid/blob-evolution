@@ -286,6 +286,10 @@ def _worst_row_spike(surf: pygame.Surface, step: int = 32) -> float:
     return max(_periodic_spike(luma[y * 1200:(y + 1) * 1200]) for y in range(0, 800, step))
 
 
+def test_038_follow_up_act_2_alphas():
+    assert terrain.FACET_ALPHA == 100 and terrain.RUNE_DOT_ALPHA == 150 and terrain.CRYSTAL_GLOW_ALPHA == 8
+
+
 def test_the_stripe_metric_flags_real_stripes_and_not_feature_pairs():
     n = 1200
     stripes = [0.05 + (0.04 if (x % 160) < 2 else 0.0) for x in range(n)]
@@ -342,11 +346,12 @@ def test_the_act_4_lake_stays_in_the_middle_band_and_the_act_2_dais_is_at_the_ce
         assert 650 <= x <= 1350 and 650 <= y <= 1350
 
 
-# sha1[:16] of the full texture (vignette included) at seeds 7 and 145, taken at the TASK-038 tip (dd4bccd)
+# sha1[:16] of the full texture (vignette included) at seeds 7 and 145, taken at the TASK-038 tip (dd4bccd);
+# act 2 was re-pinned by the 038 follow-up commit
 ACTS_0_4_PINNED = {
     0: ("4a24928a7812698e", "3633e2338e8b0ed4"),
     1: ("0876fe1889b74a4b", "6819ae4040346e30"),
-    2: ("1ebe22e98f37056d", "d0b9ab5ec5ac7425"),
+    2: ("c3b4a43e961ea082", "0fde6e336c1aa062"),     # re-pinned by the 038 follow-up (dimmer crystals / rune dots / glow)
     3: ("00a6c0bd10a543d6", "e1954e966d9b1e7c"),
     4: ("1f1c7aa7afb2f977", "a9df146da8e95e6c"),
 }
@@ -412,4 +417,4 @@ def test_player_enemy_shots_and_xp_orbs_keep_contrast_over_ground_decals_fog_and
             pygame.draw.circle(_screen, colour, (px, py), 5)
             worst[key] = min(worst[key], _contrast(_mean([_screen.get_at((px + dx, py + dy)) for dx, dy in disc]), around_d))
     assert worst["body"] >= 3.0, worst
-    assert worst["shot"] >= 3.0 and worst["xp"] >= 3.0, worst
+    assert worst["shot"] >= (3.4 if act == 2 else 3.0) and worst["xp"] >= 3.0, worst      # act 2: 038 follow-up target 3.4

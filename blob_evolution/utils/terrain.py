@@ -437,7 +437,9 @@ def decals_act_1(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
 
 # --- Act 2, The Memory Vaults: indigo flagstone, inlaid runes, crystals, the memory dais ----------------------------
 
-FACET_ALPHA = 128           # crystal facets are translucent so their rendered luma stays <= 0.104 (see tests)
+CRYSTAL_GLOW_ALPHA = 8      # soft glow disc under each crystal (was 36: it lit the ground enough to cost act 2 enemy-shot contrast)
+RUNE_DOT_ALPHA = 150        # the rune tile's centre dot (was 255)
+FACET_ALPHA = 100           # crystal facets are translucent so their rendered luma stays <= 0.104 (see tests)
 
 
 def _rune_tile_sprite(act: int) -> pygame.Surface:
@@ -449,7 +451,7 @@ def _rune_tile_sprite(act: int) -> pygame.Surface:
         pygame.draw.circle(big, (*line, 255), (c, c), 22 * SS, SS)
         pygame.draw.line(big, (*line, 255), (c - 5 * SS, c), (c + 5 * SS, c), SS)
         pygame.draw.line(big, (*line, 255), (c, c - 5 * SS), (c, c + 5 * SS), SS)
-        pygame.draw.circle(big, (*dot, 255), (c, c), 2 * SS)
+        pygame.draw.circle(big, (*dot, RUNE_DOT_ALPHA), (c, c), 2 * SS)
 
     return make_sprite(size, size, draw, bg=line)
 
@@ -462,7 +464,7 @@ def _crystal_sprite(radius: int, act: int) -> pygame.Surface:
 
     def draw(big: pygame.Surface) -> None:
         c = size * SS / 2
-        pygame.draw.circle(big, (*glow, 36), (c, c), radius * 2.2 * SS)
+        pygame.draw.circle(big, (*glow, CRYSTAL_GLOW_ALPHA), (c, c), radius * 2.2 * SS)
         verts = [(c + math.cos(k * TAU / 6) * radius * SS, c + math.sin(k * TAU / 6) * radius * SS) for k in range(6)]
         for k in range(6):
             pygame.draw.polygon(big, (*tones[k % 3], FACET_ALPHA), [(c, c), verts[k], verts[(k + 1) % 6]])
