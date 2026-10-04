@@ -1053,9 +1053,10 @@ class Game:
         """Convert screen coordinates to world coordinates."""
         if not self.player:
             return Vector2()
+        # Exact inverse of the entity draw offset (world - camera + half screen + shake): the shake sign is minus here.
         return Vector2(
-            screen_pos[0] + self.camera.x - config.SCREEN_WIDTH // 2 + self.shake.x,
-            screen_pos[1] + self.camera.y - config.SCREEN_HEIGHT // 2 + self.shake.y,
+            screen_pos[0] + self.camera.x - config.SCREEN_WIDTH // 2 - self.shake.x,
+            screen_pos[1] + self.camera.y - config.SCREEN_HEIGHT // 2 - self.shake.y,
         )
 
     def _update(self, dt: float) -> None:
