@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pygame
 
@@ -12,11 +12,24 @@ from blob_evolution.utils.vector2 import Vector2
 
 # Pre-rendered orb sprites keyed by (tier, radius); at most 4 tiers x 9 radii
 _SPRITES: Dict[Tuple[int, int], pygame.Surface] = {}
+_ACT = [0]      # act whose median sets the tier cut-offs of orbs created from now on (set when an encounter loads)
 
 
-def xp_tier(value: int) -> int:
-    """Return the orb tier 1..4 for an XP value (thresholds in config.XP_TIER_THRESHOLDS)."""
-    return 1 + sum(1 for t in config.XP_TIER_THRESHOLDS if value >= t)
+def set_xp_act(act: int) -> None:
+    """Choose the act whose XP_TIER_MEDIAN scales the orb tiers."""
+    _ACT[0] = max(0, min(int(act), len(config.XP_TIER_MEDIAN) - 1))
+
+
+def xp_thresholds(act: Optional[int] = None) -> Tuple[float, float, float]:
+    """Tier cut-offs (0.75 m, 1.4 m, 2.5 m) of an act's median orb value m; None means the current act."""
+    m = config.XP_TIER_MEDIAN[_ACT[0] if act is None else max(0, min(act, len(config.XP_TIER_MEDIAN) - 1))]
+    f = config.XP_TIER_FACTORS
+    return (f[0] * m, f[1] * m, f[2] * m)
+
+
+def xp_tier(value: int, act: Optional[int] = None) -> int:
+    """Return the orb tier 1..4 for an XP value in an act (None: the current act): below 0.75 m, 1.4 m, 2.5 m, above."""
+    return 1 + sum(1 for t in xp_thresholds(act) if value >= t)
 
 
 def xp_sprite_count() -> int:
@@ -74,7 +87,7 @@ def _build_xp_sprite(tier: int, r: int) -> pygame.Surface:
 class XPOrb:
     """Experience orb dropped by defeated creatures."""
 
-    __slots__ = ("pos", "vel", "value", "radius", "active", "lifetime", "bob_phase")
+    __slots__ = ("pos", "vel", "value", "radius", "active", "lifetime", "bob_phase", "tier")
 
     def __init__(self, pos: Vector2, value: int = 10) -> None:
         self.pos = pos.copy()
@@ -84,6 +97,7 @@ class XPOrb:
         self.active = True
         self.lifetime = 30.0
         self.bob_phase = 0.0
+        self.tier = xp_tier(value)      # fixed at creation, so the draw path computes nothing
 
     def update(self, dt: float, player_pos: Vector2, magnet_radius: float) -> None:
         """Update orb with magnet attraction."""
@@ -111,7 +125,7 @@ class XPOrb:
         sx = int(self.pos.x - camera.x + config.SCREEN_WIDTH // 2 + shake.x)
         sy = int(self.pos.y - camera.y + config.SCREEN_HEIGHT // 2 + shake.y + bob)
         if config.GFX_READABILITY:
-            sprite = get_xp_sprite(xp_tier(self.value), self.radius)
+            sprite = get_xp_sprite(self.tier, self.radius)
             if self.lifetime < config.XP_BLINK_SECONDS:
                 wave = 0.5 + 0.5 * math.sin(self.lifetime * 2 * math.pi * config.XP_BLINK_HZ)
                 sprite.set_alpha(int(150 + 105 * wave))
