@@ -55,6 +55,7 @@ from blob_evolution.ui.hud import HUD
 from blob_evolution.ui.menus import MenuRenderer
 from blob_evolution.ui.overworld_map import OverworldRenderer
 from blob_evolution.utils.enums import CreatureType, Difficulty, GameState, NodeType
+from blob_evolution.utils.layers import DepthLayers
 from blob_evolution.utils.vector2 import Vector2
 
 
@@ -103,6 +104,7 @@ class Game:
         self.run_ending = "reopen"
         self._boss_touch_cooldown = 0.0
         self.ambient: Optional[AmbientField] = None   # visual mote field of the current encounter
+        self.layers: Optional[DepthLayers] = None     # visual fog + light overlay of the current encounter
         self._seen_acts: set = set()
         self._shoot_sound_cd = 0.0
         self.audio.play_menu_music()
@@ -299,6 +301,7 @@ class Game:
         act = self.overworld.act_index
         self.map_gen.load_map(act, seed)
         self.ambient = AmbientField(act, seed ^ 0xA3B1E7)   # own rng: no global random draws
+        self.layers = DepthLayers(act, seed ^ 0x5F0C1D) if config.GFX_LAYERS else None   # own rng as well
         params = self.overworld.get_encounter_params(node)
         self.current_node_params = params
         diff = self._diff_mult()
@@ -1076,6 +1079,8 @@ class Game:
         """Advance the per-act ambient mote field while exploring."""
         if self.ambient:
             self.ambient.update(dt, self.camera)
+        if self.layers:
+            self.layers.update(dt)
 
     def _update_playing(self, dt: float) -> None:
         """Update active gameplay."""
@@ -1746,6 +1751,8 @@ class Game:
         """Draw gameplay scene."""
         self.map_gen.draw_background(self.screen, self.camera, self.shake)
         self.hazards.draw(self.screen, self.camera, self.shake)
+        if self.layers:
+            self.layers.blit_fog(self.screen, self.camera, self.shake)
         if self.ambient:
             self.ambient.draw_back(self.screen, self.camera, self.shake)
 
@@ -1776,6 +1783,8 @@ class Game:
                 mouse[1] - (self.player.pos.y - self.camera.y + config.SCREEN_HEIGHT // 2 + self.shake.y),
             )
             self.player.draw(self.screen, self.camera, self.shake, look_target=look)
+            if self.layers:
+                self.layers.blit_vignette(self.screen, self.player.hp / max(1.0, self.player.max_hp))
             self.hud.draw(
                 self.screen, self.player, self.creatures, self.bosses,
                 self.xp_orbs, self.hazards, self.camera, self.fps,
