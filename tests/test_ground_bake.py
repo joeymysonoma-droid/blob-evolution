@@ -2,7 +2,7 @@
 
 The ground used to shake the opposite way to the entities, left stale pixels on screen when a world edge was
 visible, and spent about 70 ms of its 100 ms bake on a 5 px rect-loop vignette. These tests pin the three fixes.
-The strict 45 ms-per-act bake check is slow-marked (wall-clock); a looser guard runs by default.
+The strict per-act bake check (90 ms since TASK-037) is slow-marked (wall-clock); a looser guard runs by default.
 """
 from __future__ import annotations
 
@@ -140,21 +140,21 @@ def test_no_background_still_clears_to_the_default_colour():
 
 
 @pytest.mark.parametrize("act", range(len(config.MAP_THEMES)))
-def test_load_map_sets_void_colour_from_the_act_colour(act):
-    gen = MapGenerator()
-    th = config.MAP_THEMES[act]
-    expected = tuple(int(c * config.VOID_COLOR_SCALE) for c in th["color"])
-    assert gen._void_color_for(th) == expected
+def test_load_map_sets_void_colour_from_the_act_dark_tone(act):
+    """TASK-037: void colour = the act's DARK ground tone x 0.5 (TASK-036 used theme colour x 0.4 as a stand-in)."""
+    dark = config.GROUND_RAMPS[act][0]
+    expected = tuple(int(c * 0.5) for c in dark)
+    assert MapGenerator._void_color_for(act) == expected
     assert all(isinstance(c, int) and 0 <= c <= 255 for c in expected)
-    assert all(e < c for e, c in zip(expected, th["color"]))
+    assert all(e < c for e, c in zip(expected, dark))
 
 
 def test_load_map_updates_void_colour_with_the_act():
     gen = MapGenerator()
     gen.load_map(3, seed=1)
-    assert gen.void_color == gen._void_color_for(config.MAP_THEMES[3])
+    assert gen.void_color == (17, 8, 7)
     gen.load_map(7, seed=1)
-    assert gen.void_color == gen._void_color_for(config.MAP_THEMES[7])
+    assert gen.void_color == (5, 4, 9)
 
 
 # --- C. vignette rewrite ---------------------------------------------------------------------------------
@@ -231,9 +231,11 @@ def test_bake_is_well_under_the_old_100_ms(act):
 
 @pytest.mark.slow
 @pytest.mark.parametrize("act", range(len(config.MAP_THEMES)))
-def test_bake_time_per_act_is_at_most_45_ms(act):
-    """TASK-036 acceptance 1: each of the 10 acts bakes in <= 45 ms (seed 7); best of 5 to ignore scheduler noise."""
-    assert _best_bake_ms(act, 5) <= 45
+def test_bake_time_per_act_is_at_most_90_ms(act):
+    """TASK-037 acceptance 2: each of the 10 acts bakes in <= 90 ms (seed 7); best of 5 to ignore scheduler noise.
+
+    TASK-036 asserted 45 ms for the old terrain; the 037 terrain (macro noise) has a 90 ms budget and ~45 ms measured."""
+    assert _best_bake_ms(act, 5) <= 90
 
 
 @pytest.mark.slow
