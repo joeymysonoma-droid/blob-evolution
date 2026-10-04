@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 import pygame
 
@@ -134,10 +134,9 @@ def build_vignette(theme_index: int, scale: float = 1.0) -> Optional[pygame.Surf
     return build_overlay(tint, max_alpha * scale)
 
 
-def _wave_level(t: float, hz: float, levels: int) -> int:
-    """Triangle wave over `levels` steps (0, 1, .., levels-1, .., 1) at hz."""
-    phase = (t * hz) % 1.0
-    return round((1 - abs(2 * phase - 1)) * (levels - 1))
+def _wave(t: float, hz: float) -> float:
+    """Smooth 0..1..0 pulse at hz (0 at t = 0), a raised cosine so it never flashes harder than its rate."""
+    return 0.5 - 0.5 * math.cos(math.tau * hz * t)
 
 
 class DepthLayers:
@@ -147,18 +146,14 @@ class DepthLayers:
         self.theme_index = max(0, min(theme_index, len(config.LIGHT_OVERLAYS) - 1))
         self.fog = build_fog(self.theme_index, seed)
         self.fog_additive = fog_is_additive(self.theme_index)
-        self.vignette = build_vignette(self.theme_index)
+        # act 9 is baked at the top of its heartbeat; set_alpha dims it to HEARTBEAT low/high at the bottom
+        self.vignette = build_vignette(self.theme_index, config.HEARTBEAT[1] if self.theme_index == 9 else 1.0)
         self.t = 0.0
-        self._builds = 0                                  # pulse overlays built this frame (at most one)
-        self._beat: Dict[int, pygame.Surface] = {}        # act 9 heartbeat strengths by level
-        self._red: Dict[int, pygame.Surface] = {}         # low-HP overlay strengths by level
-        if self.vignette is not None:
-            self._beat[0] = self.vignette
+        self._red: Optional[pygame.Surface] = None    # low-HP overlay, built once on first use
 
     def update(self, dt: float) -> None:
         """Advance the pulse clock (only called while PLAYING, so pulses freeze with the game)."""
         self.t += dt
-        self._builds = 0
 
     def blit_fog(self, surface: pygame.Surface, camera: Vector2, shake: Vector2) -> None:
         """Blit the fog at half the camera speed (plus the shake, like the ground); skipped when there is none."""
@@ -172,33 +167,26 @@ class DepthLayers:
         else:
             surface.blit(self.fog, (int(x), int(y)))
 
-    def _pulse_surface(self, cache: Dict[int, pygame.Surface], level: int, factors: List[float],
-                       make) -> Optional[pygame.Surface]:
-        """The overlay for a pulse level; built lazily (one build per frame), nearest built level until then."""
-        surf = cache.get(level)
-        if surf is None and (self._builds == 0 or not cache):
-            self._builds += 1
-            surf = cache[level] = make(factors[level])
-        if surf is None:
-            surf = cache[min(cache, key=lambda k: abs(k - level))]
-        return surf
-
-    def blit_vignette(self, surface: pygame.Surface, hp_ratio: float = 1.0) -> None:
-        """Blit the light overlay (after the player, before the HUD): red and pulsing when HP is low."""
-        if self.vignette is None:
-            return
-        n = config.PULSE_LEVELS
+    def overlay_alpha(self, hp_ratio: float) -> int:
+        """Surface alpha (0..255) the overlay is blitted with: 255 normally, pulsing for low HP and the act 9 heartbeat."""
         if hp_ratio < config.LOW_HP_RATIO:
             lo, hi, hz = config.LOW_HP_PULSE
-            factors = [lo + (hi - lo) * k / (n - 1) for k in range(n)]
-            tint, max_alpha = config.LOW_HP_OVERLAY
-            surf = self._pulse_surface(self._red, _wave_level(self.t, hz, n), factors,
-                                       lambda f: build_overlay(tint, max_alpha * f))
-        elif self.theme_index == 9:
+            return round(255 * (lo + (hi - lo) * _wave(self.t, hz)))
+        if self.theme_index == 9:
             lo, hi, hz = config.HEARTBEAT
-            factors = [lo + (hi - lo) * k / (n - 1) for k in range(n)]
-            surf = self._pulse_surface(self._beat, _wave_level(self.t, hz, n), factors,
-                                       lambda f: build_vignette(9, f))
-        else:
-            surf = self.vignette
+            return round(255 * (lo / hi + (1 - lo / hi) * _wave(self.t, hz)))
+        return 255
+
+    def blit_vignette(self, surface: pygame.Surface, hp_ratio: float = 1.0) -> None:
+        """Blit the light overlay (red and pulsing when HP is low, heartbeat in act 9); skipped when there is none."""
+        if self.vignette is None:
+            return
+        surf = self.vignette
+        if hp_ratio < config.LOW_HP_RATIO:
+            if self._red is None:
+                self._red = build_overlay(*config.LOW_HP_OVERLAY)
+            surf = self._red
+        alpha = self.overlay_alpha(hp_ratio)
+        if alpha != 255 or surf.get_alpha() != 255:
+            surf.set_alpha(alpha)
         surface.blit(surf, (0, 0))

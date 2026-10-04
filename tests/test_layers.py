@@ -27,7 +27,7 @@ TILE = config.FOG_TILE
 NO_SHAKE = Vector2(0, 0)
 PLAN_OVERLAYS = [((2, 10, 6), 120), ((8, 12, 2), 130), ((2, 4, 18), 130), ((24, 4, 0), 120), ((6, 14, 26), 110),
                  ((30, 18, 4), 110), ((14, 4, 26), 130), ((0, 0, 4), 170), ((2, 4, 16), 120), ((22, 0, 16), 140)]
-PLAN_FOG_COUNTS = [14, 10, 30, 10, 10, 10, 10, 12, 12, 12]
+PLAN_FOG_COUNTS = [14, 10, 30, 10, 11, 10, 10, 12, 12, 12]      # acts 4 and 5 re-split by the Visual Designer (5+6, 5+5)
 
 
 # --- config vs plan ---------------------------------------------------------------------------------------------
@@ -37,21 +37,25 @@ def test_overlay_table_matches_the_plan():
     assert config.LIGHT_GRID == (16, 10) and config.LIGHT_START == 0.35
     assert config.LOW_HP_RATIO == 0.30 and config.LOW_HP_OVERLAY == ((120, 10, 20), 150)
     assert config.LOW_HP_PULSE == (0.6, 1.0, 1.0) and config.HEARTBEAT == (1.0, 1.15, 0.8)
+    assert config.LOW_HP_PULSE[2] <= 1.0 and config.HEARTBEAT[2] <= 1.0                  # R5: pulses at most 1 Hz
     assert config.FOG_TILE == 512 and config.FOG_PARALLAX == 0.5 and config.GFX_LAYERS is True
 
 
-def test_fog_table_matches_the_plan_counts_and_ranges():
+def test_fog_table_matches_the_plan_with_the_visual_designer_retune():
     assert len(config.FOG_LAYERS) == 10
     for act, groups in enumerate(config.FOG_LAYERS):
         assert sum(g["n"] for g in groups) == PLAN_FOG_COUNTS[act], act
     a = config.FOG_LAYERS
     assert (a[0][0]["color"], a[0][0]["alpha"], a[0][0]["radius"]) == ((4, 16, 8), (40, 60), (40, 90))
-    assert (a[1][0]["color"], a[1][0]["alpha"], a[1][0]["radius"]) == ((110, 140, 70), (26, 40), (60, 120))
+    assert (a[1][0]["color"], a[1][0]["alpha"], a[1][0]["radius"]) == ((84, 100, 44), (26, 40), (60, 120))
     assert (a[2][0]["kind"], a[2][0]["color"], a[2][0]["alpha"]) == ("caustic", (90, 150, 230), (16, 24))
     assert (a[3][0]["color"], a[3][0]["alpha"], a[3][0]["radius"]) == ((20, 8, 6), (50, 70), (70, 130))
-    assert (a[4][0]["color"], a[4][0]["alpha"], a[4][0]["radius"]) == ((170, 205, 235), (22, 34), (80, 140))
-    assert (a[5][0]["color"], a[5][0]["alpha"], a[5][0]["radius"]) == ((210, 170, 100), (22, 36), (80, 140))
-    assert (a[6][0]["color"], a[6][0]["alpha"], a[6][0]["radius"]) == ((150, 90, 220), (24, 38), (70, 120))
+    assert [(g["color"], g["alpha"], g["radius"], g["n"]) for g in a[4]] == [
+        ((52, 88, 118), (22, 34), (80, 140), 5), ((6, 16, 28), (44, 60), (90, 150), 6)]
+    assert [(g["color"], g["alpha"], g["radius"], g["n"]) for g in a[5]] == [
+        ((96, 74, 44), (24, 36), (80, 140), 5), ((40, 28, 14), (44, 60), (90, 150), 5)]
+    assert (a[6][0]["color"], a[6][0]["alpha"], a[6][0]["radius"]) == ((120, 70, 180), (24, 38), (70, 120))
+    assert a[8][0]["alpha"][1] <= 26                                                     # act 8 streaks stay faint
     assert [(g["color"], g["alpha"]) for g in a[7]] == [((0, 0, 0), (60, 90)), ((70, 50, 110), (20, 20))]
     assert (a[8][0]["kind"], a[8][0]["size"], a[8][0]["color"], a[8][0]["alpha"]) == (
         "ellipse", (220, 40), (150, 180, 255), (16, 26))
@@ -241,38 +245,72 @@ def test_low_hp_switches_to_the_red_overlay_below_30_percent_only():
     assert corner(1.0) == normal                                         # and it switches back
 
 
-def test_low_hp_pulse_is_prebuilt_levels_at_1_hz_and_builds_at_most_one_per_frame():
+def test_set_alpha_works_on_per_pixel_alpha_surfaces_in_this_pygame():
+    """The pulses rely on Surface.set_alpha combining with per-pixel alpha (both with and without convert_alpha)."""
+    for convert in (False, True):
+        src = pygame.Surface((8, 8), pygame.SRCALPHA)
+        src.fill((200, 0, 0, 100))
+        if convert:
+            if pygame.display.get_surface() is None:
+                pygame.display.set_mode((W, H))
+            src = src.convert_alpha()
+        full = []
+        for alpha in (255, 128, 0):
+            src.set_alpha(alpha)
+            dst = pygame.Surface((8, 8))
+            dst.fill((0, 100, 0))
+            dst.blit(src, (0, 0))
+            full.append(dst.get_at((3, 3))[:3])
+        assert full[0] == (78, 60, 0)                       # 100/255 of red over green
+        assert full[1][0] < full[0][0] and full[1][1] > full[0][1]       # half as strong
+        assert full[2] == (0, 100, 0)                       # fully transparent
+
+
+def test_the_red_overlay_is_built_once_on_first_low_hp_and_pulses_with_set_alpha_only():
     d = DepthLayers(0, 1)
     screen = pygame.Surface((W, H))
-    levels = []
+    assert d._red is None                                    # not built until needed (saves memory in most fights)
     builds = []
     original = layers.build_overlay
-    count = [0]
 
     def spy(*a, **k):
-        count[0] += 1
+        builds.append(a)
         return original(*a, **k)
 
     layers.build_overlay = spy
     try:
-        for _ in range(180):                                              # 3 s
-            before = count[0]
+        corner = []
+        alphas = []
+        for _ in range(240):                                 # 4 s
             d.update(1 / 60)
             screen.fill((0, 0, 0))
             d.blit_vignette(screen, 0.1)
-            builds.append(count[0] - before)
-            levels.append(screen.get_at((0, 0))[0])
+            corner.append(screen.get_at((0, 0))[0])
+            alphas.append(d.overlay_alpha(0.1))
     finally:
         layers.build_overlay = original
-    assert max(builds) <= 1 and sum(builds) <= config.PULSE_LEVELS
-    assert len(d._red) == config.PULSE_LEVELS
-    # it brightens and dims, 0.6 .. 1.0 of the full red, with a period of one second (<= 1 Hz)
-    tail = levels[60:]
-    assert max(tail) > min(tail)
-    flips = sum(1 for a, b in zip(tail, tail[1:]) if a != b)
-    assert flips <= 4 * 2 * 1 + 2                                        # 4 steps per second, 2 s of samples
-    peak = max(tail)
-    assert min(tail) < peak
+    assert builds == [config.LOW_HP_OVERLAY]                 # one build in four seconds of pulsing: tint (120,10,20), maxA 150
+    assert d._red.get_at((0, 0))[:3] == (120, 10, 20)
+    assert min(alphas) == int(255 * 0.6) and max(alphas) == 255
+    assert max(corner) > min(corner)
+    # one full dim -> bright -> dim cycle per second: the alpha crosses its mid level at most 2 times a second
+    mid = (min(alphas) + max(alphas)) / 2
+    crossings = sum(1 for a, b in zip(alphas, alphas[1:]) if (a > mid) != (b > mid))
+    assert 7 <= crossings <= 8
+
+
+def test_overlay_alpha_is_255_except_for_low_hp_and_the_act_9_heartbeat():
+    for act in range(9):
+        d = DepthLayers(act, 1)
+        for t in (0.0, 0.3, 0.7):
+            d.t = t
+            assert d.overlay_alpha(1.0) == 255
+    d = DepthLayers(9, 1)
+    seen = set()
+    for k in range(400):
+        d.t = k / 100
+        seen.add(d.overlay_alpha(1.0))
+    assert min(seen) == 222 and max(seen) == 255              # 255 * 1.0 / 1.15 .. 255
 
 
 def test_pulse_clock_only_moves_with_update():
@@ -284,29 +322,46 @@ def test_pulse_clock_only_moves_with_update():
     assert d.t == t + 0.25
 
 
-def test_act_9_heartbeat_scales_the_overlay_from_1_to_1_15_at_0_8_hz():
+def test_act_9_heartbeat_bakes_max_alpha_x_1_15_and_dims_with_set_alpha_at_0_8_hz():
     d = DepthLayers(9, 1)
+    plain = layers.build_vignette(9)
+    assert abs(d.vignette.get_at((0, 0))[3] / plain.get_at((0, 0))[3] - 1.15) < 0.02
     screen = pygame.Surface((W, H))
-    seen = {}
-    t = 0.0
-    for _ in range(int(2.6 * 60)):
+    values = []
+    for _ in range(int(2.5 * 60)):                           # 2.5 s = 2 beats at 0.8 Hz
         d.update(1 / 60)
-        t += 1 / 60
         screen.fill((0, 0, 0))
         d.blit_vignette(screen, 1.0)
-        seen.setdefault(screen.get_at((0, 0))[:3], t)
-    assert len(seen) == config.PULSE_LEVELS
-    levels = sorted(d._beat)
-    alphas = [d._beat[k].get_at((0, 0))[3] for k in levels]
-    base = layers.build_vignette(9).get_at((0, 0))[3]
-    assert alphas == sorted(alphas) and alphas[0] == base
-    assert abs(alphas[-1] / base - 1.15) < 0.02
+        values.append(d.vignette.get_alpha())
+    assert min(values) == 222 and max(values) == 255
+    mid = (222 + 255) / 2
+    crossings = sum(1 for a, b in zip(values, values[1:]) if (a - mid) * (b - mid) < 0)
+    assert crossings in (3, 4)                               # 2 s of a 0.8 Hz wave -> ~3-4 mid crossings
+    peak_dark = screen.get_at((0, 0))[:3]
     other = DepthLayers(8, 1)
     for _ in range(100):
         other.update(1 / 60)
         other.blit_vignette(screen, 1.0)
-    assert len(other._beat) == 1                                         # only act 9 pulses
+    assert other.vignette.get_alpha() == 255                 # only act 9 pulses
+    assert peak_dark != (0, 0, 0)
 
+
+def test_pulses_never_exceed_1_hz():
+    for hz in (config.LOW_HP_PULSE[2], config.HEARTBEAT[2]):
+        assert hz <= 1.0
+    d = DepthLayers(9, 1)
+    for hp in (1.0, 0.1):
+        prev, direction, turns = None, 0, 0
+        for k in range(600):                                 # 10 s at 60 fps
+            d.t = k / 60
+            a = d.overlay_alpha(hp)
+            if prev is not None and a != prev:
+                nd = 1 if a > prev else -1
+                if direction and nd != direction:
+                    turns += 1
+                direction = nd
+            prev = a
+        assert turns <= 2 * 10 * 1                           # a turn per half cycle at most
 
 def test_a_missing_layer_is_skipped_everywhere(monkeypatch):
     monkeypatch.setattr(config, "GFX_LAYERS", False)

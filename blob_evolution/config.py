@@ -196,12 +196,14 @@ FOG_PARALLAX = 0.5                      # the fog slides at this share of the ca
 # caustic (wavy 1 px lines, additive). color; alpha (lo, hi); radius (lo, hi) for blobs / size (w, h) for ellipses; n.
 FOG_LAYERS = [
     [{"kind": "blob", "color": (4, 16, 8), "alpha": (40, 60), "radius": (40, 90), "n": 14}],            # 0 leaf-shadow dapple
-    [{"kind": "blob", "color": (110, 140, 70), "alpha": (26, 40), "radius": (60, 120), "n": 10}],       # 1 marsh mist
+    [{"kind": "blob", "color": (84, 100, 44), "alpha": (26, 40), "radius": (60, 120), "n": 10}],        # 1 marsh mist (darker: Visual Designer)
     [{"kind": "caustic", "color": (90, 150, 230), "alpha": (16, 24), "n": 30}],                         # 2 caustic light
     [{"kind": "blob", "color": (20, 8, 6), "alpha": (50, 70), "radius": (70, 130), "n": 10}],           # 3 smoke
-    [{"kind": "blob", "color": (170, 205, 235), "alpha": (22, 34), "radius": (80, 140), "n": 10}],      # 4 cold haze
-    [{"kind": "blob", "color": (210, 170, 100), "alpha": (22, 36), "radius": (80, 140), "n": 10}],      # 5 dust haze
-    [{"kind": "blob", "color": (150, 90, 220), "alpha": (24, 38), "radius": (70, 120), "n": 10}],       # 6 spore fog
+    [{"kind": "blob", "color": (52, 88, 118), "alpha": (22, 34), "radius": (80, 140), "n": 5},         # 4 cold haze (dim) ...
+     {"kind": "blob", "color": (6, 16, 28), "alpha": (44, 60), "radius": (90, 150), "n": 6}],           #   ... + shadow blobs
+    [{"kind": "blob", "color": (96, 74, 44), "alpha": (24, 36), "radius": (80, 140), "n": 5},           # 5 dust haze (dim) ...
+     {"kind": "blob", "color": (40, 28, 14), "alpha": (44, 60), "radius": (90, 150), "n": 5}],          #   ... + shadow blobs
+    [{"kind": "blob", "color": (120, 70, 180), "alpha": (24, 38), "radius": (70, 120), "n": 10}],       # 6 spore fog (darker)
     [{"kind": "blob", "color": (0, 0, 0), "alpha": (60, 90), "radius": (90, 160), "n": 8},              # 7 dark fog ...
      {"kind": "blob", "color": (70, 50, 110), "alpha": (20, 20), "radius": (90, 160), "n": 4}],         #   ... + violet wisps
     [{"kind": "ellipse", "color": (150, 180, 255), "alpha": (16, 26), "size": (220, 40), "n": 12}],     # 8 cloud streaks
@@ -218,9 +220,9 @@ LIGHT_OVERLAYS = [
 ]
 LOW_HP_RATIO = 0.30                     # below this share of max HP the overlay turns red
 LOW_HP_OVERLAY = ((120, 10, 20), 150)   # tint, max alpha
-LOW_HP_PULSE = (0.6, 1.0, 1.0)          # brightness factor low, high, Hz (<= 1 Hz: R5)
-HEARTBEAT = (1.0, 1.15, 0.8)            # act 9: overlay max alpha scale low, high, Hz
-PULSE_LEVELS = 3                        # prebuilt strengths a pulse steps through (each is one 1200x800 overlay)
+LOW_HP_PULSE = (0.6, 1.0, 1.0)          # surface alpha factor low, high, Hz (<= 1 Hz: R5)
+HEARTBEAT = (1.0, 1.15, 0.8)            # act 9: overlay max alpha scale low, high, Hz (baked at high, set_alpha 222..255)
+# Pulses use Surface.set_alpha on the one cached overlay (R5: both <= 1 Hz); the red overlay is built once, on first use.
 
 SAVE_FILE = "blob_evolution_save.json"
 SAVE_BACKUP_SUFFIX = ".bak"  # unreadable saves are copied to SAVE_FILE + suffix before overwrite
