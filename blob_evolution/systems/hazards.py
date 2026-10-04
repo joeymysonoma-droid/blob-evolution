@@ -91,7 +91,8 @@ class HazardZone:
         if self.hazard_type == HazardType.LAVA:
             self._sprite, self._core, self._anim = self._bake_lava(rng, size, centre, r)
         elif self.hazard_type == HazardType.TOXIC:
-            self._sprite, self._anim = self._bake_toxic(rng, size, centre, r), self._bake_bubbles(rng, r, 3, (3, 7), (1.6, 1.6))
+            bubbles = self._bake_bubbles(rng, r, 3, (3, 7), (1.6, 1.6))
+            self._sprite, self._anim = self._bake_toxic(rng, size, centre, r), self._fit_rise(bubbles, r)
         else:
             self._sprite, self._anim = self._bake_ice(rng, size, centre, r), ()
 
@@ -99,6 +100,26 @@ class HazardZone:
         """(angle, distance fraction, radius, period, offset) per bubble, all inside 60% of the zone."""
         return tuple((rng.uniform(0, TAU), rng.uniform(0.15, 0.55), rng.randint(*sizes), rng.uniform(*periods), rng.uniform(0, 3.0))
                      for _ in range(count))
+
+    @staticmethod
+    def _fit_rise(bubbles: tuple, r: int) -> tuple:
+        """Toxic bubbles with a rise: (angle, distance fraction, radius, period, offset, rise px). Start and end of the rise (and the
+        bubble's own radius) stay inside the green body (0.8 r - 6 px); the rise is cut, then the distance pulled in, until they do."""
+        fitted = []
+        for angle, dist, rad, period, offset in bubbles:
+            limit = 0.8 * r - 6 - rad
+            bx, by = math.cos(angle) * dist * r, math.sin(angle) * dist * r
+            rise = float(config.HAZARD_BUBBLE_RISE)
+            for _ in range(400):                                      # bounded: tiny zones just end up with the bubble at the centre
+                if max(math.hypot(bx, by), math.hypot(bx, by - rise)) <= limit:
+                    break
+                if rise > config.HAZARD_BUBBLE_RISE / 2:
+                    rise -= 1.0
+                else:
+                    bx, by = bx * 0.95, by * 0.95
+                    rise = float(config.HAZARD_BUBBLE_RISE)
+            fitted.append((angle, math.hypot(bx, by) / r, rad, period, offset, rise))
+        return tuple(fitted)
 
     def _bake_lava(self, rng: random.Random, size: int, c: float, r: int):
         st = config.HAZARD_STYLE["lava"]
@@ -138,11 +159,14 @@ class HazardZone:
                 pygame.draw.circle(big, colour, (x, y), max(1, (0.2 * r - shrink) * SS))
 
         def draw(big: pygame.Surface) -> None:
-            union(big, (*st["edge"], 255), 0.0)               # 2 px outline
+            union(big, (*st["edge"], 255), 0.0)               # 1 px bright outline ...
+            union(big, (*st["edge_inner"], 255), 1.0)         # ... and a 1 px dim inner line (less light round a shot on the rim)
             union(big, (*st["rim"], 255), 2.0)                # 4 px rim
             union(big, st["fill"], 6.0)                       # translucent body (drawing replaces the pixels, no double blend)
+            layer = pygame.Surface(big.get_size(), pygame.SRCALPHA)       # rings blend OVER the fill (drawing would punch holes in it)
             for a, d, rr in rings:
-                pygame.draw.circle(big, st["ring"], (c + math.cos(a) * d * r * SS, c + math.sin(a) * d * r * SS), rr * SS, SS)
+                pygame.draw.circle(layer, st["ring"], (c + math.cos(a) * d * r * SS, c + math.sin(a) * d * r * SS), rr * SS, SS)
+            big.blit(layer, (0, 0))
 
         return make_sprite(size, size, draw, bg=st["rim"])
 
@@ -153,12 +177,15 @@ class HazardZone:
 
         def draw(big: pygame.Surface) -> None:
             pygame.draw.polygon(big, st["fill"], pts)
+            layer = pygame.Surface(big.get_size(), pygame.SRCALPHA)       # facets and shine blend OVER the fill (drawing would replace it)
             for k in range(6):
-                pygame.draw.polygon(big, (*st["facet"], st["facet_alpha"][k % 2]), [(c, c), pts[k], pts[(k + 1) % 6]])
-            pygame.draw.polygon(big, (*st["edge"], 255), pts, 2 * SS)
+                pygame.draw.polygon(layer, (*st["facet"], st["facet_alpha"][k % 2]), [(c, c), pts[k], pts[(k + 1) % 6]])
             for dx in (-0.25, 0.1):                          # two diagonal shine lines
-                pygame.draw.line(big, st["shine"], (c + (dx - 0.18) * r * SS, c + 0.35 * r * SS),
+                pygame.draw.line(layer, st["shine"], (c + (dx - 0.18) * r * SS, c + 0.35 * r * SS),
                                  (c + (dx + 0.18) * r * SS, c - 0.35 * r * SS), SS)
+            big.blit(layer, (0, 0))
+            pygame.draw.polygon(big, (*st["edge_inner"], 255), pts, 2 * SS)       # 2 px outline: 1 px dim inner line ...
+            pygame.draw.polygon(big, (*st["edge"], 255), pts, SS)                 # ... under the 1 px bright outer line
 
         return make_sprite(size, size, draw, bg=st["fill"][:3])
 
@@ -188,10 +215,10 @@ class HazardZone:
                            max(1, round(big * frac / 0.9)), 1)
         elif self.hazard_type == HazardType.TOXIC:
             st = config.HAZARD_STYLE["toxic"]
-            for angle, dist, rad, period, offset in self._anim:       # bubbles rise 24 px over 1.6 s, fading into the body
+            for angle, dist, rad, period, offset, rise in self._anim:   # bubbles rise (<= 24 px) over 1.6 s, fading into the body
                 frac = ((t + offset) / period) % 1.0
                 colour = _lerp(st["bubble"], st["bubble_fade"], frac)
-                circle(surface, colour, (sx + round(math.cos(angle) * dist * r), sy + round(math.sin(angle) * dist * r) - round(24 * frac)),
+                circle(surface, colour, (sx + round(math.cos(angle) * dist * r), sy + round(math.sin(angle) * dist * r) - round(rise * frac)),
                        rad, 1)
         else:
             on, off = config.HAZARD_SPARKLE

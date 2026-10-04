@@ -116,13 +116,15 @@ MAX_STAMPS_PER_ACT = 500            # decal budget per bake (checked via scatter
 HAZARD_SPRITE_PAD = 6               # transparent border around the baked zone sprite
 HAZARD_CORE_FRAMES = 6              # cached lava core sizes (50% -> 60% of the radius)
 HAZARD_SPARKLE = (0.7, 2.0)         # ice sparkle seconds on / off
-HAZARD_STYLE = {     # fills are darker than the plan's (150,44,12) / (60,170,50) / (100,180,255): the player stands in them (>= 3:1)
-    "lava": {"fill": (110, 30, 10, 150), "crust": (40, 14, 8), "edge": (255, 170, 60), "core": (180, 80, 20, 80),
+HAZARD_BUBBLE_RISE = 24             # px a toxic bubble rises at most (cut so it never leaves the green body)
+HAZARD_STYLE = {     # dark, mostly opaque fills (the plan's (150,44,12) / (60,170,50) / (100,180,255) are far too bright to read a shot on);
+    # r2: fills and outlines are dimmed (same hue) so enemy shots stay >= 3.3:1 everywhere inside and >= 2.7:1 on the outline band
+    "lava": {"fill": (60, 16, 5, 185), "crust": (40, 14, 8), "edge": (255, 170, 60), "core": (180, 80, 20, 30),
              "crack": (255, 200, 80), "bubble": (255, 200, 80)},
-    "toxic": {"fill": (24, 80, 30, 130), "rim": (14, 40, 16), "edge": (190, 255, 90), "ring": (120, 210, 70, 50),
-              "bubble": (210, 255, 150), "bubble_fade": (60, 150, 55)},
-    "ice": {"fill": (18, 44, 100, 140), "edge": (225, 245, 255), "facet": (225, 245, 255), "facet_alpha": (8, 16),
-            "shine": (255, 255, 255, 80), "spark": (255, 255, 255)},
+    "toxic": {"fill": (12, 42, 16, 185), "rim": (14, 40, 16), "edge": (146, 196, 69), "edge_inner": (50, 66, 24),
+              "ring": (120, 210, 70, 50), "bubble": (147, 178, 105), "bubble_fade": (60, 150, 55)},
+    "ice": {"fill": (10, 24, 56, 190), "edge": (180, 215, 240), "edge_inner": (90, 108, 120), "facet": (225, 245, 255),
+            "facet_alpha": (4, 8), "shine": (255, 255, 255, 50), "spark": (200, 200, 200)},
 }
 HAZARD_MINIMAP = {"lava": (255, 80, 30), "ice": (100, 200, 255), "toxic": (80, 255, 80)}
 
