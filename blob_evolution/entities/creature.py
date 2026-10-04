@@ -11,7 +11,7 @@ import pygame
 from blob_evolution import config
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.utils.enums import CreatureType
-from blob_evolution.utils.graphics import draw_blob
+from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow
 from blob_evolution.utils.vector2 import Vector2
 
 
@@ -316,6 +316,8 @@ class Creature:
         }.get(self.ctype, "default")
         look = (self.face_dir.x, self.face_dir.y)
         alpha_eyes = not self.phased
+        if config.GFX_READABILITY and not self.phased:
+            draw_contact_shadow(surface, sx, sy, self.size)
         draw_blob(
             surface, (sx, sy), self.size, colors[0], colors[1], self.vel,
             look=look, variant=variant, rotation=self.wander_timer + self.orbit_angle,

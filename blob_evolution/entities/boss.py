@@ -11,7 +11,7 @@ import pygame
 from blob_evolution import config
 from blob_evolution.data.lore import get_boss_name
 from blob_evolution.entities.projectile import Projectile
-from blob_evolution.utils.graphics import draw_blob, draw_health_bar, get_boss_palette
+from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow, draw_health_bar, get_boss_palette
 from blob_evolution.utils.vector2 import Vector2
 
 Color = Tuple[int, int, int]
@@ -25,6 +25,7 @@ def _proj(
     color: Optional[Color] = None,
 ) -> Projectile:
     p = Projectile(pos.copy(), direction, speed, damage, from_player=False)
+    p.kind = "boss"
     if color:
         p.color = color
     return p
@@ -417,6 +418,8 @@ class Boss:
             color = (255, 255, 255)
             core = (255, 200, 200)
         look = (self.vel.x, self.vel.y) if self.vel.length() > 1 else None
+        if config.GFX_READABILITY:
+            draw_contact_shadow(surface, sx, sy, self.size)
         draw_blob(
             surface, (sx, sy), self.size, color, core, self.vel,
             pulse=pulse, glow=True, look=look,

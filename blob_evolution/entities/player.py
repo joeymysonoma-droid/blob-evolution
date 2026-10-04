@@ -12,7 +12,7 @@ from blob_evolution.entities.projectile import Projectile
 from blob_evolution.systems.skills import SkillManager
 from blob_evolution.systems.artifacts import ArtifactManager
 from blob_evolution.systems.evolution import EvolutionManager
-from blob_evolution.utils.graphics import draw_blob
+from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow
 from blob_evolution.utils.vector2 import Vector2
 
 
@@ -255,6 +255,8 @@ class Player:
         look = look_target
         if look is None and self.vel.length() > 10:
             look = (self.vel.x, self.vel.y)
+        if config.GFX_READABILITY:
+            draw_contact_shadow(surface, sx, sy, self.size)
         draw_blob(
             surface, (sx, sy), self.size, self.skin_color,
             self.skin_core, self.vel, pulse=pulse, glow=glow,

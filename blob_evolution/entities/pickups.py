@@ -3,12 +3,72 @@
 from __future__ import annotations
 
 import math
-from typing import Tuple
+from typing import Dict, List, Tuple
 
 import pygame
 
 from blob_evolution import config
 from blob_evolution.utils.vector2 import Vector2
+
+# Pre-rendered orb sprites keyed by (tier, radius); at most 4 tiers x 9 radii
+_SPRITES: Dict[Tuple[int, int], pygame.Surface] = {}
+
+
+def xp_tier(value: int) -> int:
+    """Return the orb tier 1..4 for an XP value (thresholds in config.XP_TIER_THRESHOLDS)."""
+    return 1 + sum(1 for t in config.XP_TIER_THRESHOLDS if value >= t)
+
+
+def xp_sprite_count() -> int:
+    """Number of cached XP orb sprites."""
+    return len(_SPRITES)
+
+
+def _tier_points(tier: int, r: int, scale: float = 1.0) -> List[Tuple[float, float]]:
+    """Polygon points (relative to the centre) of the tier 3 diamond or the tier 4 four-point star."""
+    if tier == 3:
+        k = config.XP_DIAMOND_REACH * r * scale
+        return [(0, -k), (k, 0), (0, k), (-k, 0)]
+    pts = []
+    for i in range(8):
+        rad = config.XP_STAR_REACH[i % 2] * r * scale
+        ang = -math.pi / 2 + i * math.pi / 4
+        pts.append((rad * math.cos(ang), rad * math.sin(ang)))
+    return pts
+
+
+def get_xp_sprite(tier: int, r: int) -> pygame.Surface:
+    """Return the cached orb sprite: halo, dark outline, body in the tier shape, then the core."""
+    key = (tier, r)
+    sprite = _SPRITES.get(key)
+    if sprite is None:
+        sprite = _build_xp_sprite(tier, r)
+        _SPRITES[key] = sprite
+    return sprite
+
+
+def _build_xp_sprite(tier: int, r: int) -> pygame.Surface:
+    """Draw one orb sprite (tier 1 disc, 2 disc + ring, 3 diamond, 4 star)."""
+    style = config.XP_TIER_STYLE[tier - 1]
+    body, core = style["body"], style["core"]
+    size = int(2 * (1.9 * r)) + 4
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    c = size // 2
+    pygame.draw.circle(surf, (*body, 55), (c, c), int(1.9 * r))
+    if tier <= 2:
+        pygame.draw.circle(surf, (*config.XP_OUTLINE, 200), (c, c), r + 2)
+        if tier == 2:
+            pygame.draw.circle(surf, (255, 255, 255, 200), (c, c), r + 3, 1)
+        pygame.draw.circle(surf, body, (c, c), r)
+    else:
+        outer = (config.XP_DIAMOND_REACH if tier == 3 else config.XP_STAR_REACH[0]) * r
+        grow = (outer + 2) / outer
+        pygame.draw.polygon(surf, (*config.XP_OUTLINE, 200), [(c + x, c + y) for x, y in _tier_points(tier, r, grow)])
+        pygame.draw.polygon(surf, body, [(c + x, c + y) for x, y in _tier_points(tier, r)])
+    pygame.draw.circle(surf, core, (c + (-r // 4), c + (-r // 4)), max(1, r // 3))
+    if pygame.display.get_surface() is not None:
+        surf = surf.convert_alpha()
+    return surf
 
 
 class XPOrb:
@@ -50,6 +110,15 @@ class XPOrb:
         bob = math.sin(self.bob_phase) * 3
         sx = int(self.pos.x - camera.x + config.SCREEN_WIDTH // 2 + shake.x)
         sy = int(self.pos.y - camera.y + config.SCREEN_HEIGHT // 2 + shake.y + bob)
+        if config.GFX_READABILITY:
+            sprite = get_xp_sprite(xp_tier(self.value), self.radius)
+            if self.lifetime < config.XP_BLINK_SECONDS:
+                wave = 0.5 + 0.5 * math.sin(self.lifetime * 2 * math.pi * config.XP_BLINK_HZ)
+                sprite.set_alpha(int(150 + 105 * wave))
+            else:
+                sprite.set_alpha(255)
+            surface.blit(sprite, (sx - sprite.get_width() // 2, sy - sprite.get_height() // 2))
+            return
         color = config.COLOR_XP
         glow = pygame.Surface((self.radius * 4, self.radius * 4), pygame.SRCALPHA)
         pygame.draw.circle(

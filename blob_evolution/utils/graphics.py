@@ -8,6 +8,7 @@ from typing import Dict, Optional, Tuple
 
 import pygame
 
+from blob_evolution import config
 from blob_evolution.utils import terrain
 from blob_evolution.utils.vector2 import Vector2
 
@@ -19,6 +20,7 @@ class GraphicsCache:
 
     def __init__(self) -> None:
         self._circles: Dict[Tuple[int, Color, int], pygame.Surface] = {}
+        self._shadows: Dict[int, pygame.Surface] = {}
 
     def get_circle(self, radius: int, color: Color, alpha: int = 255) -> pygame.Surface:
         """Get or create a cached circle surface."""
@@ -31,9 +33,31 @@ class GraphicsCache:
             self._circles[key] = surf
         return self._circles[key]
 
+    def get_shadow(self, radius: float) -> pygame.Surface:
+        """Get or create the cached contact-shadow sprite for a radius quantised to 2 px."""
+        r_q = max(config.SHADOW_MIN_RADIUS, 2 * round(radius / 2))
+        surf = self._shadows.get(r_q)
+        if surf is None:
+            surf = pygame.Surface((int(2.3 * r_q) + 4, int(1.2 * r_q) + 4), pygame.SRCALPHA)
+            cx, cy = surf.get_width() // 2, surf.get_height() // 2
+            outer = pygame.Rect(0, 0, int(1.9 * r_q * 1.15), int(0.8 * r_q * 1.25))
+            inner = pygame.Rect(0, 0, int(1.9 * r_q), int(0.8 * r_q))
+            outer.center = inner.center = (cx, cy)
+            pygame.draw.ellipse(surf, (0, 0, 0, config.SHADOW_ALPHAS[0]), outer)
+            pygame.draw.ellipse(surf, (0, 0, 0, config.SHADOW_ALPHAS[1]), inner)
+            if pygame.display.get_surface() is not None:
+                surf = surf.convert_alpha()
+            self._shadows[r_q] = surf
+        return surf
+
+    def shadow_count(self) -> int:
+        """Number of cached shadow sprites."""
+        return len(self._shadows)
+
     def clear(self) -> None:
         """Clear the cache."""
         self._circles.clear()
+        self._shadows.clear()
 
 
 _graphics_cache = GraphicsCache()
@@ -42,6 +66,22 @@ _graphics_cache = GraphicsCache()
 def get_graphics_cache() -> GraphicsCache:
     """Return global graphics cache."""
     return _graphics_cache
+
+
+def get_shadow_sprite(radius: float) -> pygame.Surface:
+    """Return the cached soft contact-shadow ellipse for an entity radius."""
+    return _graphics_cache.get_shadow(radius)
+
+
+def draw_contact_shadow(surface: pygame.Surface, x: float, y: float, radius: float) -> None:
+    """Blit the cached shadow crescent just below an entity; skipped when it is well off screen."""
+    w, h = surface.get_size()
+    margin = radius + 20
+    if x < -margin or x > w + margin or y < -margin or y > h + margin:
+        return
+    sprite = _graphics_cache.get_shadow(radius)
+    r_q = max(config.SHADOW_MIN_RADIUS, 2 * round(radius / 2))
+    surface.blit(sprite, (int(x) - sprite.get_width() // 2, int(y + 0.78 * r_q) - sprite.get_height() // 2))
 
 
 def _shade(color: Color, amount: int) -> Color:
