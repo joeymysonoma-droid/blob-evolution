@@ -398,7 +398,7 @@ def test_embers_are_reborn_only_in_the_bottom_40_percent_of_the_padded_rect_and_
     oy = cam.y - H // 2 - config.AMBIENT_MARGIN
     rect_h = H + 2 * config.AMBIENT_MARGIN
     births = 0
-    for _ in range(600):                                     # 10 s: every ember is reborn several times (life 1.8-3 s)
+    for _ in range(600):                                     # 10 s: every ember is reborn at least once (life 3-5 s)
         t_before = [m[5] for m in field.motes]
         field.update(1 / 60, cam)
         for t0, m in zip(t_before, field.motes):
@@ -417,12 +417,27 @@ def test_embers_start_in_their_steady_state_not_anywhere_and_rise_over_time():
     rect_h = H + 2 * config.AMBIENT_MARGIN
     low_edge = oy + rect_h
     for m in field.motes:
-        rise_cap = 70 * 3.0                                  # fastest rise (70 px/s) over the longest life (3 s)
+        spec = config.AMBIENT_LAYERS[3][0]
+        rise_cap = -spec["vy"][0] * spec["life"][1]          # fastest rise over the longest life (040 follow-up: 110 px/s x 5 s)
         assert low_edge - 0.4 * rect_h - rise_cap - 1 <= m[1] <= low_edge + 1
     ys = [m[1] for m in field.motes]
     for _ in range(30):
         field.update(1 / 60, cam)
     assert sum(m[1] for m in field.motes) < sum(ys) + 1      # the mean drifts up (new births replace some)
+
+
+def test_040_follow_up_embers_live_3_to_5_s_rise_50_to_110_px_s_and_a_few_reach_the_top_of_the_screen():
+    spec = config.AMBIENT_LAYERS[3][0]
+    assert spec["life"] == (3.0, 5.0) and spec["vy"] == (-110, -50) and spec["mod"] == (0.8, 0.8)
+    field = AmbientField(3, 11)
+    cam = Vector2(1000, 1000)
+    top = cam.y - H // 2
+    reached = set()
+    for _ in range(60 * 40):
+        field.update(1 / 60, cam)
+        reached.update(i for i, m in enumerate(field.motes) if m[1] <= top + 150)
+    assert reached, "no ember ever climbed into the top 150 px of the screen"
+    assert len(reached) < 0.6 * len(field.motes)             # ...but only a few of them do
 
 
 def test_other_acts_still_respawn_anywhere_in_the_rect():

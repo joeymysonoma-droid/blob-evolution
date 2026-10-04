@@ -146,7 +146,7 @@ AMBIENT_LAYERS = [
     [  # 3 Forge Veins: embers
         {"name": "embers", "cap": 90, "colors": ((255, 150, 40), (255, 90, 20), (255, 200, 90)),
          "end_color": (120, 40, 20), "shape": "disc", "size": (2, 3),
-         "vx": (-10, 10), "vy": (-70, -30), "life": (1.8, 3.0), "blend": "add", "peak": 230, "motion": "drift",
+         "vx": (-10, 10), "vy": (-110, -50), "life": (3.0, 5.0), "blend": "add", "peak": 230, "motion": "drift",
          "mod": (0.8, 0.8), "spawn_band": 0.4},
     ],
     [  # 4 Still Expanse: snow
