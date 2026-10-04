@@ -233,6 +233,18 @@ SAVE_BACKUP_SUFFIX = ".bak"  # unreadable saves are copied to SAVE_FILE + suffix
 SAVE_BACKUP_LIMIT = 10  # backup slots: .bak, .bak.1 ... .bak.9; existing backups are never overwritten
 SAVE_TEMP_SUFFIX = ".tmp"  # saves are written to SAVE_FILE + suffix, then atomically renamed
 
+# Enemy shapes (TASK-046): a silhouette per enemy type, light rim rings, LEECH recoloured bone-pale. Visual only.
+GFX_ENEMY_SHAPES = True                 # Producer A/B switch: False restores the pre-046 creature drawing exactly
+ENEMY_AIM_STEPS = 32                    # shooter barrel / charger horns aim steps (11.25 deg)
+ENEMY_SHIELD_STEPS = 24                 # shielder plate aim steps
+ENEMY_ORBIT_STEPS = 12                  # orbiter satellite steps per 120 deg
+ENEMY_TENDRIL_PHASES = 8                # leech tendril frames per 0.7 Hz loop
+ENEMY_SPRITE_CACHE_MAX = 1500           # baked extras are cached lazily; the cache is cleared when it reaches this size
+ENEMY_PHASED_ALPHA = 110                # phased phantoms are drawn see-through
+ENEMY_RIM_WIDTH = 2                     # light ring round every enemy body
+ENEMY_BLAST_ALPHA = (38, 120)           # bomber blast disc fill / ring alpha (shown while fuse < 1 s)
+ENEMY_LEECH_COLORS = ((205, 196, 176), (245, 240, 220))      # bone-pale; pre-046 green was (60, 160, 100) / (120, 230, 160)
+
 # Readability pass (TASK-043): contact shadows, outlined shots, XP orbs by value. Visual only.
 GFX_READABILITY = True                  # Producer A/B switch: False restores the pre-043 drawing exactly
 # Median orb value per act (180 s headless sims, real spawn / kill flow, acts 0..9); tier cut-offs are factors of it:
