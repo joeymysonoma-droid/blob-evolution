@@ -336,3 +336,113 @@ def test_the_hud_is_drawn_after_the_motes(game):
     game.player.draw = lambda *a, **k: order.append("player")
     game._draw_game()
     assert order == ["back", "front", "player", "hud"]
+
+
+# --- Visual Designer follow-ups: wrap padding, ember respawn band, 255-alpha pulses ---------------------------
+
+@pytest.mark.parametrize("act", ACTS)
+def test_the_margin_covers_every_mote_extent_plus_the_pop_pad(act):
+    """AMBIENT_MARGIN >= the widest sprite half-extent (incl. 16x3 wisps, 10x2 / 3x8 streaks, sway) + 8 px."""
+    field = AmbientField(act, 1)
+    assert config.AMBIENT_POP_PAD >= 8
+    assert field.required_margin() <= config.AMBIENT_MARGIN
+    for layer in field.layers:
+        for rows in layer.sprites:
+            for ladder in rows:
+                for sprite in ladder:
+                    w, h = sprite.get_size()
+                    assert max(w, h) / 2 + layer.sway_amp + config.AMBIENT_POP_PAD <= config.AMBIENT_MARGIN
+
+
+def test_required_margin_includes_the_widest_streak_sprites():
+    assert AmbientField(5, 1).required_margin() >= 16 / 2 + 8        # the 16x3 wisps and 10x2 dust streaks
+    assert AmbientField(8, 1).required_margin() >= 8 / 2 + 8         # the 3x8 vertical streaks
+    assert AmbientField(0, 1).required_margin() >= 3 * 1.8 + 10 + 8  # pollen discs plus the 10 px sway
+
+
+@pytest.mark.parametrize("act", ACTS)
+@pytest.mark.parametrize("velocity", [(420.0, 0.0), (-300.0, 260.0), (0.0, -500.0)])
+def test_a_wrapping_mote_always_lands_outside_the_visible_screen(act, velocity):
+    """Pan the camera fast: every mote that wraps to the far edge reappears at least its own extent + 8 px off-screen."""
+    field = AmbientField(act, 3)
+    cam = Vector2(1500, 1500)
+    for _ in range(30):
+        field.update(1 / 60, cam)
+    need = field.required_margin()
+    wraps = 0
+    for _ in range(240):
+        before = [(m[0], m[1], m[5]) for m in field.motes]
+        cam = Vector2(cam.x + velocity[0] / 60, cam.y + velocity[1] / 60)
+        field.update(1 / 60, cam)
+        for (x0, y0, t0), m in zip(before, field.motes):
+            if m[5] != t0:
+                continue                                     # respawned (fade-in from zero alpha), not wrapped
+            if abs(m[0] - x0) > RECT_HALF_W or abs(m[1] - y0) > RECT_HALF_H:
+                wraps += 1
+                off_x = abs(m[0] - cam.x) >= W // 2 + need
+                off_y = abs(m[1] - cam.y) >= H // 2 + need
+                assert off_x or off_y, (act, m[0] - cam.x, m[1] - cam.y)
+    assert wraps > 0
+
+
+RECT_HALF_W = (W + 2 * config.AMBIENT_MARGIN) / 2
+RECT_HALF_H = (H + 2 * config.AMBIENT_MARGIN) / 2
+
+
+def test_embers_are_reborn_only_in_the_bottom_40_percent_of_the_padded_rect_and_rise():
+    assert [i for i, layers in enumerate(config.AMBIENT_LAYERS) for spec in layers if spec.get("spawn_band")] == [3]
+    assert config.AMBIENT_LAYERS[3][0]["spawn_band"] == 0.4
+    field = AmbientField(3, 11)
+    cam = Vector2(1000, 1000)
+    field.update(1 / 60, cam)
+    oy = cam.y - H // 2 - config.AMBIENT_MARGIN
+    rect_h = H + 2 * config.AMBIENT_MARGIN
+    births = 0
+    for _ in range(600):                                     # 10 s: every ember is reborn several times (life 1.8-3 s)
+        t_before = [m[5] for m in field.motes]
+        field.update(1 / 60, cam)
+        for t0, m in zip(t_before, field.motes):
+            if m[5] != t0:
+                births += 1
+                assert oy + 0.6 * rect_h - 1e-6 <= m[1] <= oy + rect_h, m[1]
+                assert m[3] < 0                              # it rises
+    assert births > 200
+
+
+def test_embers_start_in_their_steady_state_not_anywhere_and_rise_over_time():
+    field = AmbientField(3, 11)
+    cam = Vector2(1000, 1000)
+    field.update(1 / 60, cam)
+    oy = cam.y - H // 2 - config.AMBIENT_MARGIN
+    rect_h = H + 2 * config.AMBIENT_MARGIN
+    low_edge = oy + rect_h
+    for m in field.motes:
+        rise_cap = 70 * 3.0                                  # fastest rise (70 px/s) over the longest life (3 s)
+        assert low_edge - 0.4 * rect_h - rise_cap - 1 <= m[1] <= low_edge + 1
+    ys = [m[1] for m in field.motes]
+    for _ in range(30):
+        field.update(1 / 60, cam)
+    assert sum(m[1] for m in field.motes) < sum(ys) + 1      # the mean drifts up (new births replace some)
+
+
+def test_other_acts_still_respawn_anywhere_in_the_rect():
+    field = AmbientField(4, 5)
+    cam = Vector2(1000, 1000)
+    field.update(1 / 60, cam)
+    oy = cam.y - H // 2 - config.AMBIENT_MARGIN
+    rect_h = H + 2 * config.AMBIENT_MARGIN
+    ys = []
+    for _ in range(900):
+        t_before = [m[5] for m in field.motes]
+        field.update(1 / 60, cam)
+        ys.extend(m[1] for t0, m in zip(t_before, field.motes) if m[5] != t0)
+    assert ys and min(ys) < oy + 0.3 * rect_h                # snow is reborn in the top part as well
+
+
+@pytest.mark.parametrize("act", ACTS)
+def test_full_alpha_motes_only_pulse_slowly(act):
+    """A peak-255 mote (fireflies, glints) is only acceptable if it pulses, and at <= 1 Hz (photosensitivity R5)."""
+    for spec in config.AMBIENT_LAYERS[act]:
+        assert spec.get("mod", (1.0, 0.0))[1] <= 1.0
+        if spec["peak"] >= 255:
+            assert 0 < spec["mod"][1] <= 1.0 and spec["mod"][0] < 1.0

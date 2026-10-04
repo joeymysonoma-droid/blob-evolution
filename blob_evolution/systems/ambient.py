@@ -104,6 +104,7 @@ class _Layer:
         self.orbit_lo, self.orbit_hi, self.orbit_w = spec.get("orbit", (0.0, 0.0, 0.0))
         self.walk_max, self.walk_jitter = spec.get("walk", (0.0, 0.0))
         self.mod_lo, self.mod_hz = spec.get("mod", (1.0, 0.0))
+        self.spawn_band: float = spec.get("spawn_band", 0.0)   # >0: (re)spawn only in the bottom share of the padded rect
         self.colors: Sequence[Color] = spec["colors"]
         end = spec.get("end_color")
         self.steps = config.AMBIENT_COLOR_STEPS if end else 1
@@ -162,15 +163,23 @@ class AmbientField:
             self._ring_sprites.append(_optimise(surf, True))
 
     def _spawn(self, mote: list, ox: float, oy: float, fresh: bool) -> None:
-        """(Re)initialise a mote at a random place in the rect; fresh motes start part-way through their life."""
+        """(Re)initialise a mote at a random place in the rect; fresh motes start part-way through their life.
+
+        Layers with a spawn_band (embers) are born in the bottom share of the padded rect and rise from there; a fresh
+        one is placed where it would be after rising for its age, so the field starts in its steady state."""
         rng, layer = self.rng, self.layers[mote[6]]
         life = rng.uniform(*layer.life)
+        age = rng.random() * life if fresh else 0.0
         mote[0] = ox + rng.random() * RECT_W
         mote[1] = oy + rng.random() * RECT_H
         mote[2] = rng.uniform(*layer.vx)
         mote[3] = rng.uniform(*layer.vy)
+        if layer.spawn_band:
+            mote[1] = oy + RECT_H * (1.0 - layer.spawn_band * rng.random())
+            mote[0] += mote[2] * age
+            mote[1] += mote[3] * age
         mote[4] = life
-        mote[5] = self.t - (rng.random() * life if fresh else 0.0)
+        mote[5] = self.t - age
         mote[7] = rng.randrange(len(layer.colors)) * layer.steps
         mote[8] = rng.random() * TAU
         mote[9] = rng.randrange(layer.radius_count)
@@ -298,6 +307,18 @@ class AmbientField:
             surface.blit(sprite, (int(r[0] + bx) - sprite.get_width() // 2, int(r[1] + by) - sprite.get_height() // 2))
 
     # --- inspection ----------------------------------------------------------------------------------------
+
+    def required_margin(self) -> int:
+        """Smallest AMBIENT_MARGIN that keeps every wrap off the visible screen: the biggest draw extent of this act's
+        motes (half the widest / tallest sprite plus the layer's sway) plus AMBIENT_POP_PAD.
+        (Act 7 rings are not wrapped: they are born, grow and fade away in place.)"""
+        extent = 0.0
+        for layer in self.layers:
+            for rows in layer.sprites:
+                for ladder in rows:
+                    for sprite in ladder:
+                        extent = max(extent, max(sprite.get_size()) / 2 + layer.sway_amp)
+        return int(math.ceil(extent)) + config.AMBIENT_POP_PAD
 
     @property
     def count(self) -> int:

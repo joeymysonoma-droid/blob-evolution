@@ -112,9 +112,11 @@ MAX_STAMPS_PER_ACT = 500            # decal budget per bake (checked via scatter
 # Layer keys: name, cap, colors, [end_color: colour lerp over life], shape (disc | streak_h | streak_v),
 #   size (disc radius range in px, or streak (w, h)), vx / vy / life ranges, blend (add | alpha), peak alpha,
 #   motion (drift | orbit | walk) with sway=(amp px, Hz), gust=(amp, rad/s), orbit=(speed lo, hi, rad/s),
-#   walk=(max px/s, jitter), mod=(lowest brightness factor, Hz) for blink / twinkle / flicker / pulse (all <= 1 Hz).
+#   walk=(max px/s, jitter), mod=(lowest brightness factor, Hz) for blink / twinkle / flicker / pulse (all <= 1 Hz),
+#   spawn_band=share of the padded rect (from the bottom) a mote is (re)born in, instead of anywhere (embers).
 AMBIENT_MAX_MOTES = 200                 # caps of one act add up to at most this many
 AMBIENT_MARGIN = 150                    # motes live in the camera rect +/- this many px, and wrap inside it
+AMBIENT_POP_PAD = 8                     # a wrapping mote must land at least its own size + this far outside the screen
 AMBIENT_FRONT_EVERY = 4                 # every 4th mote (25%) is drawn in front of the entities
 AMBIENT_FRONT_MAX_ALPHA = 90            # front motes never get brighter than this (they must not hide enemies)
 AMBIENT_FADE = 0.5                      # seconds to fade a mote in and out
@@ -145,7 +147,7 @@ AMBIENT_LAYERS = [
         {"name": "embers", "cap": 90, "colors": ((255, 150, 40), (255, 90, 20), (255, 200, 90)),
          "end_color": (120, 40, 20), "shape": "disc", "size": (2, 3),
          "vx": (-10, 10), "vy": (-70, -30), "life": (1.8, 3.0), "blend": "add", "peak": 230, "motion": "drift",
-         "mod": (0.8, 0.8)},
+         "mod": (0.8, 0.8), "spawn_band": 0.4},
     ],
     [  # 4 Still Expanse: snow
         {"name": "snow", "cap": 120, "colors": ((235, 245, 255),), "shape": "disc", "size": (1, 3),
