@@ -132,7 +132,8 @@ ANCHORS: Tuple[AnchorDef, ...] = (
     AnchorDef("sinking_bloat", "Sinking Bloat", 1, 37, "A mercy that swelled until it could not hold itself."),
     AnchorDef("green_mourner", "Green Mourner", 1, 37, "It weeps for names no one finished."),
     AnchorDef("glass_clerk", "Glass Clerk", 2, 39, "It records everything that crosses the glass."),
-    AnchorDef("unfinished_entry", "Unfinished Entry", 2, 39, "A Seedling that stopped halfway. It remembers your last step."),
+    AnchorDef("unfinished_entry", "Unfinished Entry", 2, 39,
+                "A Seedling that stopped halfway. It remembers your last step."),
     AnchorDef("cinder_anvil", "Cinder Anvil", 3, 39, "A shape forged to test the next shape."),
     AnchorDef("ember_runner", "Ember Runner", 3, 41, "It runs until there is nothing left to burn."),
     AnchorDef("rime_sentinel", "Rime Sentinel", 4, 43, "A guard who agreed to stay."),
@@ -157,7 +158,8 @@ def anchor_def(act_index: int, variant: int) -> Optional[AnchorDef]:
     return pair[variant % len(pair)] if pair else None
 
 
-def anchor_variant(seed: int, act_index: int, node_id: str, mini_node_ids: Sequence[str], pick: Optional[str] = None) -> int:
+def anchor_variant(seed: int, act_index: int, node_id: str, mini_node_ids: Sequence[str],
+                   pick: Optional[str] = None) -> int:
     """Which anchor a mini-boss node spawns: fixed by the map seed, act and node id, so a reload picks the same one.
 
     Own Random (string-seeded, stable across runs), so the game's global RNG stream is untouched.
@@ -166,14 +168,14 @@ def anchor_variant(seed: int, act_index: int, node_id: str, mini_node_ids: Seque
     if pick == "random":
         return random.Random(f"anchor:{seed}:{act_index}:{node_id}").randrange(ANCHORS_PER_LAYER)
     start = random.Random(f"anchor:{seed}:{act_index}").randrange(ANCHORS_PER_LAYER)
-    order = sorted(mini_node_ids)
-    rank = order.index(node_id) if node_id in order else 0
+    rank = list(mini_node_ids).index(node_id) if node_id in mini_node_ids else 0      # ids in map order
     return (start + rank) % ANCHORS_PER_LAYER
 
 
 def node_anchor_variant(overworld: Any, node: Any) -> int:
     """anchor_variant for an overworld node (reads seed, act and the map's nodes of the same type; writes nothing)."""
-    same = [n.id for n in overworld.nodes.values() if n.node_type == node.node_type]
+    in_order = sorted(overworld.nodes.values(), key=lambda n: (n.layer, n.col))
+    same = [n.id for n in in_order if n.node_type == node.node_type]
     return anchor_variant(overworld.seed, overworld.act_index, node.id, same)
 
 
