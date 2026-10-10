@@ -1103,10 +1103,12 @@ def pulse_for(t: float) -> float:
 
 
 def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=False, decoy=False, shadow=False,
-              glow=True, alpha=255, blob_fn=None):
+              glow=True, alpha=255, blob_fn=None, fade_from=None, fade=1.0):
     """Compose one boss / mini at screen position (sx, sy).  Draw order = spec 2.1 (4..7).
     shadow=True draws the 043 contact shadow first (never for decoys).  blob_fn: None -> repo draw_blob,
-    'cached' -> draw_blob_cached (no allocations), or any callable with the draw_blob signature."""
+    'cached' -> draw_blob_cached (no allocations), or any callable with the draw_blob signature.
+    A1: fade_from / fade cross-fade the back and front sprites of phase `fade_from` (alpha 1 - fade) into `phase`'s
+    (alpha fade) for the spec 2.2 phase change; body, rim and palette are the new phase's at once."""
     d = _ENT[key]
     sx, sy, R = int(sx), int(sy), int(R)
     w_, h_ = dst.get_size()
@@ -1124,6 +1126,12 @@ def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=Fa
         step = 0
     back, front = _get_layers(key, phase, R, var, step)
     parts = _spin_parts(key, phase, R, step) if d["spin"] else ()
+    old = None
+    if fade_from is not None and fade < 1.0 and min(max(1, fade_from), d["phases"]) != min(max(1, phase), d["phases"]):
+        old = _get_layers(key, fade_from, R, var, step)
+        a_new = max(0, min(255, int(alpha * fade)))
+        a_old = max(0, min(255, int(alpha * (1.0 - fade))))
+        alpha = a_new
     blob, eyes, rim = _flags(key, phase)
     B, C, K = pal(key, phase)
     ox = oy = 0
@@ -1132,6 +1140,10 @@ def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=Fa
         rim = "decoy"
     elif shadow:
         _graphics().draw_contact_shadow(dst, sx, sy, R)
+    if old is not None and old[0] is not None:
+        old[0][0].set_alpha(a_old)
+        dst.blit(old[0][0], (sx + old[0][1] + ox, sy + old[0][2] + oy))
+        old[0][0].set_alpha(255)
     if back is not None:
         if alpha != 255:
             back[0].set_alpha(alpha)
@@ -1163,6 +1175,10 @@ def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=Fa
     elif rim == "decoy":
         s = _dashed_rim(R, K, 12, 0.67, wd)
         dst.blit(s, (sx - R - 4 + ox, sy - R - 4 + oy))
+    if old is not None and old[1] is not None:
+        old[1][0].set_alpha(a_old)
+        dst.blit(old[1][0], (sx + old[1][1] + ox, sy + old[1][2] + oy))
+        old[1][0].set_alpha(255)
     if front is not None:
         if alpha != 255:
             front[0].set_alpha(alpha)
@@ -1467,10 +1483,10 @@ def fan(dst, cx, cy, ang, spread, length, elem, colour=None):
 RING_CACHE_MAX = 224        # A1: was 192; the Frost / Silence warning rings are 180 / 220 px and fade
 
 
-def ring_out(dst, cx, cy, radius, colour, alpha=255, style="solid"):
+def ring_out(dst, cx, cy, radius, colour, alpha=255, style="solid", quant=8):
     """Thin ring (2 px) sprite cached per (radius step 8, colour, style); set_alpha fades it.
-    Radii above RING_CACHE_MAX are drawn directly (no cache, no fade)."""
-    q = max(8, int(round(radius / 8.0)) * 8)
+    Radii above RING_CACHE_MAX are drawn directly (no cache, no fade). A1: quant=1 keeps an exact radius."""
+    q = max(quant, int(round(radius / float(quant))) * quant)
     if q > RING_CACHE_MAX:
         pygame.draw.circle(dst, colour, (int(cx), int(cy)), int(radius), 3 if style == "phase" else 2)
         return
@@ -1625,3 +1641,80 @@ def draw_plate(dst, sx, sy, R, key, phase, hp_frac=1.0):
 def _elem_of(key):
     return {"sprouting": "growth", "rot": "toxic", "echoes": "echo", "ash": "fire", "frost": "frost", "thirst": "mirage",
             "masks": "dream", "silence": "void", "ascent": "lightning", "anchor": "anchor"}.get(key, ["growth", "toxic", "echo", "fire", "frost", "mirage", "dream", "void", "lightning", "anchor"][_ENT[key]["layer"]])
+
+
+# =====================================================================  A1: boss health bar and spawn warm-up
+_BAR_BASE = (239, 68, 68)                 # graphics.draw_health_bar defaults (low HP < 30 % switches colour)
+
+
+def _bar_sprite(w: int, h: int, low: bool) -> pygame.Surface:
+    """The bar's gradient + sheen baked once at full width (draw_health_bar redraws it per pixel column each frame)."""
+    k = ("bar", w, h, low)
+    s = _plates.get(k)
+    if s is None:
+        col = (255, min(120, _BAR_BASE[1] + 40), 60) if low else _BAR_BASE
+        s = pygame.Surface((max(1, w), max(1, h)), pygame.SRCALPHA)
+        for i in range(w):
+            t = i / max(1, w)
+            c = (int(col[0] * (1 - t * 0.25) + 20 * t), int(col[1] * (1 - t * 0.25)), int(col[2] * (1 - t * 0.2)))
+            pygame.draw.line(s, c, (i, 1), (i, h - 2))
+        sheen = pygame.Surface((max(1, w), max(1, h // 3)), pygame.SRCALPHA)
+        sheen.fill((255, 255, 255, 35))
+        s.blit(sheen, (0, 1))
+        _plates[k] = s
+    return s
+
+
+def health_bar(dst, x: int, y: int, w: int, h: int, ratio: float, notches=(), notch_colour: Color = WHITE) -> None:
+    """Boss health bar: frame and border as draw_health_bar, the gradient blitted from a cached sprite (clipped to
+    the HP fraction), plus a 2 px tick at each phase threshold (spec 2.6). No allocations after the first call."""
+    ratio = max(0.0, min(1.0, ratio))
+    pygame.draw.rect(dst, (36, 48, 64), (x, y, w, h), border_radius=4)
+    fw = int(w * ratio)
+    if fw > 0:
+        dst.blit(_bar_sprite(w, h, ratio < 0.3), (x, y), (0, 0, fw, h))
+    pygame.draw.rect(dst, (90, 110, 130), (x, y, w, h), 1, border_radius=4)
+    for f in notches:
+        nx = x + int(w * f)
+        pygame.draw.line(dst, notch_colour, (nx, y + 1), (nx, y + h - 2), 2)
+
+
+def warm_entity(key: str, R: int, names=(), name_colours=(), bar_w: int = 0, bar_h: int = 8,
+                ring_colour: Optional[Color] = None, flash_colours=((255, 255, 255), (255, 200, 200))) -> None:
+    """Spawn-time bake of everything Boss.draw can touch for this entity at radius R (layers, spin parts, body
+    circles at the 4 pulse radii incl. the flash palette, plates, pips, bar sprites, phase-ring sprites)."""
+    d = _ENT[key]
+    for ph in range(1, d["phases"] + 1):                # the cropped layers draw_boss uses (bake()'s composites
+        for st in range(d["n"] if d["kind"] else 1):    # are a tool / test path and are not built here)
+            _get_layers(key, ph, R, 0, st)
+        if d["spin"]:
+            for st in range(d["spin"][1]):
+                _spin_parts(key, ph, R, st)
+    scratch = pygame.Surface((8, 8), pygame.SRCALPHA)
+    for ph in range(1, d["phases"] + 1):
+        B, C, K = pal(key, ph)
+        for col, core in ((B, C), flash_colours):
+            for q in (0.0, -0.02, -0.04, -0.06):
+                draw_blob_cached(scratch, (4, 4), R, col, core, None, pulse=q, glow=True, eyes=d["eyes"], look=(1, 0))
+        if d["phases"] > 1:
+            phase_pips(d["phases"], ph, ELEMENTS[_elem_of(key)][1])
+    for text in names:
+        for colour in name_colours:
+            name_plate(text, colour)
+    if bar_w:
+        _bar_sprite(bar_w, bar_h, False)
+        _bar_sprite(bar_w, bar_h, True)
+    if ring_colour is not None:
+        for r in range(max(8, (R // 8) * 8), phase_ring_end(R) + 9, 8):    # every 8 px step the ring passes
+            if r <= RING_CACHE_MAX:
+                ring_out(scratch, -999, -999, r, ring_colour, 0, style="phase")
+
+
+def phase_ring_end(R: int) -> int:
+    """Final phase-ring radius: 3 R (spec 2.5), capped at RING_CACHE_MAX so the ring stays a cached, fading sprite."""
+    return min(3 * R, RING_CACHE_MAX)
+
+
+def entity_element_colour(key: str) -> Color:
+    """Outline colour of the entity's element (phase ring, pips)."""
+    return ELEMENTS[_elem_of(key)][1]
