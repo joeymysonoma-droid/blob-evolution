@@ -706,3 +706,98 @@ def test_bug_165_telegraph_and_warning_rings_show_past_the_body_cull_margin(what
         assert colour in drawn
     else:
         assert any(c != (1, 2, 3) for c in drawn)
+
+
+# ---- BUG-176: non-blob flash = art 55 % to white + a 3 px white outline ----------------------------------------------
+
+def _flash_pair(key, phase=1):
+    """(normal, flash) composites of `key` alone on its layer's light ground, and the ground colour."""
+    d = bs.entity(key)
+    R = int(d["R"])
+    n = int(4.2 * R) + 20
+    G = bs.GROUND[d["layer"]]
+    out = []
+    for flash in (False, True):
+        s = pygame.Surface((n, n))
+        s.fill(G)
+        bs.draw_boss(s, key, phase, n // 2, n // 2, R, 0.0, math.radians(35), glow=False, pulse=0.0, flash=flash,
+                     blob_fn=boss_module.draw_blob_cached)
+        out.append(s)
+    return out[0], out[1], G
+
+
+def flash_metrics(key, phase=1):
+    """-> (mean RGB change over the art mask + 3 px ring, contrast of the ring's mean colour vs the ground,
+    changed-ring share). The art mask is every pixel of the normal composite that differs from the ground."""
+    normal, flash, G = _flash_pair(key, phase)
+    art = _fg(normal, G)
+    grown = art.convolve(bs._DILATE or _disc_mask(3))
+    w, h = normal.get_size()
+    region = pygame.mask.Mask((w, h))
+    region.draw(grown, (-3, -3))
+    ring = region.copy()
+    ring.erase(art, (0, 0))
+    total = n_reg = 0
+    ring_sum, n_ring, n_changed = [0, 0, 0], 0, 0
+    for y in range(h):
+        for x in range(w):
+            if not region.get_at((x, y)):
+                continue
+            p, q = normal.get_at((x, y)), flash.get_at((x, y))
+            dd = (abs(p[0] - q[0]) + abs(p[1] - q[1]) + abs(p[2] - q[2])) / 3
+            total += dd
+            n_reg += 1
+            n_changed += dd > 0
+            if ring.get_at((x, y)):
+                n_ring += 1
+                for c in range(3):
+                    ring_sum[c] += q[c]
+    change = total / n_reg
+    ring_col = tuple(v // n_ring for v in ring_sum)
+    flash_metrics.changed_only = total / max(1, n_changed)       # QA t55's convention: over the changed pixels only
+    return float(change), contrast(ring_col, G), ring_col
+
+
+def _disc_mask(r):
+    s = pygame.Surface((2 * r + 1, 2 * r + 1), pygame.SRCALPHA)
+    pygame.draw.circle(s, (255, 255, 255, 255), (r, r), r)
+    return pygame.mask.from_surface(s)
+
+
+NON_BLOB_MINIS = [k for k in bs.MINIS if bs.flashes_by_tint(k, 1)]
+
+
+# At the specified 55 % lerp two light-art minis fall short of the 60 gate (Rime Sentinel 55.4, First Split 58.8; a 65 %
+# lerp would lift both past 60): reported to the Visual Designer. strict: the marks must go when they pass.
+_FLASH_SHORT = {"rime_sentinel", "first_split"}
+
+
+@pytest.mark.parametrize("key", [pytest.param(k, marks=pytest.mark.xfail(strict=True, reason="BUG-176: < 60 at 55 %, VD"))
+                                 if k in _FLASH_SHORT else k for k in NON_BLOB_MINIS])
+def test_bug_176_flash_changes_the_art_and_ring_by_60_and_the_outline_is_3_to_1(key):
+    change, cr, ring = flash_metrics(key)
+    assert cr >= 3.0, (key, cr, ring)                            # checked first: the outline holds for all twelve
+    assert change >= 60, (key, change)
+
+
+@pytest.mark.parametrize("key", NON_BLOB_MINIS)
+def test_bug_176_every_non_blob_mini_has_a_3_to_1_white_outline_and_a_strong_change(key):
+    change, cr, _ring = flash_metrics(key)
+    assert cr >= 3.0 and change >= 55, (key, cr, change)
+
+
+def test_bug_176_the_flash_copy_is_the_art_lerped_55_percent_to_white_on_a_3_px_white_outline():
+    assert bs.FLASH_TO_WHITE == 0.55 and bs.FLASH_OUTLINE == 3 == bs.FLASH_PAD
+    s = pygame.Surface((20, 20), pygame.SRCALPHA)
+    s.fill((100, 40, 200, 255), (5, 5, 10, 10))
+    t = bs._flash_copy(s)
+    assert t.get_size() == (26, 26)
+    r, g, b, a = t.get_at((3 + 9, 3 + 9))
+    assert a == 255 and all(abs(v - (c + 0.55 * (255 - c))) <= 2 for v, c in zip((r, g, b), (100, 40, 200)))
+    assert tuple(t.get_at((3 + 5 - 3, 3 + 9))) == (255, 255, 255, 255)        # 3 px left of the art: outline
+    assert t.get_at((3 + 5 - 4, 3 + 9))[3] == 0                                # 4 px: nothing
+    assert t.get_at((0, 0))[3] == 0
+
+
+def test_bug_176_the_flash_gap_is_still_0_34_s():
+    assert config.BOSS_FLASH_MIN_GAP == 0.34
