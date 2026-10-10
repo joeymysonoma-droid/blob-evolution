@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import time
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -12,6 +11,7 @@ import pygame
 from blob_evolution import config
 from blob_evolution.data.lore import wrap_text
 from blob_evolution.ui import style
+from blob_evolution.utils import clock
 from blob_evolution.utils.graphics import draw_blob
 
 
@@ -75,7 +75,7 @@ class CinematicRenderer:
             return
 
         style.draw_ambient_bg(surface, seed_offset=sequence.index * 3.1, accent=page.accent)
-        t = time.time()
+        t = clock.ui_time()
 
         # Decorative orbiting blobs
         cx = config.SCREEN_WIDTH // 2

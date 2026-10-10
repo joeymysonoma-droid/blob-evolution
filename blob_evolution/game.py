@@ -54,6 +54,7 @@ from blob_evolution.ui.cinematic import CinematicRenderer, StoryPage, StorySeque
 from blob_evolution.ui.hud import HUD
 from blob_evolution.ui.menus import MenuRenderer
 from blob_evolution.ui.overworld_map import OverworldRenderer
+from blob_evolution.utils import clock as anim_clock
 from blob_evolution.utils.enums import CreatureType, Difficulty, GameState, NodeType
 from blob_evolution.utils.layers import DepthLayers
 from blob_evolution.utils.vector2 import Vector2
@@ -1062,6 +1063,7 @@ class Game:
 
     def _update(self, dt: float) -> None:
         """Update game logic."""
+        anim_clock.advance(dt, gameplay=self.state == GameState.PLAYING)     # animation clocks (BUG-140/144), no wall clock
         self.hud.update(dt)
         self.audio.tick(dt)
         self._update_shake(dt)
