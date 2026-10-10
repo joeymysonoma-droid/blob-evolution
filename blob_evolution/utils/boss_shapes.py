@@ -1102,6 +1102,26 @@ def pulse_for(t: float) -> float:
     return round((-0.03 * (1.0 + math.sin(3.0 * t))) / 0.02) * 0.02
 
 
+FLASH_LIFT = 150                                       # BUG-162: RGB added to a non-blob sprite's flash copy (alpha kept)
+_tints: Dict[int, pygame.Surface] = {}                 # id(sprite) -> its flash copy (built at warm-up, never per frame)
+_tint_src: Dict[int, pygame.Surface] = {}              # keeps the source alive so its id is never reused
+
+
+def _tinted(spr: pygame.Surface) -> pygame.Surface:
+    """BUG-162: the cached white-lifted copy of a layer / spin sprite, for the hit flash of art with no blob body."""
+    t_ = _tints.get(id(spr))
+    if t_ is None:
+        t_ = spr.copy()
+        t_.fill((FLASH_LIFT, FLASH_LIFT, FLASH_LIFT), special_flags=pygame.BLEND_RGB_ADD)
+        _tints[id(spr)], _tint_src[id(spr)] = t_, spr
+    return t_
+
+
+def flashes_by_tint(key: str, phase: int) -> bool:
+    """True where the hit flash lifts the sprites (no blob body to turn white)."""
+    return not _flags(key, phase)[0]
+
+
 def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=False, decoy=False, shadow=False,
               glow=True, alpha=255, blob_fn=None, fade_from=None, fade=1.0):
     """Compose one boss / mini at screen position (sx, sy).  Draw order = spec 2.1 (4..7).
@@ -1135,6 +1155,10 @@ def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=Fa
     blob, eyes, rim = _flags(key, phase)
     B, C, K = pal(key, phase)
     ox = oy = 0
+    if flash and not blob:                             # BUG-162: non-blob art flashes through its cached lifted copies
+        back = back and (_tinted(back[0]), back[1], back[2])
+        front = front and (_tinted(front[0]), front[1], front[2])
+        parts = tuple((_tinted(spr), px, py) for spr, px, py in parts)
     if decoy:
         ox = int(round(math.sin(TAU * 0.7 * t)))
         rim = "decoy"
@@ -1210,7 +1234,7 @@ def warm(key: str, R: Optional[int] = None, all_steps: bool = True):
 
 
 def clear():
-    for c in (_layers, _pieces, _comp, _rims, _kit):
+    for c in (_layers, _pieces, _comp, _rims, _kit, _tints, _tint_src):
         c.clear()
     global _scratch
     _scratch = None
@@ -1232,7 +1256,8 @@ def _bytes(c):
 
 def cache_bytes():
     return {"layers": _bytes(_layers), "pieces": _bytes(_pieces), "composites": _bytes(_comp),
-            "kit": _bytes(_kit), "masks": _bytes(_masks), "plates": _bytes(_plates)}
+            "kit": _bytes(_kit), "masks": _bytes(_masks), "plates": _bytes(_plates),
+            "flash_tints": _bytes(_tints)}
 
 
 # =====================================================================  shared kit
@@ -1685,11 +1710,16 @@ def warm_entity(key: str, R: int, names=(), name_colours=(), bar_w: int = 0, bar
     circles at the 4 pulse radii incl. the flash palette, plates, pips, bar sprites, phase-ring sprites)."""
     d = _ENT[key]
     for ph in range(1, d["phases"] + 1):                # the cropped layers draw_boss uses (bake()'s composites
-        for st in range(d["n"] if d["kind"] else 1):    # are a tool / test path and are not built here)
-            _get_layers(key, ph, R, 0, st)
+        tint = flashes_by_tint(key, ph)                 # are a tool / test path and are not built here)
+        for st in range(d["n"] if d["kind"] else 1):
+            for lay in _get_layers(key, ph, R, 0, st):
+                if tint and lay is not None:
+                    _tinted(lay[0])                     # BUG-162: the flash copies too
         if d["spin"]:
             for st in range(d["spin"][1]):
-                _spin_parts(key, ph, R, st)
+                for spr, _x, _y in _spin_parts(key, ph, R, st):
+                    if tint:
+                        _tinted(spr)
     scratch = pygame.Surface((8, 8), pygame.SRCALPHA)
     for ph in range(1, d["phases"] + 1):
         B, C, K = pal(key, ph)
