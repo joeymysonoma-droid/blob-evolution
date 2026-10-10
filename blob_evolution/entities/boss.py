@@ -319,6 +319,8 @@ class Boss:
             self._art_prev_phase, self._art_phase, self._art_phase_t0 = self._art_phase, self.phase, t
         w, h = surface.get_size()
         m = 1.9 * R + 60                                # spec 2.1 cull: nothing of the boss (plate included) shows
+        if self.act_index == 7 and self.pull_pulse > 0.3:              # BUG-165: the L8 pull circle reaches 2.5 R
+            m = max(m, self.size * (1.5 + self.pull_pulse) + 2)
         if sx < -m or sx > w + m or sy < -m or sy > h + m:
             return
         since = t - self._art_phase_t0
