@@ -410,11 +410,40 @@ def test_layer_nine_verdicts_cycle_through_all_three(slot):
 
 
 def test_one_big_hit_runs_both_phase_starts_in_order():
-    """A hit from full HP to 20 % enrages and lands in the last phase: 3 on layers 5 and 10, 2 on layer 2."""
-    for act, phase in ((9, 3), (4, 3), (1, 2)):
+    """A hit from full HP to 20 % enrages and lands in the last phase: 3 on layers 5, 9 and 10, 2 on layer 2. BUG-147: both
+    starts are kept in order, each with its name and the special cooldown it applied (P2's 1.5, then P3's 1.0)."""
+    p2, p3 = config.BOSS_PHASE2_SPECIAL_COOLDOWN, config.BOSS_PHASE3_SPECIAL_COOLDOWN
+    for act, phase in ((9, 3), (8, 3), (4, 3), (1, 2)):
         b = Boss(Vector2(500, 500), act, None)
+        first = b.name
         b.take_damage(b.max_hp * 0.8)
         assert (b.phase, b.enraged) == (phase, True)
+        starts = b.take_phase_starts()
+        if phase == 2:
+            assert starts == [(2, first, p2)] and b.special_cooldown == p2
+            continue
+        name2 = "Warden of Echoes" if act == 8 else first
+        name3 = "Warden of Stillness" if act == 8 else first
+        assert starts == [(2, name2, p2), (3, name3, p3)], (act, starts)
+        assert b.special_cooldown == p3 and b.name == name3
+        assert b.take_phase_starts() == [] and not b.consume_phase_announce()
+
+
+@pytest.mark.parametrize("act", [1, 4, 8, 9])
+def test_a_hit_landing_exactly_on_a_threshold_does_not_start_the_phase(act):
+    """BUG-149: phases start strictly below the threshold (as main): a hit landing exactly on it keeps the old phase, the next
+    hit under it starts the phase. max_hp = 100 and whole-number HP make the ratio exactly the table's float."""
+    for pd in Boss(Vector2(500, 500), act, None).phase_defs:
+        on = round(pd.below * 100)
+        assert on / 100 == pd.below
+        b = Boss(Vector2(500, 500), act, None)
+        b.max_hp, b.hp = 100.0, float(on + 2)
+        b.phase, b.enraged = pd.phase - 1, pd.phase > 2
+        b.take_damage(2.0)
+        assert b.hp / b.max_hp == pd.below
+        assert b.phase == pd.phase - 1 and b.take_phase_starts() == [], (act, pd.phase)
+        b.take_damage(0.5)
+        assert b.phase == pd.phase and [st[0] for st in b.take_phase_starts()] == [pd.phase], (act, pd.phase)
 
 
 def test_phase_three_needs_the_crossing_hit():

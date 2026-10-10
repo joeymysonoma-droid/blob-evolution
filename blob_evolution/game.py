@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+from collections import deque
 from typing import List, Optional
 
 import pygame
@@ -113,6 +114,8 @@ class Game:
         self.player: Optional[Player] = None
         self.creatures: List[Creature] = []
         self.bosses: List[Boss] = []
+        self._phase_banners: deque = deque()   # BUG-147: (boss, label) phase announcements waiting, played in order
+        self._phase_banner_t = 0.0             # s left of the phase banner on screen
         self.projectiles: List[Projectile] = []
         self.xp_orbs: List[XPOrb] = []
 
@@ -319,6 +322,8 @@ class Game:
         )
 
         self.bosses = []
+        self._phase_banners.clear()
+        self._phase_banner_t = 0.0
         for i in range(params.get("bosses", 0)):
             pos = Vector2(random.randint(400, config.WORLD_WIDTH - 400),
                           random.randint(400, config.WORLD_HEIGHT - 400))
@@ -1157,11 +1162,9 @@ class Game:
         for boss in self.bosses:
             if boss.active:
                 boss.update(dt, self.player.pos, self.projectiles)
-                if boss.consume_phase_announce():
-                    self.audio.play("boss_phase")
-                    label = "FINAL PHASE!" if boss.phase >= 3 else f"{boss.name} — PHASE {boss.phase}!"
-                    self.hud.show_notification(label, 2.5)
-                    self._add_screen_shake(10)
+                for phase, name, _cooldown in boss.take_phase_starts():
+                    self._phase_banners.append((boss, "FINAL PHASE!" if phase >= 3 else f"{name} — PHASE {phase}!"))
+        self._play_phase_banners(dt)
 
         self._process_explosions()
         self._update_projectiles(dt)
@@ -1182,6 +1185,19 @@ class Game:
             self._complete_level()
 
         self._prune_entities()
+
+    def _play_phase_banners(self, dt: float) -> None:
+        """BUG-147: phase announcements play one after another (2.5 s each), so a hit that crosses two thresholds shows
+        both; a single start shows in the frame it happens, exactly as before. A dead boss's waiting banners are dropped."""
+        self._phase_banner_t -= dt
+        while self._phase_banners and self._phase_banner_t <= 0:
+            boss, label = self._phase_banners.popleft()
+            if not boss.active:
+                continue
+            self.audio.play("boss_phase")
+            self.hud.show_notification(label, 2.5)
+            self._add_screen_shake(10)
+            self._phase_banner_t = 2.5
 
     def _process_explosions(self) -> None:
         """Resolve bomber / death explosions."""
