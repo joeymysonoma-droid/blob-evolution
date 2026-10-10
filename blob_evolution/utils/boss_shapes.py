@@ -1271,12 +1271,13 @@ def warm(key: str, R: Optional[int] = None, all_steps: bool = True):
 
 
 def clear():
-    for c in (_layers, _pieces, _comp, _rims, _kit, _tints, _tint_src, _lerp_of):
+    for c in (_layers, _pieces, _comp, _rims, _kit, _tints, _tint_src):
         c.clear()
     global _scratch
     _scratch = None
     _masks.clear()
     _plates.clear()
+    _lerp_of.clear()                                   # BUG-176 (own line: 058b extends the tuple above)
 
 
 def _bytes(c):
