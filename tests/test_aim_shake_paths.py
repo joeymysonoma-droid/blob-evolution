@@ -69,9 +69,9 @@ def test_click_shot_flies_at_the_drawn_point_under_the_cursor(game, shake):
 
 @pytest.mark.parametrize("shake", SHAKES)
 def test_hold_to_shoot_uses_the_same_mapping_as_the_click(game, shake, monkeypatch):
-    """Hold-to-shoot inside _update_playing (BUG-114, the shake re-roll in _update before it, is a separate design call:
-    here the shake is fixed and _update_playing is driven directly)."""
+    """Hold-to-shoot inside _update_playing, after a drawn frame (the shake it aims with is the drawn frame's)."""
     game.shake.set(*shake)
+    game._draw_game()
     target = Vector2(1000, 1060)
     pos = tuple(int(v) for v in _drawn(game, target))
     monkeypatch.setattr(pygame.mouse, "get_pressed", lambda *a, **k: (True, False, False))
@@ -101,3 +101,40 @@ def test_player_is_drawn_with_the_shake_and_looks_at_the_cursor(game, shake, mon
     px = p.x - game.camera.x + config.SCREEN_WIDTH // 2 + game.shake.x
     py = p.y - game.camera.y + config.SCREEN_HEIGHT // 2 + game.shake.y
     assert look == pytest.approx((mouse[0] - px, mouse[1] - py), abs=1e-9)
+
+
+@pytest.mark.parametrize("shake", SHAKES)
+def test_hold_fire_aims_with_the_last_drawn_shake_through_the_real_update(game, shake, monkeypatch):
+    """BUG-114: _update re-rolls the shake before hold-to-shoot; the shot must still go where the drawn frame showed the
+    cursor (the click path does that because events are handled before _update)."""
+    game.shake.set(*shake)
+    game.shake_intensity = 12.0                                   # _update_shake re-rolls up to +-12 px per axis
+    game._draw_game()                                             # the frame the player sees
+    target = Vector2(1060, 1000)
+    pos = tuple(int(v) for v in _drawn(game, target))
+    monkeypatch.setattr(pygame.mouse, "get_pressed", lambda *a, **k: (True, False, False))
+    monkeypatch.setattr(pygame.mouse, "get_pos", lambda: pos)
+    monkeypatch.setattr(pygame.key, "get_pressed", lambda: pygame.key.ScancodeWrapper([False] * 512))
+    rerolled = []
+    real = game._update_shake
+
+    def spy(dt):
+        real(dt)
+        rerolled.append((game.shake.x, game.shake.y))
+    monkeypatch.setattr(game, "_update_shake", spy)
+    start = game.player.pos.copy()
+    game._update(1 / 60)
+    assert rerolled and rerolled[0] != shake                      # the shake did change before the shot
+    assert game.projectiles
+    v = game.projectiles[0].vel
+    want = math.atan2(target.y - start.y, target.x - start.x)
+    off = math.degrees(abs((math.atan2(v.y, v.x) - want + math.pi) % math.tau - math.pi))
+    assert off < 1.0, off
+
+
+def test_drawn_shake_is_recorded_by_the_draw(game):
+    game.shake.set(7.5, -3.25)
+    game._draw_game()
+    assert (game.drawn_shake.x, game.drawn_shake.y) == (7.5, -3.25)
+    game.shake.set(1, 1)
+    assert (game.drawn_shake.x, game.drawn_shake.y) == (7.5, -3.25)
