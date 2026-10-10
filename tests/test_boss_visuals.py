@@ -708,4 +708,3 @@ def test_bug_165_telegraph_and_warning_rings_show_past_the_body_cull_margin(what
         assert colour in drawn
     else:
         assert any(c != (1, 2, 3) for c in drawn)
-
