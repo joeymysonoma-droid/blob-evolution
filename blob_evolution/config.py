@@ -307,3 +307,6 @@ BOSS_SPAWNS_DIE_WITH_OWNER = True       # pending and live boss spawns go when t
 BOSS_POOL_RADIUS = 70.0                 # timed pool default radius (px), when the request gives none
 BOSS_POOL_LIFETIME = 6.0                # timed pool default lifetime (s)
 BOSS_POOL_HAZARD = "toxic"              # timed pool default hazard type: "lava", "ice" or "toxic"
+BOSS_SPAWN_EPS = 1e-9                   # BUG-152: a delay / lifetime within this of 0 counts as done (float dt sums)
+BOSS_SPAWN_MAX_DT = 0.1                 # BUG-154: the director never steps more than this per frame (dt spikes)
+BOSS_SPAWN_SEED = 5600                  # BUG-155: the director's own RNG (pool animation phase), reseeded per fight
