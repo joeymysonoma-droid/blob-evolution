@@ -1,9 +1,12 @@
-"""Boss and mini-boss definitions (TASK-054): stats, phases, cadence, movement and attack keys as data, no pygame."""
+"""Boss and mini-boss definitions (TASK-054/055): stats, phases, cadence, movement and attacks as data, no pygame."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, Tuple
+
+from blob_evolution import config
+from blob_evolution.data.lore import ACT_LORE
 
 
 @dataclass(frozen=True)
@@ -15,6 +18,7 @@ class PhaseDef:
     special_cooldown: float        # the special cooldown is reset to this when the phase starts
     enrage: bool = False           # starts once, while the boss is not enraged yet, and sets `enraged`
     crossing: bool = False         # starts only on the hit that crosses `below`
+    name: Optional[str] = None     # display name from this phase on (layer 9's triad)
 
 
 @dataclass(frozen=True)
@@ -76,23 +80,36 @@ STATS = BossStats()
 CADENCE = Cadence()
 MINI = MiniDef()
 
-PHASE_2 = PhaseDef(2, 0.5, 1.5, enrage=True)
-PHASE_3 = PhaseDef(3, 0.25, 1.0, crossing=True)
-TWO_PHASES = (PHASE_2,)
-THREE_PHASES = (PHASE_2, PHASE_3)
-FINAL_PHASE_FROM_ACT = 8           # acts at or past this one have phase 3
+_P2_CD = config.BOSS_PHASE2_SPECIAL_COOLDOWN
+_P3_CD = config.BOSS_PHASE3_SPECIAL_COOLDOWN
+_TRIAD = ACT_LORE[8]["triad_names"]     # Warden of Ascent / Echoes / Stillness: one body, three phases
+
+PHASE_2 = PhaseDef(2, 0.5, _P2_CD, enrage=True)
+PHASE_3 = PhaseDef(3, 0.25, _P3_CD, crossing=True)
+TWO_PHASES = (PHASE_2,)                                      # roster layers 1-3
+THREE_PHASES = (PHASE_2, PHASE_3)                            # roster layers 4-8: 50 % / 25 %
+ASCENT_PHASES = (PhaseDef(2, 0.66, _P2_CD, enrage=True, name=_TRIAD[1]),
+                 PhaseDef(3, 0.33, _P3_CD, crossing=True, name=_TRIAD[2]))     # layer 9: 66 % / 33 %
+DIVIDE_PHASES = (PhaseDef(2, 0.66, _P2_CD, enrage=True), PHASE_3)              # layer 10: 66 % / 25 % (Producer ruling)
+FINAL_PHASE_FROM_ACT = 8           # main's rule, still used by mini-bosses and acts outside the table
+
+
+def mini_phases(act_index: int) -> Tuple[PhaseDef, ...]:
+    """Mini-boss phases stay as on main: 50 %, plus 25 % from act 8 on (the roster's table is for wardens)."""
+    return THREE_PHASES if act_index >= FINAL_PHASE_FROM_ACT else TWO_PHASES
+
 
 WARDENS: Tuple[BossDef, ...] = (
     BossDef("sprouting", 0, "warden_0", "orbit", "spiral_seed", "bloom_ring", TWO_PHASES),
     BossDef("rot", 1, "warden_1", "weave", "weeping_twin", "rot_ring", TWO_PHASES),
     BossDef("echoes", 2, "warden_2", "orbit", "ghost_shot", "echo_ring", TWO_PHASES),
-    BossDef("ash", 3, "warden_3", "circle_dash", "aimed", "erupt_ring", TWO_PHASES),
-    BossDef("frost", 4, "warden_4", "linger", "shard_fan", "frost_ring", TWO_PHASES),
-    BossDef("thirst", 5, "warden_5", "blink", "aimed", "mirage_volley", TWO_PHASES),
-    BossDef("masks", 6, "warden_6", "strafe", "aimed", "mask_burst", TWO_PHASES),
-    BossDef("silence", 7, "warden_7", "drift", "void_bolt", "void_ring", TWO_PHASES),
-    BossDef("ascent", 8, "warden_8", "orbit", "pink_triple", "verdict", THREE_PHASES, basic_other_slots="aimed"),
-    BossDef("anchor", 9, "warden_9", "assault", "pink_triple", "divide", THREE_PHASES),
+    BossDef("ash", 3, "warden_3", "circle_dash", "aimed", "erupt_ring", THREE_PHASES),
+    BossDef("frost", 4, "warden_4", "linger", "shard_fan", "frost_ring", THREE_PHASES),
+    BossDef("thirst", 5, "warden_5", "blink", "aimed", "mirage_volley", THREE_PHASES),
+    BossDef("masks", 6, "warden_6", "strafe", "aimed", "mask_burst", THREE_PHASES),
+    BossDef("silence", 7, "warden_7", "drift", "void_bolt", "void_ring", THREE_PHASES),
+    BossDef("ascent", 8, "warden_8", "orbit", "pink_triple", "verdict", ASCENT_PHASES, basic_other_slots="aimed"),
+    BossDef("anchor", 9, "warden_9", "assault", "pink_triple", "divide", DIVIDE_PHASES),
 )
 
 

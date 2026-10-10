@@ -9,7 +9,7 @@ from typing import List, Tuple
 import pygame
 
 from blob_evolution import config
-from blob_evolution.data.bosses import CADENCE, MINI, STATS, BossDef, PhaseDef, warden_def
+from blob_evolution.data.bosses import CADENCE, MINI, STATS, BossDef, PhaseDef, mini_phases, warden_def
 from blob_evolution.data.lore import get_boss_name
 from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
 from blob_evolution.entities.projectile import Projectile
@@ -35,7 +35,7 @@ class Boss:
         self.vel = Vector2()
         diff = diff_mult or {"hp": 1.0, "damage": 1.0, "speed": 1.0}
         self.defn: BossDef = warden_def(act_index)
-        self.phase_defs: Tuple[PhaseDef, ...] = self.defn.phases
+        self.phase_defs: Tuple[PhaseDef, ...] = mini_phases(act_index) if miniboss else self.defn.phases
         st = STATS
         power_index = act_index + slot
         self.size = st.size_base + power_index * st.size_per_power
@@ -70,6 +70,7 @@ class Boss:
         self.clone_timer = 0.0
         self.pull_pulse = 0.0
         self.spiral_index = 0
+        self.specials_fired = 0                 # count of specials so far (layer 9 cycles its verdicts by it)
         basic_key = self.defn.basic if slot == 0 or not self.defn.basic_other_slots else self.defn.basic_other_slots
         self.basic_shot: BasicShot = BASIC_SHOTS[basic_key]
         self.special: Special = SPECIALS[MINI.special if miniboss else self.defn.special]
@@ -89,7 +90,7 @@ class Boss:
         return self.hp <= 0
 
     def _check_phase(self, pd: PhaseDef, prev_ratio: float, ratio: float) -> None:
-        """Start phase `pd` if this hit meets its rule (once-only enrage, or crossing the threshold)."""
+        """Start phase `pd` if this hit meets its rule (once-only enrage, or crossing the threshold); maybe rename."""
         if ratio >= pd.below:
             return
         if pd.enrage:
@@ -101,6 +102,8 @@ class Boss:
         self.phase = pd.phase
         self.phase_announced = True
         self.special_cooldown = pd.special_cooldown
+        if pd.name:
+            self.name = pd.name
 
     def consume_phase_announce(self) -> bool:
         """Return True once when a new phase begins."""
@@ -185,6 +188,7 @@ class Boss:
         """Start the 0.7 s telegraph and fire this boss's special."""
         self.telegraph = 0.7
         self.special.fire(self, player_pos, projectiles)
+        self.specials_fired += 1
 
     def _radial(
         self,
