@@ -274,12 +274,14 @@ class Boss:
         """Name on the art plate (BOSS-ROSTER.md): the game name, with the lore warden name swapped for the roster's
         plate title where they differ (Layer 10: "Prime Anchor" -> "Warden of the Divide"). Lore, cards, Archive and
         the phase announce keep the game name (Narrative owns those)."""
-        if self._plate_src != self.name:                # recomputed only when the name changes (layer 9 phases)
-            self._plate_src, self._plate_name = self.name, self.name
+        shown = getattr(self, "shown_name", None)       # BUG-169: the announced name (055c); 058 alone: the name
+        name = shown() if shown else self.name
+        if self._plate_src != name:                     # recomputed only when the name changes (layer 9 phases)
+            self._plate_src, self._plate_name = name, name
             roster = None if self.is_miniboss else config.BOSS_PLATE_TITLES.get(self.act_index)
             warden = get_act_lore(self.act_index).get("warden", "") if roster else ""
-            if roster and warden and self.name.startswith(warden):
-                self._plate_name = roster + self.name[len(warden):]
+            if roster and warden and name.startswith(warden):
+                self._plate_name = roster + name[len(warden):]
         return self._plate_name
 
     def plate_layout(self, sy: int, name_h: int, pips_h: int) -> Tuple[int, int, int, int]:
@@ -341,11 +343,13 @@ class Boss:
             boss_shapes.ring_out(surface, sx, sy, radius, col, max(30, int(180 * life)), quant=1)
         if self.act_index == 7 and self.pull_pulse > 0.3:
             pygame.draw.circle(surface, (90, 60, 140), (sx, sy), int(self.size * (1.5 + self.pull_pulse)), 1)
-        colour = config.BOSS_NAME_COLOUR if self.phase == 1 else boss_shapes.pal(key, self.phase)[2]
+        shown_fn = getattr(self, "shown_phase", None)  # BUG-169: plate colour and pips follow the announced phase (055c)
+        shown = shown_fn() if shown_fn else self.phase
+        colour = config.BOSS_NAME_COLOUR if shown == 1 else boss_shapes.pal(key, shown)[2]
         plate = boss_shapes.name_plate(self.plate_name(), colour)
         pips = None
         if ent["phases"] > 1:
-            pips = boss_shapes.phase_pips(ent["phases"], min(self.phase, ent["phases"]),
+            pips = boss_shapes.phase_pips(ent["phases"], min(shown, ent["phases"]),
                                           boss_shapes.entity_element_colour(key))
         bar_w, bar_y, name_y, pips_y = self.plate_layout(sy, plate.get_height(), pips.get_height() if pips else 0)
         ratio = self.hp / self.max_hp if self.max_hp > 0 else 0.0
