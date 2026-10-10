@@ -439,16 +439,16 @@ def test_xp_tiers_scale_with_the_acts_median_orb_value(act):
 
 def test_act_7_has_its_own_closer_cut_offs():
     cuts = xp_thresholds(7)
-    assert [round(c, 1) for c in cuts] == [45.9, 59.4, 81.0]
-    assert [xp_tier(v, 7) for v in (34, 45, 46, 54, 59, 60, 80, 81, 400)] == [1, 1, 2, 2, 2, 3, 3, 4, 4]
-    assert xp_thresholds(6) == (0.75 * 70, 1.4 * 70, 2.5 * 70) and xp_thresholds(8) == (0.75 * 94, 1.4 * 94, 2.5 * 94)
+    assert [round(c, 1) for c in cuts] == [66.3, 85.8, 117.0]                          # BUG-127 re-tune: m = 78 (was 54)
+    assert [xp_tier(v, 7) for v in (50, 66, 67, 78, 85, 86, 116, 117, 400)] == [1, 1, 2, 2, 2, 3, 3, 4, 4]
+    assert xp_thresholds(6) == (0.75 * 55, 1.4 * 55, 2.5 * 55) and xp_thresholds(8) == (0.75 * 81, 1.4 * 81, 2.5 * 81)
     set_xp_act(7)
-    assert xp_thresholds() == cuts and XPOrb(Vector2(), 70).tier == 3
+    assert xp_thresholds() == cuts and XPOrb(Vector2(), 70).tier == 2
 
 
 def test_the_current_act_sets_the_tier_of_new_orbs_and_each_orb_keeps_its_tier():
-    assert XPOrb(Vector2(), 70).tier == xp_tier(70, 0) == 3                                 # act 0: m = 29, 2.5 m = 72.5 -> 70 is tier 3
-    set_xp_act(8)                                                                          # act 8: m = 94
+    assert XPOrb(Vector2(), 70).tier == xp_tier(70, 0) == 3                                 # act 0: m = 32, 1.4 m = 44.8 <= 70 < 80 -> tier 3
+    set_xp_act(8)                                                                          # act 8: m = 81
     late = XPOrb(Vector2(), 70)
     assert late.tier == xp_tier(70, 8) == 1 + sum(70 >= c for c in xp_thresholds(8))
     set_xp_act(0)

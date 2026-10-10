@@ -271,7 +271,9 @@ ENEMY_WISP_RIM = (201, 193, 217)          # BUG-137: opaque 1 px rim on each pha
 GFX_READABILITY = True                  # Producer A/B switch: False restores the pre-043 drawing exactly
 # Median orb value per act (180 s headless sims, real spawn / kill flow, acts 0..9); tier cut-offs are factors of it:
 # cut-offs = factors x m: tier 1 below the first, tier 2 below the second, tier 3 below the third, tier 4 from there on
-XP_TIER_MEDIAN = (29, 42, 39, 64, 61, 66, 70, 54, 94, 93)
+# BUG-127 (option a): pooled median of 20 seeds (5000..24000) x QA's tier_shares harness, damage boost 3, runs with >= 50 orbs
+# (was (29, 42, 39, 64, 61, 66, 70, 54, 94, 93) from single-seed sims)
+XP_TIER_MEDIAN = (32, 33, 41, 54, 53, 57, 55, 78, 81, 81)
 XP_TIER_FACTORS_DEFAULT = (0.75, 1.4, 2.5)
 XP_TIER_FACTORS_OVERRIDE = {7: (0.85, 1.1, 1.5)}      # act 7 orbs sit in a narrow band (34..68), so its cut-offs are closer to the median
 XP_TIER_FACTORS = tuple(XP_TIER_FACTORS_OVERRIDE.get(a, XP_TIER_FACTORS_DEFAULT) for a in range(10))   # per act
