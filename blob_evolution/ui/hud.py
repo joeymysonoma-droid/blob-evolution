@@ -32,6 +32,7 @@ def skills_overlay_layout(count: int) -> Tuple[pygame.Rect, List[pygame.Rect]]:
 
 
 _LEVEL_UP = re.compile(r"Level \d+!")
+PRIORITY_WAIT = 1.0     # BUG-167 ruling: a priority notice (phase banner) lets the notice on screen keep at most this
 
 
 def _notice_group(text: str) -> str:
@@ -50,45 +51,78 @@ class HUD:
         self.show_fps = False
         self.notification = ""
         self.notification_timer = 0.0
-        self._queue: Deque[Tuple[str, float, bool]] = deque(maxlen=config.HUD_NOTICE_QUEUE)   # BUG-145: (text, s, now)
+        self._queue: Deque[Tuple[str, float, bool, bool]] = deque(maxlen=config.HUD_NOTICE_QUEUE)   # (text, s, now, prio)
         self._now = False                                 # the notice on screen is menu / shop feedback
+        self._prio = False                                # BUG-167: the notice on screen is a priority one (phase banner)
+        self._dur = 0.0                                   # BUG-167: the full duration of the notice on screen
+        self._yielded = False                             # BUG-167: it is counting down its <= 1.0 s before a banner
         self.shop_item_rects: list = []
 
-    def show_notification(self, text: str, duration: float = 2.0, now: bool = False) -> None:
+    def show_notification(self, text: str, duration: float = 2.0, now: bool = False, priority: bool = False) -> None:
         """Show a temporary notification. One slot (BUG-145): while another notice is showing, the new one waits in a small
         queue and then gets its full duration. A notice of the same group as the one on screen (the same text, or another
         "Level N!") replaces it in place; one of the same group as a waiting notice replaces that one.
 
         now=True is menu / shop feedback (the answer to a key press): it jumps the queue and shows at once, and the
         gameplay notice it interrupts goes back to the front of the queue with the time it had left. Feedback that arrives
-        while other feedback is showing waits behind it, still ahead of every gameplay notice."""
+        while other feedback is showing waits behind it, still ahead of every gameplay notice.
+
+        priority=True is a phase banner (BUG-167 ruling): it replaces a banner on screen at once (the game times that,
+        BUG-166); any other notice on screen keeps at most PRIORITY_WAIT (1.0 s) and the banner shows next, ahead of
+        everything waiting. A gameplay notice it cuts short shows again afterwards for its full duration."""
+        if priority:
+            self._show_priority(text, duration)
+            return
         group = _notice_group(text)
         if self.notification_timer <= 0:
             self._show(text, duration, now)
-        elif group == _notice_group(self.notification):
+        elif group == _notice_group(self.notification) and not self._yielded:
             self.notification, self.notification_timer = text, max(self.notification_timer, duration)
+            self._dur = max(self._dur, duration)
             self._now = self._now or now
         else:
-            for k, (t, _d, n) in enumerate(self._queue):
+            for k, (t, _d, n, p) in enumerate(self._queue):
                 if _notice_group(t) == group:
-                    self._queue[k] = (text, duration, n or now)     # e.g. "Level 3!" waiting becomes "Level 4!"
+                    self._queue[k] = (text, duration, n or now, p)  # e.g. "Level 3!" waiting becomes "Level 4!"
                     return
             if not now:
-                self._queue.append((text, duration, False))
+                self._queue.append((text, duration, False, False))
             elif not self._now:                                   # interrupt a gameplay notice; it resumes next
-                self._push_front((self.notification, self.notification_timer, False))
+                self._push_front((self.notification, self.notification_timer, False, self._prio))
                 self._show(text, duration, True)
             else:                                                 # behind the feedback already waiting, before gameplay
-                k = next((k for k, e in enumerate(self._queue) if not e[2]), len(self._queue))
-                self._insert(k, (text, duration, True))
+                k = next((k for k, e in enumerate(self._queue) if not e[2] and not e[3]), len(self._queue))
+                self._insert(k, (text, duration, True, False))
 
-    def _show(self, text: str, duration: float, now: bool) -> None:
+    def _show_priority(self, text: str, duration: float) -> None:
+        """BUG-167 ruling: see show_notification(priority=True)."""
+        if self.notification_timer <= 0 or self._prio:
+            self._show(text, duration, False, True)
+            return
+        k = next((k for k, e in enumerate(self._queue) if not e[3]), len(self._queue))   # behind banners already waiting
+        self._insert(k, (text, duration, False, True))
+        if self._yielded:
+            return                                                # already counting down its 1.0 s, already re-queued
+        if self.notification_timer > PRIORITY_WAIT and not self._now:
+            self._insert(k + 1, (self.notification, self._dur, False, False))   # cut short: its full time afterwards
+        self.notification_timer = min(self.notification_timer, PRIORITY_WAIT)
+        self._yielded = True
+
+    def withdraw(self, text: str) -> None:
+        """Drop waiting notices with this text (a phase banner whose boss is gone, or a fight that was left)."""
+        kept = [e for e in self._queue if e[0] != text]
+        if len(kept) != len(self._queue):
+            self._queue.clear()
+            self._queue.extend(kept)
+
+    def _show(self, text: str, duration: float, now: bool, prio: bool = False) -> None:
         self.notification, self.notification_timer, self._now = text, duration, now
+        self._prio, self._dur, self._yielded = prio, duration, False
 
-    def _push_front(self, entry: Tuple[str, float, bool]) -> None:
+    def _push_front(self, entry: Tuple[str, float, bool, bool]) -> None:
         self._insert(0, entry)
 
-    def _insert(self, k: int, entry: Tuple[str, float, bool]) -> None:
+    def _insert(self, k: int, entry: Tuple[str, float, bool, bool]) -> None:
         if len(self._queue) == self._queue.maxlen:
             self._queue.pop()                                     # full: the newest waiting notice drops
         self._queue.insert(min(k, len(self._queue)), entry)
@@ -98,8 +132,9 @@ class HUD:
         if self.notification_timer > 0:
             self.notification_timer -= dt
             if self.notification_timer <= 0 and self._queue:
-                text, duration, now = self._queue.popleft()
-                self._show(text, duration + self.notification_timer, now)   # carry the overshoot: full duration each
+                text, duration, now, prio = self._queue.popleft()
+                self._show(text, duration + self.notification_timer, now, prio)   # carry the overshoot: full duration each
+                self._dur = duration
 
     @property
     def pending_notifications(self) -> List[str]:

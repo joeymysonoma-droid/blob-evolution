@@ -122,7 +122,8 @@ class Game:
         self.player: Optional[Player] = None
         self.creatures: List[Creature] = []
         self.bosses: List[Boss] = []
-        self._phase_banners: Dict[int, list] = {}   # BUG-147: id(boss) -> [waiting (text, phase, name) deque, s to next, text shown]
+        self._phase_banners: Dict[int, list] = {}   # BUG-147: id(boss) -> [waiting (text, phase, name) deque, s to next, text shown,
+        #                                             handed to the HUD, not on screen yet (BUG-167)]
         self.projectiles: List[Projectile] = []
         self.xp_orbs: List[XPOrb] = []
 
@@ -302,12 +303,15 @@ class Game:
         """Remove inactive entities to prevent unbounded list growth."""
         self.projectiles = [p for p in self.projectiles if p.active]
         self.creatures = [c for c in self.creatures if c.active]
+        gone = [id(b) for b in self.bosses if not b.active and id(b) in self._phase_banners]
+        if gone:
+            self._drop_phase_banners(gone)                 # BUG-167: a dead boss's waiting banner drops, even one handed over
         self.bosses = [b for b in self.bosses if b.active]
         self.xp_orbs = [o for o in self.xp_orbs if o.active]
 
     def _load_encounter(self, node) -> None:
         """Load combat encounter for an overworld node."""
-        self._phase_banners.clear()                    # BUG-147: no phase banner carries over to the next fight
+        self._drop_phase_banners(list(self._phase_banners))  # BUG-147: no phase banner carries over to the next fight
         if not self.overworld or not self.player:
             return
         seed = random.randint(0, 999999)
@@ -1174,10 +1178,9 @@ class Game:
         for boss in self.bosses:
             if boss.active:
                 boss.update(dt, self.player.pos, self.projectiles)
-                label = self._next_phase_banner(boss, dt)
+                label = self._next_phase_banner(boss, dt)      # handed to the HUD inside; returned when on screen
                 if label:
                     self.audio.play("boss_phase")
-                    self.hud.show_notification(label, PHASE_BANNER_TIME)
                     self._add_screen_shake(10)
         self.boss_spawns.update(dt, self)
 
@@ -1206,28 +1209,48 @@ class Game:
         Its phase starts play one after another, so a hit that crosses two thresholds shows both; a single start shows in
         the frame it happens, exactly as before. A dead boss is no longer asked, so its waiting banner drops.
         BUG-166: a waiting banner replaces the one on screen after at most PHASE_BANNER_NEXT (1.0 s).
-        BUG-167: it does not cut short another notice shown since (e.g. "Level 5!"): it waits until that one ends.
+        BUG-167 ruling: banners go through the HUD notice queue as priority items: any other notice on screen keeps at
+        most 1.0 s, then the banner shows; a gameplay notice it cut short, or one waiting, shows afterwards in full.
+        Returned (sound, shake) and the plate switched (BUG-169) in the frame the banner is actually on screen.
         BUG-169: the boss's name plate keeps the last announced phase / name until the next banner shows."""
-        entry = self._phase_banners.setdefault(id(boss), [deque(), 0.0, None, False])   # [.., queued behind our banner]
+        entry = self._phase_banners.setdefault(id(boss), [deque(), 0.0, None, None])
         starts = boss.take_phase_starts()
         if starts:
             if boss.plate_hold is None:
                 boss.plate_hold = boss.phase_before_starts
-            entry[3] = entry[3] or entry[1] > 0            # one of ours is still on its clock: these follow it
             for phase, name, _cooldown in starts:
                 entry[0].append(("FINAL PHASE!" if phase >= 3 else f"{name} — PHASE {phase}!", phase, name))
             entry[1] = min(entry[1], PHASE_BANNER_NEXT)
+        hud = self.hud
+        if entry[3] is not None:                           # handed over, waiting for its slot (<= 1.0 s)
+            if hud.notification == entry[3][0] and hud.notification_timer > 0:
+                return self._phase_banner_shown(boss, entry, entry[3])
+            if entry[3][0] in hud.pending_notifications:
+                return None
+            entry[3] = None                                # dropped from a full queue
         entry[1] -= dt
         if not entry[0] or entry[1] > 0:
             return None
-        hud = self.hud
-        if entry[3] and hud.notification_timer > 0 and hud.notification != entry[2]:
-            return None                                    # BUG-167: another notice is up; let it finish
-        text, phase, name = entry[0].popleft()
+        item = entry[0].popleft()
+        hud.show_notification(item[0], PHASE_BANNER_TIME, priority=True)
+        if hud.notification == item[0]:
+            return self._phase_banner_shown(boss, entry, item)
+        entry[3] = item
+        return None
+
+    def _phase_banner_shown(self, boss: Boss, entry: list, item: tuple) -> str:
+        text, phase, name = item
         entry[1] = PHASE_BANNER_TIME if not entry[0] else PHASE_BANNER_NEXT
-        entry[2], entry[3] = text, bool(entry[0])
+        entry[2], entry[3] = text, None
         boss.plate_hold = (phase, name) if entry[0] else None
         return text
+
+    def _drop_phase_banners(self, keys) -> None:
+        """BUG-167: forget these bosses' banners, and take any handed to the HUD but not shown yet back out of its queue."""
+        for k in keys:
+            entry = self._phase_banners.pop(k, None)
+            if entry and entry[3] is not None:
+                self.hud.withdraw(entry[3][0])
 
     def _process_explosions(self) -> None:
         """Resolve bomber / death explosions."""

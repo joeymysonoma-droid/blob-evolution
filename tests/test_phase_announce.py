@@ -95,30 +95,88 @@ def test_bug_166_a_banner_alone_keeps_its_full_2_5_s(game):
     assert game.hud.notification.endswith("PHASE 2!") and game.hud.notification_timer > 0
 
 
-def test_bug_167_a_notice_shown_in_the_gap_is_not_cut_short(game):
-    """QA t53 finding B: 'Level 5!' shown between the two banners of a double crossing keeps its full 2.0 s."""
+def _screen(game, frames, at=None):
+    """BUG-167: per frame, (text on screen or None, boss_phase sounds so far), running `at` callables before their frame."""
+    seen = []
+    for f in range(frames):
+        _run(game, 1, {0: at[f]} if at and f in at else None)
+        h = game.hud
+        seen.append((h.notification if h.notification_timer > 0 else None, game.sounds.count("boss_phase")))
+    return seen
+
+
+def _spans(seen):
+    """[(text, first frame, frames)] of each stretch a text is on screen."""
+    out = []
+    for f, (text, _n) in enumerate(seen):
+        if text is None:
+            continue
+        if out and out[-1][0] == text and out[-1][1] + out[-1][2] == f:
+            out[-1][2] += 1
+        else:
+            out.append([text, f, 1])
+    return [tuple(x) for x in out]
+
+
+def test_bug_167_a_notice_shown_between_two_banners_waits_and_then_gets_its_full_time(game):
+    """Ruling: 'Level 5!' shown while PHASE 2 is up waits (gameplay notices queue, 053); FINAL PHASE! replaces PHASE 2 after
+    1.0 s (BUG-166, priority), and 'Level 5!' shows after it for its whole 2.0 s."""
     b = Boss(Vector2(1300, 1000), 3, None)
     game.bosses = [b]
     hits = {0: lambda: b.take_damage(b.max_hp * 0.8), 30: lambda: game.hud.show_notification("Level 5!", 2.0)}
-    seen = {}
-    for f in range(400):
-        _run_one = _run(game, 1, {0: hits[f]} if f in hits else None)
-        seen[f] = (game.hud.notification, game.hud.notification_timer > 0, [t for _f, t, _d in _run_one])
-    level = [f for f, (text, on, _s) in seen.items() if text == "Level 5!" and on]
-    assert len(level) >= 119 and level[0] == 30                       # its whole 2.0 s
-    final = [f for f, (_t, _on, shown) in seen.items() if "FINAL PHASE!" in shown]
-    assert final and final[0] >= level[-1]                            # the banner waits for it, then shows
-    assert final[0] <= level[-1] + 1
+    spans = _spans(_screen(game, 400, hits))
+    assert [t for t, _f, _n in spans] == ["Warden of Ash — PHASE 2!", "FINAL PHASE!", "Level 5!"]
+    assert spans[1][1] in (60, 61) and spans[1][2] in (149, 150, 151)
+    assert spans[2][1] == spans[1][1] + spans[1][2] and spans[2][2] in (119, 120, 121)
 
 
-def test_bug_167_a_first_banner_still_shows_at_once_over_a_notice(game):
-    """Only a banner waiting behind one of ours waits for other notices; the first one shows in its frame, as before."""
+def test_bug_167_a_banner_lets_the_notice_on_screen_keep_1_s_then_shows_and_the_notice_gets_its_full_time_after(game):
     b = Boss(Vector2(1300, 1000), 3, None)
     game.bosses = [b]
     game.hud.show_notification("Level 5!", 2.0)
     b.take_damage(b.max_hp * 0.55)
-    shown = [s for s in _run(game, 2) if "PHASE" in s[1]]
-    assert shown and shown[0][0] == 0
+    seen = _screen(game, 400)
+    spans = _spans(seen)
+    assert [t for t, _f, _n in spans] == ["Level 5!", "Warden of Ash — PHASE 2!", "Level 5!"]
+    assert spans[0][2] in (59, 60, 61)                                 # at most 1.0 s more
+    assert spans[1][2] in (149, 150, 151) and spans[2][2] in (119, 120, 121)   # banner 2.5 s, then 'Level 5!' in full
+    first = spans[1][1]
+    assert seen[first - 1][1] == 0 and seen[first][1] == 1           # the sound plays when the banner is on screen
+
+
+def test_bug_167_a_notice_with_under_1_s_left_just_ends_and_is_not_shown_again(game):
+    b = Boss(Vector2(1300, 1000), 3, None)
+    game.bosses = [b]
+    game.hud.show_notification("Level 5!", 0.5)
+    b.take_damage(b.max_hp * 0.55)
+    spans = _spans(_screen(game, 300))
+    assert [t for t, _f, _n in spans] == ["Level 5!", "Warden of Ash — PHASE 2!"]
+    assert spans[0][2] in (29, 30, 31)
+
+
+def test_bug_167_a_waiting_banner_switches_the_plate_only_when_it_shows(game):
+    b = Boss(Vector2(1300, 1000), 3, None)
+    game.bosses = [b]
+    game.hud.show_notification("Level 5!", 2.0)
+    b.take_damage(b.max_hp * 0.55)
+    plates = []
+    for f in range(80):
+        _run(game, 1)
+        plates.append((game.hud.notification, b.shown_phase()))
+    first = next(f for f, (t, _p) in enumerate(plates) if t.endswith("PHASE 2!"))
+    assert first > 50 and all(p == 1 for _t, p in plates[:first]) and plates[first][1] == 2
+
+
+def test_bug_167_a_dead_boss_takes_its_handed_banner_back_out_of_the_queue(game):
+    b = Boss(Vector2(1300, 1000), 3, None)
+    game.bosses = [b]
+    game.hud.show_notification("Level 5!", 2.0)
+    b.take_damage(b.max_hp * 0.55)
+    _run(game, 1)
+    assert any("PHASE" in t for t in game.hud.pending_notifications)
+    b.active = False
+    spans = _spans(_screen(game, 300))
+    assert all("PHASE" not in t for t, _f, _n in spans) and not game.hud.pending_notifications[1:]
 
 
 def test_bug_168_loading_a_fight_clears_the_waiting_banners(game):
