@@ -110,18 +110,25 @@ class _Layer:
         self.steps = config.AMBIENT_COLOR_STEPS if end else 1
         # sprites[variant][radius_index][alpha_index]; variant = colour * steps + lerp step
         self.sprites: List[List[List[pygame.Surface]]] = []
+        # BUG-119: the same ladder at AMBIENT_NEAR_ALPHA of each rung's alpha, drawn for motes beside the player
+        self.near: List[List[List[pygame.Surface]]] = []
+        k = config.AMBIENT_NEAR_ALPHA
         radii = range(self.size[0], self.size[1] + 1) if self.shape == "disc" else (0,)
         self.radius_lo = self.size[0] if self.shape == "disc" else 0
         for colour in self.colors:
             for step in range(self.steps):
                 tone = _lerp(colour, end, step / max(1, self.steps - 1) * 0.85) if end else colour
-                rows = []
+                rows, near = [], []
                 for r in radii:
                     if self.shape == "disc":
                         rows.append([_disc_sprite(tone, r, a, self.additive) for a in LADDER])
+                        near.append([_disc_sprite(tone, r, int(a * k), self.additive) for a in LADDER])
                     else:
                         rows.append([_streak_sprite(tone, self.size[0], self.size[1], a, self.additive) for a in LADDER])
+                        near.append([_streak_sprite(tone, self.size[0], self.size[1], int(a * k), self.additive)
+                                     for a in LADDER])
                 self.sprites.append(rows)
+                self.near.append(near)
         self.radius_count = len(radii)
 
 
@@ -134,6 +141,7 @@ class AmbientField:
         self.layers = [_Layer(spec) for spec in config.AMBIENT_LAYERS[self.theme_index]]
         self.t = 0.0
         self._placed = False
+        self.player = [0.0, 0.0, 0.0]          # BUG-119: player x, y, R (world); R 0 = no player, no near fade
         self.motes: List[list] = []
         for kind, layer in enumerate(self.layers):
             for _ in range(layer.cap):
@@ -247,6 +255,11 @@ class AmbientField:
 
     # --- draw ----------------------------------------------------------------------------------------------
 
+    def set_player(self, x: float, y: float, radius: float) -> None:
+        """BUG-119: where the player is this frame (world). Motes near it draw their 50 % copy. radius 0 turns it off."""
+        p = self.player
+        p[0], p[1], p[2] = x, y, radius
+
     def draw_back(self, surface: pygame.Surface, camera: Vector2, shake: Vector2) -> None:
         """Draw the back 75% of the motes (and the act 7 rings), behind the entities."""
         self._draw(surface, camera, shake, self._back, len(LADDER) - 1)
@@ -266,6 +279,8 @@ class AmbientField:
         add = pygame.BLEND_RGB_ADD
         sw, sh = config.SCREEN_WIDTH, config.SCREEN_HEIGHT
         blit = surface.blit
+        px, py, pr = self.player
+        reach = config.AMBIENT_NEAR_REACH * pr
         for m in motes:
             layer = layers[m[6]]
             age = t - m[5]
@@ -288,6 +303,11 @@ class AmbientField:
             x = m[0]
             if layer.sway_amp:
                 x += layer.sway_amp * math.sin(TAU * layer.sway_hz * t + m[8])
+            if pr > 0:                                  # BUG-119: centre within 1.6 R + the mote's radius -> the 50 % copy
+                lim = reach + sprite.get_width() * 0.5
+                dx, dy = x - px, m[1] - py
+                if dx * dx + dy * dy < lim * lim:
+                    sprite = layer.near[variant][m[9]][rung]
             sx = int(x + bx) - sprite.get_width() // 2
             sy = int(m[1] + by) - sprite.get_height() // 2
             if -20 < sx < sw and -20 < sy < sh:

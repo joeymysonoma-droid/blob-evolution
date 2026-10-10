@@ -461,3 +461,111 @@ def test_full_alpha_motes_only_pulse_slowly(act):
         assert spec.get("mod", (1.0, 0.0))[1] <= 1.0
         if spec["peak"] >= 255:
             assert 0 < spec["mod"][1] <= 1.0 and spec["mod"][0] < 1.0
+
+
+# ---- BUG-119: motes beside the player draw a pre-baked half-alpha copy -------------------------------------------------
+
+def test_every_sprite_has_a_prebuilt_near_copy_at_half_its_alpha():
+    assert config.AMBIENT_NEAR_REACH == 1.6 and config.AMBIENT_NEAR_ALPHA == 0.5
+    for act in ACTS:
+        for layer in AmbientField(act, 1).layers:
+            assert len(layer.near) == len(layer.sprites)
+            for rows, near in zip(layer.sprites, layer.near):
+                for ladder, nladder in zip(rows, near):
+                    assert len(nladder) == len(ladder)
+                    for a, (s, n) in enumerate(zip(ladder, nladder)):
+                        assert s.get_size() == n.get_size() and s is not n
+                        w, h = s.get_size()
+                        p, q = s.get_at((w // 2, h // 2)), n.get_at((w // 2, h // 2))
+                        if layer.additive:                       # brightness stands in for alpha
+                            assert abs(sum(q[:3]) - 0.5 * sum(p[:3])) <= 4, (act, layer.name, a, p, q)
+                        else:
+                            assert abs(q[3] - 0.5 * p[3]) <= 1, (act, layer.name, a, p, q)
+    fireflies = next(l for l in AmbientField(1, 1).layers if l.name == "fireflies")
+    assert fireflies.peak == 255                                 # the firefly peak stays 255 away from the player
+
+
+def _one_mote_field(act, kind_name, dx, dy, R=20.0):
+    """A field whose motes are all parked far away except one of `kind_name` at (dx, dy) from the player at CAM."""
+    field = _settled(act)
+    kind = next(i for i, l in enumerate(field.layers) if l.name == kind_name)
+    layer = field.layers[kind]
+    for m in field.motes:
+        m[0], m[1] = -10000.0, -10000.0
+    m = next(m for m in field._back if m[6] == kind)
+    m[0], m[1] = CAM.x + dx, CAM.y + dy
+    m[4], m[5] = 100.0, field.t - 50.0                           # mid-life: full alpha
+    m[7], m[9] = 0, 0
+    field.set_player(CAM.x, CAM.y, R)
+    if layer.mod_hz:
+        m[8] = 0.25 * 3.141592653589793 * 2 - 2 * 3.141592653589793 * layer.mod_hz * field.t   # modulation at its top
+    return field, layer, m
+
+
+@pytest.mark.parametrize("act, kind_name", [(1, "fireflies"), (1, "spores"), (0, "pollen"), (2, "motes")])
+def test_a_mote_inside_1_6_r_plus_its_radius_draws_the_near_copy_and_outside_the_normal_one(act, kind_name, monkeypatch):
+    field, layer, m = _one_mote_field(act, kind_name, 0, 0)
+    drawn = []
+    real = pygame.Surface.blit
+
+    class Spy:
+        def __init__(self, s):
+            self.s = s
+
+        def blit(self, sprite, pos, *a, **k):
+            drawn.append(sprite)
+            return real(self.s, sprite, pos, *a, **k)
+    W, H = config.SCREEN_WIDTH, config.SCREEN_HEIGHT
+    half = layer.sprites[0][0][0].get_width() * 0.5
+    edge = 1.6 * 20 + half
+    for dist, near in ((0.0, True), (edge - 1.0, True), (edge + 1.0, False), (200.0, False)):
+        m[0] = CAM.x + dist - (layer.sway_amp * __import__("math").sin(6.283185307179586 * layer.sway_hz * field.t + m[8])
+                                if layer.sway_amp else 0.0)
+        drawn.clear()
+        field._draw(Spy(pygame.Surface((W, H))), CAM, NO_SHAKE, [m], len(ambient.LADDER) - 1)
+        assert len(drawn) == 1, (dist, drawn)
+        ladders = layer.near if near else layer.sprites
+        assert any(drawn[0] is s for rows in ladders for lad in rows for s in lad), (kind_name, dist, near)
+
+
+def test_no_player_no_near_copy():
+    field, layer, m = _one_mote_field(1, "fireflies", 0, 0)
+    field.set_player(0.0, 0.0, 0.0)
+    drawn = []
+
+    class Spy:
+        def blit(self, sprite, pos, *a, **k):
+            drawn.append(sprite)
+    field._draw(Spy(), CAM, NO_SHAKE, [m], len(ambient.LADDER) - 1)
+    assert drawn and any(drawn[0] is s for rows in layer.sprites for lad in rows for s in lad)
+
+
+@pytest.mark.parametrize("act", ACTS)
+def test_the_near_fade_allocates_nothing_per_frame(act, monkeypatch):
+    """With the player in the middle of the field, 120 frames of update + draw_back / draw_front build no Surface."""
+    field = _settled(act)
+    surface = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    made = []
+    real = pygame.Surface
+
+    class Counting(real):
+        def __init__(self, *a, **k):
+            made.append(a)
+            super().__init__(*a, **k)
+    monkeypatch.setattr(ambient.pygame, "Surface", Counting)
+    near_hits = 0
+    for f in range(120):
+        field.set_player(CAM.x + 3 * f, CAM.y, 20.0)
+        field.update(1 / 60, CAM)
+        field.draw_back(surface, CAM, NO_SHAKE)
+        field.draw_front(surface, CAM, NO_SHAKE)
+        near_hits += sum((m[0] - CAM.x - 3 * f) ** 2 + (m[1] - CAM.y) ** 2 < 60 ** 2 for m in field.motes)
+    assert made == []
+    assert near_hits > 0                                          # the near branch really ran
+
+
+def test_the_game_hands_the_player_to_the_field_before_drawing(game):
+    _enter_fight(game)
+    game.player.pos.x, game.player.pos.y = 777.0, 555.0
+    game._draw_game()
+    assert game.ambient.player == [777.0, 555.0, game.player.size]
