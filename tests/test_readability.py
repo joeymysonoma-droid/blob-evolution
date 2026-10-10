@@ -233,6 +233,8 @@ def test_entities_draw_their_shadow_with_the_base_radius_before_the_blob(monkeyp
         mod = __import__(f"blob_evolution.entities.{module}", fromlist=["x"])
         monkeypatch.setattr(mod, "draw_contact_shadow", lambda s, x, y, r, _spy=spy: (order.append("shadow"), _spy.shadow(s, x, y, r)))
         monkeypatch.setattr(mod, "draw_blob", lambda *a, **k: order.append("blob"))
+        if hasattr(mod, "draw_blob_cached"):                  # TASK-058: the boss art body is the cached twin
+            monkeypatch.setattr(mod, "draw_blob_cached", lambda *a, **k: order.append("blob"))
     screen = _blank()
     random.seed(7)
     c = Creature(Vector2(600, 400), CreatureType.BASIC, size=17.0)
@@ -591,6 +593,7 @@ MAIN_SCENE_DIGEST = "0fda1e820191a165c3515982009120fce681cf59"
 
 def test_toggle_off_renders_the_same_frame_as_main(monkeypatch):
     monkeypatch.setattr(config, "GFX_ENEMY_SHAPES", False)       # TASK-046: the scene holds creatures; main drew the pre-046 ones
+    monkeypatch.setattr(config, "GFX_BOSS_ART", False)           # TASK-058: the scene holds a boss; main drew the pre-058 one
     monkeypatch.setattr(config, "GFX_READABILITY", False)
     assert _scene_digest() == MAIN_SCENE_DIGEST
 
