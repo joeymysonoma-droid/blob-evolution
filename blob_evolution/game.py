@@ -30,6 +30,7 @@ from blob_evolution.data.lore import (
     wrap_text,
 )
 from blob_evolution.entities.boss import Boss
+from blob_evolution.entities.boss_spawns import SpawnDirector
 from blob_evolution.entities.creature import Creature
 from blob_evolution.entities.particle import ParticleSystem
 from blob_evolution.entities.pickups import XPOrb, set_xp_act
@@ -89,6 +90,7 @@ class Game:
         self.audio = get_audio()
         self.map_gen = MapGenerator()
         self.hazards = HazardManager()
+        self.boss_spawns = SpawnDirector()          # TASK-056: places what bosses queue (pools, later sprouts/adds)
         self.economy = EconomyManager()
         self.ng_plus = NewGamePlus()
         self.permanent = PermanentProgress()
@@ -326,6 +328,7 @@ class Game:
         )
 
         self.bosses = []
+        self.boss_spawns.clear()
         for i in range(params.get("bosses", 0)):
             pos = Vector2(random.randint(400, config.WORLD_WIDTH - 400),
                           random.randint(400, config.WORLD_HEIGHT - 400))
@@ -1169,6 +1172,7 @@ class Game:
                     self.audio.play("boss_phase")
                     self.hud.show_notification(label, PHASE_BANNER_TIME)
                     self._add_screen_shake(10)
+        self.boss_spawns.update(dt, self)
 
         self._process_explosions()
         self._update_projectiles(dt)
@@ -1305,7 +1309,7 @@ class Game:
 
             for boss in self.bosses:
                 if boss.active and proj.collides_with(boss.pos, boss.radius):
-                    killed = boss.take_damage(hit_damage, ignore_def)
+                    killed = boss.take_damage(hit_damage, ignore_def, hit_from=proj.pos)
                     self.audio.play("boss_hit", 0.55)
                     self._add_screen_shake(3)
                     if killed:

@@ -300,3 +300,10 @@ SHADOW_MIN_RADIUS = 4
 BOSS_PHASE2_SPECIAL_COOLDOWN = 1.5      # special fires this soon after phase 2 starts (as on main)
 BOSS_PHASE3_SPECIAL_COOLDOWN = 1.0      # same for phase 3 (main used it on layers 9-10 only; layers 4-8 get it too)
 BOSS_VERDICT_ORDER = ("radial", "targeted", "cross")   # layer 9 verdicts cycle in this order
+
+# Boss spawns and hit direction (TASK-056 framework; no boss uses them yet, so these change nothing today).
+BOSS_SPAWN_QUEUE_MAX = 32               # pending spawn requests per game; more are dropped (push returns False)
+BOSS_SPAWNS_DIE_WITH_OWNER = True       # pending and live boss spawns go when their boss dies
+BOSS_POOL_RADIUS = 70.0                 # timed pool default radius (px), when the request gives none
+BOSS_POOL_LIFETIME = 6.0                # timed pool default lifetime (s)
+BOSS_POOL_HAZARD = "toxic"              # timed pool default hazard type: "lava", "ice" or "toxic"
