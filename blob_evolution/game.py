@@ -68,6 +68,10 @@ BACK_OUT_STATES = (
 )
 
 
+
+PHASE_BANNER_TIME = 2.5        # s a phase banner shows
+PHASE_BANNER_NEXT = 1.0        # BUG-166: a waiting phase banner replaces the one on screen after at most this
+
 class Game:
     """Main game controller."""
 
@@ -114,7 +118,7 @@ class Game:
         self.player: Optional[Player] = None
         self.creatures: List[Creature] = []
         self.bosses: List[Boss] = []
-        self._phase_banners: Dict[int, list] = {}   # BUG-147: id(boss) -> [waiting phase banners (deque), s left on screen]
+        self._phase_banners: Dict[int, list] = {}   # BUG-147: id(boss) -> [waiting (text, phase, name) deque, s to next, text shown]
         self.projectiles: List[Projectile] = []
         self.xp_orbs: List[XPOrb] = []
 
@@ -1163,7 +1167,7 @@ class Game:
                 label = self._next_phase_banner(boss, dt)
                 if label:
                     self.audio.play("boss_phase")
-                    self.hud.show_notification(label, 2.5)
+                    self.hud.show_notification(label, PHASE_BANNER_TIME)
                     self._add_screen_shake(10)
 
         self._process_explosions()
@@ -1188,16 +1192,31 @@ class Game:
 
     def _next_phase_banner(self, boss: Boss, dt: float) -> Optional[str]:
         """BUG-147: the phase banner to show for `boss` this frame, if any (called once per frame per active boss).
-        Its phase starts play one after another, 2.5 s each, so a hit that crosses two thresholds shows both; a single
-        start shows in the frame it happens, exactly as before. A dead boss is no longer asked, so its waiting banner drops."""
-        entry = self._phase_banners.setdefault(id(boss), [deque(), 0.0])
-        for phase, name, _cooldown in boss.take_phase_starts():
-            entry[0].append("FINAL PHASE!" if phase >= 3 else f"{name} — PHASE {phase}!")
+        Its phase starts play one after another, so a hit that crosses two thresholds shows both; a single start shows in
+        the frame it happens, exactly as before. A dead boss is no longer asked, so its waiting banner drops.
+        BUG-166: a waiting banner replaces the one on screen after at most PHASE_BANNER_NEXT (1.0 s).
+        BUG-167: it does not cut short another notice shown since (e.g. "Level 5!"): it waits until that one ends.
+        BUG-169: the boss's name plate keeps the last announced phase / name until the next banner shows."""
+        entry = self._phase_banners.setdefault(id(boss), [deque(), 0.0, None, False])   # [.., queued behind our banner]
+        starts = boss.take_phase_starts()
+        if starts:
+            if boss.plate_hold is None:
+                boss.plate_hold = boss.phase_before_starts
+            entry[3] = entry[3] or entry[1] > 0            # one of ours is still on its clock: these follow it
+            for phase, name, _cooldown in starts:
+                entry[0].append(("FINAL PHASE!" if phase >= 3 else f"{name} — PHASE {phase}!", phase, name))
+            entry[1] = min(entry[1], PHASE_BANNER_NEXT)
         entry[1] -= dt
         if not entry[0] or entry[1] > 0:
             return None
-        entry[1] = 2.5
-        return entry[0].popleft()
+        hud = self.hud
+        if entry[3] and hud.notification_timer > 0 and hud.notification != entry[2]:
+            return None                                    # BUG-167: another notice is up; let it finish
+        text, phase, name = entry[0].popleft()
+        entry[1] = PHASE_BANNER_TIME if not entry[0] else PHASE_BANNER_NEXT
+        entry[2], entry[3] = text, bool(entry[0])
+        boss.plate_hold = (phase, name) if entry[0] else None
+        return text
 
     def _process_explosions(self) -> None:
         """Resolve bomber / death explosions."""

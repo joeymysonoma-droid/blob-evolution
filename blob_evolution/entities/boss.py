@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import pygame
 
@@ -52,6 +52,8 @@ class Boss:
         self.phase = 1
         self.phase_announced = False
         self.phase_starts: List[Tuple[int, str, float]] = []    # BUG-147: (phase, name, special cd) per start, unannounced
+        self.phase_before_starts: Tuple[int, str] = (1, "")   # BUG-169: phase / name before the first unannounced start
+        self.plate_hold: Optional[Tuple[int, str]] = None   # BUG-169: (phase, name) the plate shows until its banner shows
         self.xp_value = int(self.max_hp)
         self.shoot_cooldown = CADENCE.first_basic
         self.special_cooldown = CADENCE.first_special
@@ -100,6 +102,8 @@ class Boss:
             self.enraged = True
         elif pd.crossing and prev_ratio < pd.below:
             return
+        if not self.phase_starts:
+            self.phase_before_starts = (self.phase, self.name)
         self.phase = pd.phase
         self.phase_announced = True
         self.special_cooldown = pd.special_cooldown       # in phase order: a hit crossing two ends on the deeper phase's
@@ -110,6 +114,14 @@ class Boss:
     def consume_phase_announce(self) -> bool:
         """Return True once when a new phase begins (all phase starts since the last call count as one)."""
         return bool(self.take_phase_starts())
+
+    def shown_phase(self) -> int:
+        """BUG-169: the phase the name plate shows (the last announced one; the real phase when nothing is waiting)."""
+        return self.plate_hold[0] if self.plate_hold else self.phase
+
+    def shown_name(self) -> str:
+        """BUG-169: the name the plate shows (layer 9 switches to Stillness only when its banner shows)."""
+        return self.plate_hold[1] if self.plate_hold else self.name
 
     def take_phase_starts(self) -> List[Tuple[int, str, float]]:
         """BUG-147: every phase start since the last call, in order, as (phase, name at that phase, special cooldown it set); one hit crossing two
@@ -254,13 +266,14 @@ class Boss:
         draw_health_bar(surface, bar_x, bar_y, bar_width, 8, self.hp, self.max_hp)
 
         font = pygame.font.SysFont("segoeui", 13, bold=True)
-        name = font.render(self.name, True, (230, 210, 180) if not self.enraged else (255, 140, 120))
+        name = font.render(self.shown_name(), True, (230, 210, 180) if not self.enraged else (255, 140, 120))
         surface.blit(name, (sx - name.get_width() // 2, bar_y - 18))
 
         phase_label = ""
-        if self.phase >= 3:
+        shown = self.shown_phase()                         # BUG-169: the announced phase, not one still waiting
+        if shown >= 3:
             phase_label = "FINAL PHASE"
-        elif self.enraged:
+        elif self.enraged and shown >= 2:
             phase_label = "PHASE 2"
         if phase_label:
             text = font.render(phase_label, True, (255, 120, 120))
