@@ -137,13 +137,13 @@ def _ray_pixels(zone: HazardZone, angle: float):
     return out
 
 
-def test_toxic_outline_stays_at_the_r2_dimmed_brightness():
-    """r2 (BUG-124) dimmed the toxic edge so a shot on the rim reads; r1's (190,255,90) is too bright. If the Visual Designer
-    accepts a new edge colour (TASK-053-hazard-contrast.md), move this bound with it."""
+def test_toxic_outline_stays_below_the_r1_brightness():
+    """r2 (BUG-124) dimmed the toxic edge so a shot on the rim reads; BUG-134 brightened it part way back to (176,226,86)
+    (Visual Designer, lum 0.64); r1's (190,255,90) (lum 0.83) stays too bright."""
     zone = _baked(HazardType.TOXIC, 90)
     brightest = max(_lum(rgb) for k in range(36) for _xy, rgb in _ray_pixels(zone, k * math.tau / 36 + 0.05)[:6])
-    assert _lum(config.HAZARD_STYLE["toxic"]["edge"]) <= 0.50
-    assert 0.25 <= brightest <= 0.50 + 1e-6
+    assert _lum(config.HAZARD_STYLE["toxic"]["edge"]) <= 0.70
+    assert 0.45 <= brightest <= 0.70 + 1e-6
 
 
 def _lit(sprite: pygame.Surface) -> float:
@@ -170,3 +170,16 @@ def test_ice_outline_is_a_bright_outer_line_over_a_dim_inner_line(monkeypatch):
     monkeypatch.setitem(config.HAZARD_STYLE, "ice", {**config.HAZARD_STYLE["ice"], "edge_inner": edge})
     bright = _lit(_baked(HazardType.ICE, 60)._sprite)
     assert dim < 0.97 * bright                                   # the dim inner line takes visible light off the rim
+
+
+def test_bug_134_outline_colours_reach_4_7_on_every_light_ground():
+    """BUG-134 (Visual Designer approved): toxic (176,226,86) and ice (200,228,248), edge_inner unchanged."""
+    def cr(a, b):
+        la, lb = _lum(a), _lum(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    assert config.HAZARD_STYLE["toxic"]["edge"] == (176, 226, 86)
+    assert config.HAZARD_STYLE["ice"]["edge"] == (200, 228, 248)
+    assert config.HAZARD_STYLE["toxic"]["edge_inner"] == (50, 66, 24)
+    assert config.HAZARD_STYLE["ice"]["edge_inner"] == (90, 108, 120)
+    for kind in ("toxic", "ice"):
+        assert min(cr(config.HAZARD_STYLE[kind]["edge"], ramp[2]) for ramp in config.GROUND_RAMPS) >= 4.7, kind

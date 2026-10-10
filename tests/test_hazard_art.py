@@ -470,7 +470,7 @@ def test_ice_fill_is_the_configured_dark_blue_under_the_facets():
 
 def test_the_ice_edge_is_dimmed_and_the_outline_still_reads_against_every_ground():
     edge = config.HAZARD_STYLE["ice"]["edge"]
-    assert _lum(edge) <= 0.70                                            # BUG-124: no near-white rim behind an enemy shot
+    assert _lum(edge) <= 0.75                                            # BUG-124: no near-white rim behind an enemy shot (BUG-134: 0.70 -> 0.75 for the approved (200,228,248))
     assert min(_cr(edge, ramp[1]) for ramp in config.GROUND_RAMPS) >= 5.0
 
 
