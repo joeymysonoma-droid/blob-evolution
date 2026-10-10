@@ -120,6 +120,7 @@ class Game:
         self.camera_target = Vector2()
         self.shake = Vector2()
         self.shake_intensity = 0.0
+        self.drawn_shake = Vector2()     # BUG-114: the shake of the last drawn frame (what the player aimed at)
 
         self.menu_selected = 0
         self.pause_selected = 0
@@ -1051,14 +1052,15 @@ class Game:
         elif key == pygame.K_ESCAPE:
             self.state = GameState.MAIN_MENU
 
-    def _screen_to_world(self, screen_pos: tuple) -> Vector2:
-        """Convert screen coordinates to world coordinates."""
+    def _screen_to_world(self, screen_pos: tuple, shake: Optional[Vector2] = None) -> Vector2:
+        """Convert screen coordinates to world coordinates (with `shake`, default the current one)."""
         if not self.player:
             return Vector2()
+        shake = self.shake if shake is None else shake
         # Exact inverse of the entity draw offset (world - camera + half screen + shake): the shake sign is minus here.
         return Vector2(
-            screen_pos[0] + self.camera.x - config.SCREEN_WIDTH // 2 - self.shake.x,
-            screen_pos[1] + self.camera.y - config.SCREEN_HEIGHT // 2 - self.shake.y,
+            screen_pos[0] + self.camera.x - config.SCREEN_WIDTH // 2 - shake.x,
+            screen_pos[1] + self.camera.y - config.SCREEN_HEIGHT // 2 - shake.y,
         )
 
     def _update(self, dt: float) -> None:
@@ -1141,7 +1143,7 @@ class Game:
         if mouse_pressed[0]:
             before = len(self.projectiles)
             mouse_pos = pygame.mouse.get_pos()
-            world_pos = self._screen_to_world(mouse_pos)
+            world_pos = self._screen_to_world(mouse_pos, self.drawn_shake)   # BUG-114: the frame the player saw, like a click
             self.player.shoot(world_pos, self.projectiles)
             if len(self.projectiles) > before and self._shoot_sound_cd <= 0:
                 self.audio.play("shoot", 0.55)
@@ -1758,6 +1760,7 @@ class Game:
 
     def _draw_game(self) -> None:
         """Draw gameplay scene."""
+        self.drawn_shake.set(self.shake.x, self.shake.y)
         self.map_gen.draw_background(self.screen, self.camera, self.shake)
         self.hazards.draw(self.screen, self.camera, self.shake)
         if self.layers:
