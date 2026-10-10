@@ -466,6 +466,21 @@ def test_hazard_fills_are_dark_and_mostly_opaque(kind):
     assert _lum((r, g, b)) <= 0.03, (kind, (r, g, b), _lum((r, g, b)))
 
 
+@pytest.mark.parametrize("radius", (40, 60, 90, 120))
+def test_toxic_rings_blend_over_the_fill_and_punch_no_holes(radius):
+    """BUG-136 (mutant N9): the swirl rings are blended OVER the fill; drawn straight into it, their alpha-50 pixels would
+    replace the alpha-185 fill (holes the ground shows through). Every pixel of the fill disc keeps at least the fill alpha."""
+    zone = _zone(HazardType.TOXIC, radius)
+    zone.build()
+    sprite = zone._sprite
+    c = sprite.get_width() / 2
+    fill_a = config.HAZARD_STYLE["toxic"]["fill"][3]
+    inner = 0.8 * radius - 8                                             # inside the rim, clear of the anti-aliased edge
+    low = min(sprite.get_at((x, y))[3] for y in range(sprite.get_height()) for x in range(sprite.get_width())
+              if math.hypot(x + 0.5 - c, y + 0.5 - c) <= inner)
+    assert low >= fill_a - 3, (radius, low, fill_a)
+
+
 def test_ice_fill_is_the_configured_dark_blue_under_the_facets():
     r, g, b, a = _inner_fill(HazardType.ICE)
     fill = config.HAZARD_STYLE["ice"]["fill"]
