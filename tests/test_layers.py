@@ -125,8 +125,8 @@ def test_soft_sprite_has_a_core_and_a_third_alpha_halo():
 @pytest.mark.parametrize("act", ACTS)
 def test_same_seed_same_fog_different_seed_differs(act):
     a, b, c = layers.build_fog(act, 1), layers.build_fog(act, 1), layers.build_fog(act, 2)
-    assert pygame.image.tostring(a, "RGBA") == pygame.image.tostring(b, "RGBA")
-    assert pygame.image.tostring(a, "RGBA") != pygame.image.tostring(c, "RGBA")
+    assert pygame.image.tobytes(a, "RGBA") == pygame.image.tobytes(b, "RGBA")
+    assert pygame.image.tobytes(a, "RGBA") != pygame.image.tobytes(c, "RGBA")
 
 
 @pytest.mark.parametrize("act", ACTS)
@@ -176,9 +176,9 @@ def test_fog_blit_paints_something_and_only_changes_the_surface_it_is_given(act)
     d = DepthLayers(act, 6)
     screen = pygame.Surface((W, H))
     screen.fill((90, 90, 90))
-    before = pygame.image.tostring(screen, "RGB")
+    before = pygame.image.tobytes(screen, "RGB")
     d.blit_fog(screen, Vector2(800, 800), NO_SHAKE)
-    assert pygame.image.tostring(screen, "RGB") != before
+    assert pygame.image.tobytes(screen, "RGB") != before
 
 
 def test_act_2_caustic_light_only_brightens():
@@ -369,10 +369,10 @@ def test_a_missing_layer_is_skipped_everywhere(monkeypatch):
     d = DepthLayers(0, 1)
     screen = pygame.Surface((W, H))
     screen.fill((50, 60, 70))
-    before = pygame.image.tostring(screen, "RGB")
+    before = pygame.image.tobytes(screen, "RGB")
     d.blit_fog(screen, Vector2(10, 10), NO_SHAKE)
     d.blit_vignette(screen, 0.0)
-    assert pygame.image.tostring(screen, "RGB") == before
+    assert pygame.image.tobytes(screen, "RGB") == before
 
 
 def test_unknown_act_indices_clamp():
