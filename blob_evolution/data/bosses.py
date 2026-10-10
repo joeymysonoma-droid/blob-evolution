@@ -158,25 +158,28 @@ def anchor_def(act_index: int, variant: int) -> Optional[AnchorDef]:
     return pair[variant % len(pair)] if pair else None
 
 
-def anchor_variant(seed: int, act_index: int, node_id: str, mini_node_ids: Sequence[str],
-                   pick: Optional[str] = None) -> int:
-    """Which anchor a mini-boss node spawns: fixed by the map seed, act and node id, so a reload picks the same one.
-
-    Own Random (string-seeded, stable across runs), so the game's global RNG stream is untouched.
+def anchor_variant(seed: int, act_index: int, node_id: str, mini_node_ids: Sequence[str] = (),
+                   pick: Optional[str] = None, rank: Optional[int] = None) -> int:
+    """Which anchor a mini-boss node spawns. "alternate": a start fixed by the map seed and act, then the anchors take
+    turns by `rank` (how many of the layer's mini-bosses came before; default: the node's place in `mini_node_ids`).
+    "random": fixed by seed, act and node id. Own Random (string-seeded, stable across runs): the global RNG is untouched.
     """
     pick = pick or config.BOSS_ANCHOR_PICK
     if pick == "random":
         return random.Random(f"anchor:{seed}:{act_index}:{node_id}").randrange(ANCHORS_PER_LAYER)
     start = random.Random(f"anchor:{seed}:{act_index}").randrange(ANCHORS_PER_LAYER)
-    rank = list(mini_node_ids).index(node_id) if node_id in mini_node_ids else 0      # ids in map order
+    if rank is None:
+        rank = list(mini_node_ids).index(node_id) if node_id in mini_node_ids else 0
     return (start + rank) % ANCHORS_PER_LAYER
 
 
 def node_anchor_variant(overworld: Any, node: Any) -> int:
-    """anchor_variant for an overworld node (reads seed, act and the map's nodes of the same type; writes nothing)."""
-    in_order = sorted(overworld.nodes.values(), key=lambda n: (n.layer, n.col))
-    same = [n.id for n in in_order if n.node_type == node.node_type]
-    return anchor_variant(overworld.seed, overworld.act_index, node.id, same)
+    """anchor_variant for an overworld node in VISIT order (BUG-158): its rank is the number of the map's other nodes of
+    the same type already completed, so the anchors alternate along the player's path. Reads only seed, act and the
+    nodes' type / completed flags (all in OverworldMap.to_dict); writes nothing, adds no save key."""
+    done = sum(1 for n in overworld.nodes.values()
+               if n.node_type == node.node_type and n.completed and n.id != node.id)
+    return anchor_variant(overworld.seed, overworld.act_index, node.id, rank=done)
 
 
 def warden_def(act_index: int) -> BossDef:
