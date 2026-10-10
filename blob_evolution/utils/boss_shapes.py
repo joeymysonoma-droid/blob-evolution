@@ -1698,6 +1698,8 @@ def warm_entity(key: str, R: int, names=(), name_colours=(), bar_w: int = 0, bar
                 draw_blob_cached(scratch, (4, 4), R, col, core, None, pulse=q, glow=True, eyes=d["eyes"], look=(1, 0))
         if d["phases"] > 1:
             phase_pips(d["phases"], ph, ELEMENTS[_elem_of(key)][1])
+        if _flags(key, ph)[2] == "dashed":
+            _dashed_rim(R, K, 16, 0.6, 2 if d["mini"] else 3)
     for text in names:
         for colour in name_colours:
             name_plate(text, colour)

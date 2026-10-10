@@ -17,7 +17,8 @@ from blob_evolution.entities.boss_spawns import SpawnRequest
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.utils import boss_shapes
 from blob_evolution.utils.boss_shapes import draw_blob_cached
-from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow, draw_health_bar, get_boss_palette
+from blob_evolution.utils.graphics import (draw_blob, draw_contact_shadow, draw_health_bar, get_boss_palette,
+                                           get_shadow_sprite)
 from blob_evolution.utils.vector2 import Vector2
 
 Color = Tuple[int, int, int]
@@ -285,6 +286,7 @@ class Boss:
         colours = (config.BOSS_NAME_COLOUR,) + tuple(boss_shapes.pal(key, ph)[2] for ph in range(1, 4))
         boss_shapes.warm_entity(key, int(self.size), names, colours, int(self.size * 2.5), 8,
                                 boss_shapes.entity_element_colour(key))
+        get_shadow_sprite(self.size)                    # the contact shadow's sprite for this radius
 
     def _aim_angle(self) -> float:
         """Screen angle toward the player (last update), else along the velocity, else 0."""
@@ -308,6 +310,10 @@ class Boss:
         key, t, R = self.art_key, self.pulse_time, int(self.size)
         ent = boss_shapes.entity(key)
         self.warm_art()
+        w, h = surface.get_size()
+        m = 1.9 * R + 60                                # spec 2.1 cull: nothing of the boss (plate included) shows
+        if sx < -m or sx > w + m or sy < -m or sy > h + m:
+            return
         if self.phase != self._art_phase:
             self._art_prev_phase, self._art_phase, self._art_phase_t0 = self._art_phase, self.phase, t
         since = t - self._art_phase_t0
