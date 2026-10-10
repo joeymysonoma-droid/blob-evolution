@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import pygame
 
 from blob_evolution import config
+from blob_evolution.data.bosses import CADENCE, MINI, STATS, BossDef, PhaseDef, warden_def
 from blob_evolution.data.lore import get_boss_name
+from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow, draw_health_bar, get_boss_palette
 from blob_evolution.utils.vector2 import Vector2
@@ -17,22 +19,8 @@ from blob_evolution.utils.vector2 import Vector2
 Color = Tuple[int, int, int]
 
 
-def _proj(
-    pos: Vector2,
-    direction: Vector2,
-    speed: float,
-    damage: float,
-    color: Optional[Color] = None,
-) -> Projectile:
-    p = Projectile(pos.copy(), direction, speed, damage, from_player=False)
-    p.kind = "boss"
-    if color:
-        p.color = color
-    return p
-
-
 class Boss:
-    """Multi-phase boss with act-specific attack kits."""
+    """Multi-phase boss; stats, phases, movement and attacks come from data/bosses.py (TASK-054)."""
 
     def __init__(
         self,
@@ -46,23 +34,26 @@ class Boss:
         self.pos = pos.copy()
         self.vel = Vector2()
         diff = diff_mult or {"hp": 1.0, "damage": 1.0, "speed": 1.0}
+        self.defn: BossDef = warden_def(act_index)
+        self.phase_defs: Tuple[PhaseDef, ...] = self.defn.phases
+        st = STATS
         power_index = act_index + slot
-        self.size = 50 + power_index * 10
+        self.size = st.size_base + power_index * st.size_per_power
         if miniboss:
-            self.size = 35 + act_index * 2
-        self.max_hp = (300 + power_index * 100) * diff["hp"]
+            self.size = st.mini_size_base + act_index * st.mini_size_per_act
+        self.max_hp = (st.hp_base + power_index * st.hp_per_power) * diff["hp"]
         if miniboss:
-            self.max_hp *= 0.55
+            self.max_hp *= st.mini_hp_mult
         self.hp = self.max_hp
-        self.damage = (20 + power_index * 5) * diff["damage"]
-        self.speed = 60 * diff["speed"]
+        self.damage = (st.damage_base + power_index * st.damage_per_power) * diff["damage"]
+        self.speed = st.speed * diff["speed"]
         self.active = True
         self.enraged = False
         self.phase = 1
         self.phase_announced = False
         self.xp_value = int(self.max_hp)
-        self.shoot_cooldown = 1.5
-        self.special_cooldown = 4.0
+        self.shoot_cooldown = CADENCE.first_basic
+        self.special_cooldown = CADENCE.first_special
         self.angle = random.uniform(0, math.tau)
         self.hit_flash = 0.0
         self.telegraph = 0.0
@@ -79,6 +70,10 @@ class Boss:
         self.clone_timer = 0.0
         self.pull_pulse = 0.0
         self.spiral_index = 0
+        basic_key = self.defn.basic if slot == 0 or not self.defn.basic_other_slots else self.defn.basic_other_slots
+        self.basic_shot: BasicShot = BASIC_SHOTS[basic_key]
+        self.special: Special = SPECIALS[MINI.special if miniboss else self.defn.special]
+        self.mover: Mover = MOVERS[MINI.move if miniboss else self.defn.move]
         # Visual telegraph rings for special arenas
         self.warning_rings: List[Tuple[float, float, Color]] = []  # radius, life, color
 
@@ -89,17 +84,23 @@ class Boss:
         self.hp -= actual
         self.hit_flash = 0.2
         ratio = self.hp / self.max_hp if self.max_hp else 0
-
-        if not self.enraged and ratio < 0.5:
-            self.enraged = True
-            self.phase = 2
-            self.phase_announced = True
-            self.special_cooldown = 1.5
-        if self.act_index >= 8 and ratio < 0.25 and prev_ratio >= 0.25:
-            self.phase = 3
-            self.phase_announced = True
-            self.special_cooldown = 1.0
+        for pd in self.phase_defs:
+            self._check_phase(pd, prev_ratio, ratio)
         return self.hp <= 0
+
+    def _check_phase(self, pd: PhaseDef, prev_ratio: float, ratio: float) -> None:
+        """Start phase `pd` if this hit meets its rule (once-only enrage, or crossing the threshold)."""
+        if ratio >= pd.below:
+            return
+        if pd.enrage:
+            if self.enraged:
+                return
+            self.enraged = True
+        elif pd.crossing and prev_ratio < pd.below:
+            return
+        self.phase = pd.phase
+        self.phase_announced = True
+        self.special_cooldown = pd.special_cooldown
 
     def consume_phase_announce(self) -> bool:
         """Return True once when a new phase begins."""
@@ -114,6 +115,7 @@ class Boss:
         player_pos: Vector2,
         projectiles: List[Projectile],
     ) -> None:
+        """Advance timers, move, and fire the basic shot and the special when their cooldowns run out."""
         if not self.active:
             return
         self.pulse_time += dt
@@ -132,26 +134,27 @@ class Boss:
         self.shoot_cooldown -= dt
         self.special_cooldown -= dt
 
+        cad = CADENCE
         if self.shoot_cooldown <= 0:
             self._basic_attack(player_pos, projectiles)
-            base = 1.2 if self.enraged else 1.7
+            base = cad.basic_enraged if self.enraged else cad.basic
             if self.phase >= 3:
-                base *= 0.75
+                base *= cad.basic_final_mult
             if self.is_miniboss:
-                base *= 1.2
+                base *= cad.basic_mini_mult
             self.shoot_cooldown = base
 
         if self.special_cooldown <= 0:
             self._special_attack(player_pos, projectiles)
-            cd = 3.2 if self.enraged else 5.2
+            cd = cad.special_enraged if self.enraged else cad.special
             if self.phase >= 3:
-                cd *= 0.7
+                cd *= cad.special_final_mult
             if self.is_miniboss:
-                cd *= 1.15
+                cd *= cad.special_mini_mult
             self.special_cooldown = cd
 
     def _update_movement(self, dt: float, player_pos: Vector2) -> None:
-        act = self.act_index
+        """Keep dashing while a dash runs, else move with this boss's mover."""
         enrage_mult = 1.55 if self.enraged else 1.0
         speed = self.speed * enrage_mult * self.slow_factor
 
@@ -159,71 +162,10 @@ class Boss:
             self.dash_timer -= dt
             self.vel = self.dash_dir * speed * 4.5
             return
-
-        if act in (0, 2, 8) or self.is_miniboss:
-            self.angle += dt * (1.6 if self.enraged else 1.1)
-            radius = 260 if self.enraged else 300
-            target = player_pos + Vector2(math.cos(self.angle) * radius, math.sin(self.angle) * radius)
-            self._steer_toward(target, speed)
-        elif act == 1:
-            # Rot: slow weave closer over time
-            self.angle += dt * 0.9
-            radius = 180 + 80 * math.sin(self.pulse_time)
-            target = player_pos + Vector2(math.cos(self.angle) * radius, math.sin(self.angle) * radius)
-            self._steer_toward(target, speed * 0.85)
-        elif act == 3:
-            # Ash: circle then occasional dash
-            self.angle += dt * 1.3
-            target = player_pos + Vector2(math.cos(self.angle) * 280, math.sin(self.angle) * 280)
-            self._steer_toward(target, speed)
-            if random.random() < dt * 0.35:
-                to_p = (player_pos - self.pos).copy()
-                if to_p.length() > 0:
-                    to_p.normalize()
-                    self.dash_dir = to_p
-                    self.dash_timer = 0.35
-                    self.telegraph = 0.35
-                    self.telegraph_type = "dash"
-        elif act == 4:
-            # Frost: linger at distance
-            to_p = (player_pos - self.pos).copy()
-            dist = to_p.length()
-            if dist > 0:
-                to_p.normalize()
-            if dist < 240:
-                self.vel = to_p * -speed
-            elif dist > 360:
-                self.vel = to_p * speed * 0.7
-            else:
-                self.vel = Vector2(-to_p.y, to_p.x) * speed * 0.5
-        elif act == 5:
-            # Thirst: teleport-style jumps
-            self.clone_timer -= dt
-            if self.clone_timer <= 0:
-                ang = random.uniform(0, math.tau)
-                self.pos = player_pos + Vector2(math.cos(ang) * 320, math.sin(ang) * 320)
-                self.clone_timer = 3.5 if self.enraged else 5.0
-                self.telegraph = 0.4
-                self.telegraph_type = "blink"
-            self._steer_toward(player_pos, speed * 0.4)
-        elif act == 6:
-            # Masks: mirror player velocity-ish by strafing opposite
-            self.angle += dt * 2.0
-            radius = 200
-            target = player_pos + Vector2(math.cos(self.angle) * radius, math.sin(self.angle) * radius)
-            self._steer_toward(target, speed * 1.2)
-        elif act == 7:
-            # Silence: drift in, pulse pull visually
-            self.pull_pulse = (math.sin(self.pulse_time * 2) + 1) * 0.5
-            self._steer_toward(player_pos, speed * (0.5 + 0.4 * self.pull_pulse))
-        else:
-            # Core / default aggressive orbit
-            self.angle += dt * (2.0 if self.enraged else 1.4)
-            radius = 220 if self.phase >= 3 else 280
-            target = player_pos + Vector2(math.cos(self.angle) * radius, math.sin(self.angle) * radius)
-            self._steer_toward(target, speed * 1.15)
+        self.mover(self, dt, player_pos, speed)
 
     def _steer_toward(self, target: Vector2, speed: float) -> None:
+        """Head straight for `target` at `speed`; stop when within 5 px."""
         direction = (target - self.pos).copy()
         if direction.length() > 5:
             direction.normalize()
@@ -232,165 +174,17 @@ class Boss:
             self.vel = Vector2()
 
     def _basic_attack(self, player_pos: Vector2, projectiles: List[Projectile]) -> None:
+        """Fire this boss's basic shot at the player (nothing at zero distance)."""
         to_player = (player_pos - self.pos).copy()
         if to_player.length() <= 0:
             return
         to_player.normalize()
-        act = self.act_index
-        dmg = self.damage
-        speed = 260 if self.enraged else 210
-
-        if act == 0:
-            # Spiral seed
-            ang = self.spiral_index * 0.7
-            self.spiral_index += 1
-            direction = Vector2(math.cos(ang), math.sin(ang))
-            projectiles.append(_proj(self.pos, direction, speed, dmg * 0.7, (80, 200, 100)))
-        elif act == 1:
-            for spread in (-0.25, 0.25):
-                a = to_player.angle() + spread
-                projectiles.append(_proj(
-                    self.pos, Vector2(math.cos(a), math.sin(a)), speed * 0.85, dmg * 0.75, (120, 180, 50),
-                ))
-        elif act == 2:
-            # Echo: shot + delayed ghost (simulated as slower second)
-            projectiles.append(_proj(self.pos, to_player, speed, dmg, (140, 190, 255)))
-            delayed = _proj(self.pos, to_player, speed * 0.55, dmg * 0.7, (100, 140, 220))
-            delayed.lifetime = 4.0
-            projectiles.append(delayed)
-        elif act == 4:
-            for spread in (-0.35, 0, 0.35):
-                a = to_player.angle() + spread
-                projectiles.append(_proj(
-                    self.pos, Vector2(math.cos(a), math.sin(a)), speed * 0.9, dmg * 0.65, (200, 230, 255),
-                ))
-        elif act == 7:
-            # Void bolts that pull visually (slower, heavier)
-            projectiles.append(_proj(self.pos, to_player, speed * 0.7, dmg * 1.1, (80, 50, 120)))
-        elif act == 9 or (act == 8 and self.slot == 0):
-            for spread in (-0.2, 0, 0.2):
-                a = to_player.angle() + spread
-                projectiles.append(_proj(
-                    self.pos, Vector2(math.cos(a), math.sin(a)), speed, dmg, (255, 80, 180),
-                ))
-        else:
-            projectiles.append(_proj(self.pos, to_player, speed, dmg))
+        self.basic_shot.fire(self, to_player, projectiles)
 
     def _special_attack(self, player_pos: Vector2, projectiles: List[Projectile]) -> None:
-        act = self.act_index
+        """Start the 0.7 s telegraph and fire this boss's special."""
         self.telegraph = 0.7
-        dmg = self.damage
-
-        if self.is_miniboss:
-            self._radial(projectiles, 6, 200, dmg * 0.7, (200, 160, 255))
-            self.telegraph_type = "radial"
-            return
-
-        if act == 0:
-            self.telegraph_type = "bloom"
-            self._radial(projectiles, 10, 190, dmg * 0.65, (90, 210, 110))
-        elif act == 1:
-            self.telegraph_type = "rot"
-            self._radial(projectiles, 8, 170, dmg * 0.7, (140, 200, 60))
-            # Secondary slower ring
-            self._radial(projectiles, 8, 110, dmg * 0.5, (100, 150, 40), offset=math.pi / 8)
-        elif act == 2:
-            self.telegraph_type = "echo"
-            for i in range(12):
-                ang = i * math.tau / 12
-                direction = Vector2(math.cos(ang), math.sin(ang))
-                projectiles.append(_proj(self.pos, direction, 240, dmg * 0.6, (160, 210, 255)))
-                ghost = _proj(self.pos, direction, 140, dmg * 0.5, (90, 130, 200))
-                ghost.lifetime = 4.5
-                projectiles.append(ghost)
-        elif act == 3:
-            self.telegraph_type = "erupt"
-            self._radial(projectiles, 12, 230, dmg * 0.75, (255, 120, 40))
-            to_p = (player_pos - self.pos).copy()
-            if to_p.length() > 0:
-                to_p.normalize()
-                self.dash_dir = to_p
-                self.dash_timer = 0.4
-        elif act == 4:
-            self.telegraph_type = "frost"
-            self.warning_rings.append((180.0, 0.9, (180, 220, 255)))
-            for i in range(16):
-                ang = i * math.tau / 16
-                direction = Vector2(math.cos(ang), math.sin(ang))
-                projectiles.append(_proj(self.pos, direction, 160, dmg * 0.55, (210, 235, 255)))
-        elif act == 5:
-            self.telegraph_type = "mirage"
-            # Fake angles + real targeted volley
-            for _ in range(3):
-                ang = random.uniform(0, math.tau)
-                fake_dir = Vector2(math.cos(ang), math.sin(ang))
-                projectiles.append(_proj(self.pos, fake_dir, 200, dmg * 0.4, (230, 200, 100)))
-            to_p = (player_pos - self.pos).copy()
-            if to_p.length() > 0:
-                to_p.normalize()
-                for spread in (-0.3, -0.1, 0.1, 0.3):
-                    a = to_p.angle() + spread
-                    projectiles.append(_proj(
-                        self.pos, Vector2(math.cos(a), math.sin(a)), 300, dmg, (255, 210, 80),
-                    ))
-        elif act == 6:
-            self.telegraph_type = "mask"
-            # Orbiting burst from boss toward player-relative ring
-            for i in range(8):
-                ang = self.angle + i * math.tau / 8
-                origin = self.pos + Vector2(math.cos(ang) * 60, math.sin(ang) * 60)
-                to_p = (player_pos - origin).copy()
-                if to_p.length() > 0:
-                    to_p.normalize()
-                    projectiles.append(_proj(origin, to_p, 250, dmg * 0.7, (190, 120, 255)))
-        elif act == 7:
-            self.telegraph_type = "void"
-            self.warning_rings.append((220.0, 1.0, (120, 80, 180)))
-            self._radial(projectiles, 10, 150, dmg * 0.8, (90, 60, 140))
-            # Inward-looking second wave from far out (simulate by reverse dirs from offset)
-            for i in range(8):
-                ang = i * math.tau / 8
-                origin = player_pos + Vector2(math.cos(ang) * 280, math.sin(ang) * 280)
-                inward = (player_pos - origin).copy()
-                if inward.length() > 0:
-                    inward.normalize()
-                    projectiles.append(_proj(origin, inward, 180, dmg * 0.65, (60, 40, 100)))
-        elif act == 8:
-            self.telegraph_type = "verdict"
-            patterns = ["radial", "targeted", "cross"]
-            pick = patterns[self.slot % len(patterns)]
-            if pick == "radial":
-                self._radial(projectiles, 10, 220, dmg * 0.7, (180, 200, 255))
-            elif pick == "targeted":
-                to_p = (player_pos - self.pos).copy()
-                if to_p.length() > 0:
-                    to_p.normalize()
-                    for spread in (-0.4, -0.2, 0, 0.2, 0.4):
-                        a = to_p.angle() + spread
-                        projectiles.append(_proj(
-                            self.pos, Vector2(math.cos(a), math.sin(a)), 280, dmg, (200, 220, 255),
-                        ))
-            else:
-                for ang in (0, math.pi / 2, math.pi, 3 * math.pi / 2):
-                    for dist_off in (0, 0.15, -0.15):
-                        a = ang + dist_off
-                        projectiles.append(_proj(
-                            self.pos, Vector2(math.cos(a), math.sin(a)), 240, dmg * 0.7, (220, 230, 255),
-                        ))
-        else:
-            # First Divide — everything
-            self.telegraph_type = "divide"
-            self._radial(projectiles, 14, 210, dmg * 0.7, (255, 80, 180))
-            to_p = (player_pos - self.pos).copy()
-            if to_p.length() > 0:
-                to_p.normalize()
-                for spread in (-0.35, 0, 0.35):
-                    a = to_p.angle() + spread
-                    projectiles.append(_proj(
-                        self.pos, Vector2(math.cos(a), math.sin(a)), 320, dmg, (255, 120, 200),
-                    ))
-            if self.phase >= 3:
-                self._radial(projectiles, 8, 140, dmg * 0.5, (200, 50, 150), offset=0.4)
+        self.special.fire(self, player_pos, projectiles)
 
     def _radial(
         self,
@@ -401,6 +195,7 @@ class Boss:
         color: Color,
         offset: float = 0.0,
     ) -> None:
+        """Ring of `count` shots evenly spaced, starting at `offset` radians."""
         for i in range(count):
             ang = offset + i * math.tau / count
             direction = Vector2(math.cos(ang), math.sin(ang))
