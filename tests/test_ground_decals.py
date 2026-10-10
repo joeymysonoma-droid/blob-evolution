@@ -353,7 +353,7 @@ ACTS_0_4_PINNED = {
     1: ("0876fe1889b74a4b", "6819ae4040346e30"),
     2: ("c3b4a43e961ea082", "0fde6e336c1aa062"),     # re-pinned by the 038 follow-up (dimmer crystals / rune dots / glow)
     3: ("00a6c0bd10a543d6", "e1954e966d9b1e7c"),
-    4: ("879fde9b792ab91b", "3673f2907d42da1d"),     # BUG-119: re-pinned (dimmer frost ferns, crack highlight alpha 110)
+    4: ("4ab7d877fc9f2bc7", "fcda2a7ad4125437"),     # BUG-119: re-pinned (dimmer frost ferns, crack highlight 110, drift fill 56)
 }
 
 
@@ -365,7 +365,7 @@ ACTS_0_4_PINNED_GENERIC = {
     1: ("4c5940a07e15512b", "c1c793aafd402973"),
     2: ("ce2acd5b2c0fb1bf", "cee61ec92976ad7b"),
     3: ("2e3cb86c153aa32e", "f1c39bdddc647fdf"),
-    4: ("f44fc9a137722ac8", "e30a49ef97e5f83f"),     # BUG-119 re-pin, as above
+    4: ("fa578000d8850d32", "1d93800a6f1f915a"),     # BUG-119 re-pin, as above
 }
 PINS_BY_BACKEND = {"SSE2": ACTS_0_4_PINNED, "MMX": ACTS_0_4_PINNED, "GENERIC": ACTS_0_4_PINNED_GENERIC}
 
