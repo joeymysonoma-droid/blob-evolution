@@ -410,10 +410,14 @@ def test_every_animated_part_stays_inside_the_hit_radius_over_the_whole_cycle(ki
     _extent_sweep(kind, ALL_RADII, 3, 8.0, 0.1)
 
 
+# BUG-136: every 2 px plus the generation extremes (the default test above already covers every 5 px radius at 3 seeds / 8 s)
+SLOW_EXTENT_RADII = sorted(set(range(40, 121, 2)) | {41, 59, 60, 61, 119, 120})
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("kind", TYPES)
 def test_every_animated_part_stays_inside_the_hit_radius_every_radius_every_frame(kind):
-    _extent_sweep(kind, range(40, 121), 4, 12.0, 1 / 30)
+    _extent_sweep(kind, SLOW_EXTENT_RADII, 4, 12.0, 1 / 30)
 
 
 @pytest.mark.parametrize("radius", range(40, 121))
@@ -582,17 +586,31 @@ def _check_dense(act: int, kind: HazardType, screen, radii, angles: int, phases)
         assert w["margin"][0] >= -1e-9, where       # inside: shots >= 3.3 (BUG-124/125); outline band: >= 2.7; body and XP >= 3.0; never below bare ground
 
 
-@pytest.mark.parametrize("kind", TYPES)
-@pytest.mark.parametrize("act", range(10))
+# BUG-136: hazards are only drawn where config.MAP_THEMES lists them (7 pairs); the dense sweeps run on those, derived from the config
+# so a new act/hazard pair is picked up. Off-roster pairs keep one cheap guard per kind on the darkest and lightest ground.
+ROSTER_PAIRS = [(a, k) for a, spec in enumerate(config.MAP_THEMES) for k in TYPES if k.value in spec["hazards"]]
+GUARD_PAIRS = [(a, k) for a in (7, 5) for k in TYPES if (a, k) not in ROSTER_PAIRS]
+
+
+def test_the_roster_pairs_are_the_seven_drawn_combinations():
+    assert sorted(ROSTER_PAIRS, key=lambda p: (p[0], p[1].value)) == sorted(COMBOS, key=lambda p: (p[0], p[1].value))
+
+
+@pytest.mark.parametrize("act, kind", ROSTER_PAIRS)
 def test_dense_contrast_every_act_every_hazard_centre_to_rim(act, kind, screen):
     """0.00..1.00 r in 0.05 steps, 2 angles, radii 60/120 (the generation extremes) and 40/90 on one angle, normal and low HP."""
     _check_dense(act, kind, screen, (60, 120), 2, (0.7, 4.9))
     _check_dense(act, kind, screen, (40, 90), 1, (2.4,))
 
 
+@pytest.mark.parametrize("act, kind", GUARD_PAIRS)
+def test_dense_contrast_off_roster_guard_on_the_darkest_and_lightest_ground(act, kind, screen):
+    """A palette guard for pairs the game never draws: radius 60, one angle, one phase, normal and low HP."""
+    _check_dense(act, kind, screen, (60,), 1, (0.7,))
+
+
 @pytest.mark.slow
-@pytest.mark.parametrize("kind", TYPES)
-@pytest.mark.parametrize("act", range(10))
+@pytest.mark.parametrize("act, kind", ROSTER_PAIRS)
 def test_dense_contrast_slow_sweep_all_radii_angles_and_phases(act, kind, screen):
     """Radii 40/60/80/100/120, 8 angles, 3 animation phases (about 2400 positions per item), normal and low HP."""
     _check_dense(act, kind, screen, (40, 60, 80, 100, 120), 8, (0.7, 2.4, 4.9))
