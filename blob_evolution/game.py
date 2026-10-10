@@ -1766,6 +1766,10 @@ class Game:
         if self.layers:
             self.layers.blit_fog(self.screen, self.camera, self.shake)
         if self.ambient:
+            if self.player:                    # BUG-119: motes beside the player draw at half alpha
+                self.ambient.set_player(self.player.pos.x, self.player.pos.y, self.player.size)
+            else:
+                self.ambient.set_player(0.0, 0.0, 0.0)
             self.ambient.draw_back(self.screen, self.camera, self.shake)
         if self.layers and self.player:   # light overlay under the entities: it must not darken the player or enemies
             self.layers.blit_vignette(self.screen, self.player.hp / max(1.0, self.player.max_hp))
