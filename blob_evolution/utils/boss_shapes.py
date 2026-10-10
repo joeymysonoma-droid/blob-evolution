@@ -1110,7 +1110,19 @@ _tints: Dict[int, pygame.Surface] = {}                 # id(sprite) -> its flash
 _tint_src: Dict[int, pygame.Surface] = {}              # keeps the source alive so its id is never reused
 
 
-def _flash_copy(spr: pygame.Surface) -> pygame.Surface:
+_lerp_of: Dict[str, float] = {}                       # art key -> its flash lerp share (config.FLASH_LERP_OVERRIDE or default)
+
+
+def flash_lerp(key: str) -> float:
+    """BUG-176: the share of the way to white `key`'s flash copy goes (config.FLASH_LERP_OVERRIDE, else FLASH_TO_WHITE)."""
+    w = _lerp_of.get(key)
+    if w is None:
+        from blob_evolution import config               # lazy, like _graphics(): this module imports no game config
+        w = _lerp_of[key] = float(getattr(config, "FLASH_LERP_OVERRIDE", {}).get(key, FLASH_TO_WHITE))
+    return w
+
+
+def _flash_copy(spr: pygame.Surface, lerp: float = FLASH_TO_WHITE) -> pygame.Surface:
     """BUG-176: spr's art lerped FLASH_TO_WHITE toward white (alpha kept), on a white FLASH_OUTLINE px outline made by
     dilating its alpha mask; FLASH_PAD px bigger on every side."""
     global _DILATE
@@ -1122,7 +1134,7 @@ def _flash_copy(spr: pygame.Surface) -> pygame.Surface:
                 if (x - o) ** 2 + (y - o) ** 2 <= o * o + o * 0.5:
                     _DILATE.set_at((x, y), 1)
     art = spr.copy()
-    keep = round(255 * (1 - FLASH_TO_WHITE))
+    keep = round(255 * (1 - lerp))
     art.fill((keep, keep, keep), special_flags=pygame.BLEND_RGB_MULT)          # rgb * 0.45 ...
     lift = 255 - keep
     art.fill((lift, lift, lift), special_flags=pygame.BLEND_RGB_ADD)           # ... + 255 * 0.55
@@ -1132,11 +1144,11 @@ def _flash_copy(spr: pygame.Surface) -> pygame.Surface:
     return out
 
 
-def _tinted(spr: pygame.Surface) -> pygame.Surface:
+def _tinted(spr: pygame.Surface, lerp: float = FLASH_TO_WHITE) -> pygame.Surface:
     """BUG-162 / 176: the cached flash copy of a layer / spin sprite, for art with no blob body (built at warm-up)."""
     t_ = _tints.get(id(spr))
     if t_ is None:
-        t_ = _flash_copy(spr)
+        t_ = _flash_copy(spr, lerp)                    # one lerp per sprite: sprites belong to one art key
         _tints[id(spr)], _tint_src[id(spr)] = t_, spr
     return t_
 
@@ -1180,9 +1192,10 @@ def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=Fa
     B, C, K = pal(key, phase)
     ox = oy = 0
     if flash and not blob:                             # BUG-162: non-blob art flashes through its cached lifted copies
-        back = back and (_tinted(back[0]), back[1] - FLASH_PAD, back[2] - FLASH_PAD)
-        front = front and (_tinted(front[0]), front[1] - FLASH_PAD, front[2] - FLASH_PAD)
-        parts = tuple((_tinted(spr), px - FLASH_PAD, py - FLASH_PAD) for spr, px, py in parts)
+        lw = flash_lerp(key)
+        back = back and (_tinted(back[0], lw), back[1] - FLASH_PAD, back[2] - FLASH_PAD)
+        front = front and (_tinted(front[0], lw), front[1] - FLASH_PAD, front[2] - FLASH_PAD)
+        parts = tuple((_tinted(spr, lw), px - FLASH_PAD, py - FLASH_PAD) for spr, px, py in parts)
     if decoy:
         ox = int(round(math.sin(TAU * 0.7 * t)))
         rim = "decoy"
@@ -1258,7 +1271,7 @@ def warm(key: str, R: Optional[int] = None, all_steps: bool = True):
 
 
 def clear():
-    for c in (_layers, _pieces, _comp, _rims, _kit, _tints, _tint_src):
+    for c in (_layers, _pieces, _comp, _rims, _kit, _tints, _tint_src, _lerp_of):
         c.clear()
     global _scratch
     _scratch = None
@@ -1738,12 +1751,12 @@ def warm_entity(key: str, R: int, names=(), name_colours=(), bar_w: int = 0, bar
         for st in range(d["n"] if d["kind"] else 1):
             for lay in _get_layers(key, ph, R, 0, st):
                 if tint and lay is not None:
-                    _tinted(lay[0])                     # BUG-162: the flash copies too
+                    _tinted(lay[0], flash_lerp(key))    # BUG-162: the flash copies too
         if d["spin"]:
             for st in range(d["spin"][1]):
                 for spr, _x, _y in _spin_parts(key, ph, R, st):
                     if tint:
-                        _tinted(spr)
+                        _tinted(spr, flash_lerp(key))
     scratch = pygame.Surface((8, 8), pygame.SRCALPHA)
     for ph in range(1, d["phases"] + 1):
         B, C, K = pal(key, ph)

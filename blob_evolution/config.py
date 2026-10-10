@@ -308,6 +308,7 @@ BOSS_ANCHOR_PICK = "alternate"          # "alternate": a layer's mini nodes take
 # Boss art (TASK-058 / A1, spec TASK-045): per-boss sprites, cached plate / pips / bar, no per-frame allocations.
 GFX_BOSS_ART = True                     # Producer A/B switch: False restores the pre-058 Boss.draw exactly
 BOSS_FLASH_MIN_GAP = 0.34               # s between hit-flash starts (spec rule 3: at most 3 Hz)
+FLASH_LERP_OVERRIDE = {"rime_sentinel": 0.65}   # BUG-176 (VD): per art key share of the flash lerp to white (default 0.55)
 BOSS_FLASH_TIME = 0.2                   # s a hit flash shows (main's hit_flash length)
 BOSS_PHASE_FADE = 0.6                   # s cross-fade of the old and new phase sprites (spec 2.2)
 BOSS_PHASE_RING_TIME = 0.8              # s of the one-shot phase ring, R -> 3 R, alpha 170 -> 0 (spec 2.5)
