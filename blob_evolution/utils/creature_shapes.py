@@ -194,6 +194,13 @@ def _bake_disc(radius: int, color: Color, alpha: int) -> pygame.Surface:
     return s
 
 
+def _bake_rim(radius: int, color: Color) -> pygame.Surface:
+    """BUG-137: the opaque 1 px wisp rim, same size and centre as _bake_disc's disc."""
+    s = pygame.Surface((radius * 2 + 2, radius * 2 + 2), pygame.SRCALPHA)
+    pygame.draw.circle(s, (*color, 255), (radius + 1, radius + 1), radius, 1)
+    return s
+
+
 def _bake_ring(radius: int) -> pygame.Surface:
     s = pygame.Surface((radius * 2 + 8, radius * 2 + 8), pygame.SRCALPHA)
     pygame.draw.circle(s, (255, 80, 80, 90), (radius + 4, radius + 4), radius, 3)
@@ -233,11 +240,13 @@ def draw_under(dst: pygame.Surface, kind: str, sx: float, sy: float, size: float
         bx, by = -vx / n, -vy / n
         px, py = -by, bx
         t = ticks_ms * 0.0044            # 0.7 Hz sway
-        for k, (d, rr, al) in enumerate(((0.9, 0.55, 150), (1.3, 0.4, 100), (1.65, 0.25, 60))):
-            sway = math.sin(t + k * 1.3) * 0.18 * r
-            rad = max(2, int(rr * r))
-            _blit_c(dst, _get(("disc", rad, al), _bake_disc, rad, (120, 100, 160), al),
-                    sx + bx * d * r + px * sway, sy + by * d * r + py * sway)
+        for rims in (False, True):           # fills first, then the opaque rims (BUG-137): no wisp fill tints a rim
+            for k, (d, rr, al) in enumerate(((0.9, 0.55, 150), (1.3, 0.4, 100), (1.65, 0.25, 60))):
+                sway = math.sin(t + k * 1.3) * 0.18 * r
+                rad = max(2, int(rr * r))
+                spr = (_get(("wisp_rim", rad), _bake_rim, rad, config.ENEMY_WISP_RIM) if rims
+                       else _get(("disc", rad, al), _bake_disc, rad, (120, 100, 160), al))
+                _blit_c(dst, spr, sx + bx * d * r + px * sway, sy + by * d * r + py * sway)
 
 
 def draw_over(dst: pygame.Surface, kind: str, sx: float, sy: float, size: float, face: Vector2,

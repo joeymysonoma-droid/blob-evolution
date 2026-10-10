@@ -264,6 +264,8 @@ ENEMY_PHASED_ALPHA = 110                # phased phantoms are drawn see-through
 ENEMY_RIM_WIDTH = 2                     # light ring round every enemy body
 ENEMY_BLAST_ALPHA = (38, 120)           # bomber blast disc fill / ring alpha (shown while fuse < 1 s)
 ENEMY_LEECH_COLORS = ((205, 196, 176), (245, 240, 220))      # bone-pale; pre-046 green was (60, 160, 100) / (120, 230, 160)
+ENEMY_PHANTOM_COLORS = ((150, 130, 200), (210, 190, 250))    # BUG-137 (Visual Designer): grey 144 vs BASIC 108; was (120, 100, 160) / (180, 160, 220)
+ENEMY_WISP_RIM = (201, 193, 217)          # BUG-137: opaque 1 px rim on each phantom wisp (4.19:1 on every ground), also while phased
 
 # Readability pass (TASK-043): contact shadows, outlined shots, XP orbs by value. Visual only.
 GFX_READABILITY = True                  # Producer A/B switch: False restores the pre-043 drawing exactly
