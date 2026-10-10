@@ -9,6 +9,7 @@ from typing import List, Optional
 import pygame
 
 from blob_evolution import config
+from blob_evolution.data.bosses import node_anchor_variant
 from blob_evolution.data.lore import (
     ARCHIVE_TABS,
     BLACKSMITH_SUBTITLE,
@@ -327,7 +328,7 @@ class Game:
         for _ in range(params.get("minibosses", 0)):
             pos = Vector2(random.randint(300, config.WORLD_WIDTH - 300),
                           random.randint(300, config.WORLD_HEIGHT - 300))
-            self.bosses.append(Boss(pos, act, diff, miniboss=True))
+            self.bosses.append(Boss(pos, act, diff, miniboss=True, variant=node_anchor_variant(self.overworld, node)))
 
         self.projectiles.clear()
         self.xp_orbs.clear()

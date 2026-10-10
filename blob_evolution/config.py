@@ -301,3 +301,6 @@ BOSS_SPAWNS_DIE_WITH_OWNER = True       # pending and live boss spawns go when t
 BOSS_POOL_RADIUS = 70.0                 # timed pool default radius (px), when the request gives none
 BOSS_POOL_LIFETIME = 6.0                # timed pool default lifetime (s)
 BOSS_POOL_HAZARD = "toxic"              # timed pool default hazard type: "lava", "ice" or "toxic"
+
+# Named mini-bosses (TASK-057). Which of a layer's two anchors a mini-boss node spawns.
+BOSS_ANCHOR_PICK = "alternate"          # "alternate": a layer's mini nodes take turns (seeded start); or "random"

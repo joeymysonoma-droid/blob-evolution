@@ -9,7 +9,8 @@ from typing import Callable, List, Optional, Tuple
 import pygame
 
 from blob_evolution import config
-from blob_evolution.data.bosses import CADENCE, MINI, STATS, BossDef, PhaseDef, mini_phases, warden_def
+from blob_evolution.data.bosses import (CADENCE, MINI, STATS, AnchorDef, BossDef, PhaseDef, anchor_def, mini_phases,
+                                         warden_def)
 from blob_evolution.data.lore import get_boss_name
 from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
 from blob_evolution.entities.boss_spawns import SpawnRequest
@@ -32,6 +33,7 @@ class Boss:
         *,
         miniboss: bool = False,
         slot: int = 0,
+        variant: int = 0,
     ) -> None:
         self.pos = pos.copy()
         self.vel = Vector2()
@@ -41,8 +43,10 @@ class Boss:
         st = STATS
         power_index = act_index + slot
         self.size = st.size_base + power_index * st.size_per_power
+        # Mini-bosses are one of the layer's two named anchors (TASK-057): name and radius; kit stays MINI's
+        self.anchor: Optional[AnchorDef] = anchor_def(act_index, variant) if miniboss else None
         if miniboss:
-            self.size = st.mini_size_base + act_index * st.mini_size_per_act
+            self.size = self.anchor.radius if self.anchor else st.mini_size_base + act_index * st.mini_size_per_act
         self.max_hp = (st.hp_base + power_index * st.hp_per_power) * diff["hp"]
         if miniboss:
             self.max_hp *= st.mini_hp_mult
@@ -65,7 +69,7 @@ class Boss:
         self.act_index = act_index
         self.is_miniboss = miniboss
         self.slot = slot
-        self.name = get_boss_name(act_index, miniboss=miniboss, slot=slot)
+        self.name = self.anchor.name if self.anchor else get_boss_name(act_index, miniboss=miniboss, slot=slot)
         self.move_mode = "orbit"
         self.dash_timer = 0.0
         self.dash_dir = Vector2()

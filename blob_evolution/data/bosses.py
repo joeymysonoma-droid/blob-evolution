@@ -1,9 +1,10 @@
-"""Boss and mini-boss definitions (TASK-054/055): stats, phases, cadence, movement and attacks as data, no pygame."""
+"""Boss and mini-boss definitions (TASK-054/055/057): stats, phases, cadence, movers, attacks and anchors; no pygame."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+import random
+from typing import Any, Optional, Sequence, Tuple
 
 from blob_evolution import config
 from blob_evolution.data.lore import ACT_LORE
@@ -76,6 +77,17 @@ class MiniDef:
     special: str = "anchor_radial"
 
 
+@dataclass(frozen=True)
+class AnchorDef:
+    """One named mini-boss (BOSS-ROSTER section 3, Director-approved): identity and radius; kit stays MINI's for now."""
+
+    key: str
+    name: str
+    act: int
+    radius: int                  # TASK-045 section 3 value; also the hitbox (Producer ruling)
+    card_line: str               # roster section 5 card body (not shown yet: needs the card / narration ticket)
+
+
 STATS = BossStats()
 CADENCE = Cadence()
 MINI = MiniDef()
@@ -111,6 +123,58 @@ WARDENS: Tuple[BossDef, ...] = (
     BossDef("ascent", 8, "warden_8", "orbit", "pink_triple", "verdict", ASCENT_PHASES, basic_other_slots="aimed"),
     BossDef("anchor", 9, "warden_9", "assault", "pink_triple", "divide", DIVIDE_PHASES),
 )
+
+
+# Two per layer, in roster order. Stats are main's mini formulas: the roster gives no numbers.
+ANCHORS: Tuple[AnchorDef, ...] = (
+    AnchorDef("cradle_husk", "Cradle Husk", 0, 35, "A husk of the nursery, still shaped like a hug."),
+    AnchorDef("first_sprout", "First Sprout", 0, 37, "The first thing the Rim ever grew. It has not moved since."),
+    AnchorDef("sinking_bloat", "Sinking Bloat", 1, 37, "A mercy that swelled until it could not hold itself."),
+    AnchorDef("green_mourner", "Green Mourner", 1, 37, "It weeps for names no one finished."),
+    AnchorDef("glass_clerk", "Glass Clerk", 2, 39, "It records everything that crosses the glass."),
+    AnchorDef("unfinished_entry", "Unfinished Entry", 2, 39, "A Seedling that stopped halfway. It remembers your last step."),
+    AnchorDef("cinder_anvil", "Cinder Anvil", 3, 39, "A shape forged to test the next shape."),
+    AnchorDef("ember_runner", "Ember Runner", 3, 41, "It runs until there is nothing left to burn."),
+    AnchorDef("rime_sentinel", "Rime Sentinel", 4, 43, "A guard who agreed to stay."),
+    AnchorDef("drift_sleeper", "Drift Sleeper", 4, 43, "It slows you the way sleep does."),
+    AnchorDef("oasis_lure", "Oasis Lure", 5, 45, "The water you were promised."),
+    AnchorDef("dry_maw", "Dry Maw", 5, 45, "What the mirage hides underneath."),
+    AnchorDef("borrowed_face", "Borrowed Face", 6, 49, "It wears the last shape it saw."),
+    AnchorDef("pollen_sleeper", "Pollen Sleeper", 6, 49, "A dream that learned to walk."),
+    AnchorDef("quiet_hollow", "Quiet Hollow", 7, 51, "Nothing here wants to be remembered. This is how."),
+    AnchorDef("forgotten_shape", "Forgotten Shape", 7, 51, "A form you already ended, returned without a name."),
+    AnchorDef("updraft_herald", "Updraft Herald", 8, 47, "It carries the verdict upward."),
+    AnchorDef("verdict_pillar", "Verdict Pillar", 8, 47, "A judgment that no longer needs a judge."),
+    AnchorDef("first_split", "First Split", 9, 53, "The moment one became two."),
+    AnchorDef("last_whole", "Last Whole", 9, 53, "The last shape that stayed whole."),
+)
+ANCHORS_PER_LAYER = 2
+
+
+def anchor_def(act_index: int, variant: int) -> Optional[AnchorDef]:
+    """The layer's anchor number `variant` (0 or 1, wraps); None outside layers 1-10 (main's generic one)."""
+    pair = [a for a in ANCHORS if a.act == act_index]
+    return pair[variant % len(pair)] if pair else None
+
+
+def anchor_variant(seed: int, act_index: int, node_id: str, mini_node_ids: Sequence[str], pick: Optional[str] = None) -> int:
+    """Which anchor a mini-boss node spawns: fixed by the map seed, act and node id, so a reload picks the same one.
+
+    Own Random (string-seeded, stable across runs), so the game's global RNG stream is untouched.
+    """
+    pick = pick or config.BOSS_ANCHOR_PICK
+    if pick == "random":
+        return random.Random(f"anchor:{seed}:{act_index}:{node_id}").randrange(ANCHORS_PER_LAYER)
+    start = random.Random(f"anchor:{seed}:{act_index}").randrange(ANCHORS_PER_LAYER)
+    order = sorted(mini_node_ids)
+    rank = order.index(node_id) if node_id in order else 0
+    return (start + rank) % ANCHORS_PER_LAYER
+
+
+def node_anchor_variant(overworld: Any, node: Any) -> int:
+    """anchor_variant for an overworld node (reads seed, act and the map's nodes of the same type; writes nothing)."""
+    same = [n.id for n in overworld.nodes.values() if n.node_type == node.node_type]
+    return anchor_variant(overworld.seed, overworld.act_index, node.id, same)
 
 
 def warden_def(act_index: int) -> BossDef:
