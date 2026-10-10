@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 import pygame
 
 from blob_evolution import config
+from blob_evolution.utils import clock
 
 # Palette — deep lattice membrane, seedling green, amber select
 BG_DEEP = (8, 14, 24)
@@ -39,7 +40,7 @@ NOTICE_VARIANTS = {
 
 def pulse(speed: float = 2.0, lo: float = 0.0, hi: float = 1.0) -> float:
     """Oscillate between lo and hi over time."""
-    t = (math.sin(time.time() * speed) + 1.0) * 0.5
+    t = (math.sin(clock.ui_time() * speed) + 1.0) * 0.5
     return lo + (hi - lo) * t
 
 
@@ -65,7 +66,7 @@ def draw_ambient_bg(
 ) -> None:
     """Fill with deep color and drifting soft membrane blobs."""
     surface.fill(base)
-    t = time.time() + seed_offset
+    t = clock.ui_time() + seed_offset
     w, h = surface.get_size()
     for i in range(7):
         angle = t * (0.15 + i * 0.03) + i * 1.7

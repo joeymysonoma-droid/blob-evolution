@@ -10,6 +10,7 @@ import pygame
 
 from blob_evolution import config
 from blob_evolution.entities.projectile import Projectile
+from blob_evolution.utils import clock
 from blob_evolution.utils import creature_shapes as shapes
 from blob_evolution.utils.enums import CreatureType
 from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow
@@ -307,7 +308,7 @@ class Creature:
         kind = self.ctype.name
         flash = self.hit_flash > 0
         colors = ((255, 255, 255), (255, 200, 200)) if flash else self.COLORS.get(self.ctype, ((200, 60, 60), (255, 120, 120)))
-        ticks = pygame.time.get_ticks()
+        ticks = clock.game_ms()                    # game-time ms (BUG-140): reproducible, frozen while paused
         if kind in shapes.UNDER_KINDS:
             shapes.draw_under(surface, kind, sx, sy, self.size, self.face_dir, self.vel,
                               self.fuse_timer, self.explosion_radius, flash, ticks)

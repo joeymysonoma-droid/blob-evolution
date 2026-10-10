@@ -20,6 +20,7 @@ from blob_evolution import config
 from blob_evolution.entities import creature as creature_module
 from blob_evolution.entities.creature import Creature
 from blob_evolution.maps.generator import MapGenerator
+from blob_evolution.utils import clock as anim_clock
 from blob_evolution.utils import creature_shapes as shapes
 from blob_evolution.utils.enums import CreatureType
 from blob_evolution.utils.vector2 import Vector2
@@ -31,8 +32,8 @@ SIZES = (12, 20, 28)
 
 @pytest.fixture(autouse=True)
 def _fixed_clock(monkeypatch):
-    """Freeze pygame's clock (animations read it) and pin the toggles to their defaults."""
-    monkeypatch.setattr(pygame.time, "get_ticks", lambda: 0)
+    """Freeze the game animation clock (enemy animations read it, BUG-140) and pin the toggles to their defaults."""
+    monkeypatch.setattr(anim_clock, "game_ms", lambda: 0)
     monkeypatch.setattr(config, "GFX_ENEMY_SHAPES", True)
     monkeypatch.setattr(config, "GFX_READABILITY", True)
     yield
@@ -138,7 +139,7 @@ def test_extras_stay_within_1_9_radii(kind, monkeypatch):
     for i in range(0, 32, 3):
         ang = i * math.tau / 32
         for tick in (0, 350, 700, 1050):
-            monkeypatch.setattr(pygame.time, "get_ticks", lambda t=tick: t)
+            monkeypatch.setattr(anim_clock, "game_ms", lambda t=tick: t)
             c = make(kind, size, face=(math.cos(ang), math.sin(ang)), orbit=ang, fuse=1.5)
             s = render(c)
             for y in range(CY - 60, CY + 61):
@@ -290,7 +291,7 @@ def test_no_surface_allocation_per_frame(monkeypatch):
     draw_blob's own membrane ring (pre-existing, outside this task: draw_blob is not to be edited) is counted apart.
     """
     clock = [0]
-    monkeypatch.setattr(pygame.time, "get_ticks", lambda: clock[0])
+    monkeypatch.setattr(anim_clock, "game_ms", lambda: clock[0])
     screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
     frame = _workload(clock)
     for n in range(150):                         # longer than the slowest loop (LEECH tendrils: 8 phases at ~5.6 Hz -> 1.43 s)

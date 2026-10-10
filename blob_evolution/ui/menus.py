@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import time
 from typing import List, Optional, Tuple
 
 import pygame
@@ -24,6 +23,7 @@ from blob_evolution.data.lore import (
     wrap_text,
 )
 from blob_evolution.ui import style
+from blob_evolution.utils import clock
 from blob_evolution.utils.enums import Difficulty
 from blob_evolution.utils.graphics import draw_blob
 
@@ -551,7 +551,7 @@ class MenuRenderer:
             surface.blit(rendered, (cx - rendered.get_width() // 2, blurb_y))
             blurb_y += 16
 
-        t = time.time()
+        t = clock.ui_time()
         for i in range(5):
             angle = t * 0.55 + i * 1.25
             bx = cx + math.cos(angle) * (140 + i * 22)
