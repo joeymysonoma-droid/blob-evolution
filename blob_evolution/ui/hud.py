@@ -50,37 +50,61 @@ class HUD:
         self.show_fps = False
         self.notification = ""
         self.notification_timer = 0.0
-        self._queue: Deque[Tuple[str, float]] = deque(maxlen=config.HUD_NOTICE_QUEUE)    # BUG-145: waiting notices
+        self._queue: Deque[Tuple[str, float, bool]] = deque(maxlen=config.HUD_NOTICE_QUEUE)   # BUG-145: (text, s, now)
+        self._now = False                                 # the notice on screen is menu / shop feedback
         self.shop_item_rects: list = []
 
-    def show_notification(self, text: str, duration: float = 2.0) -> None:
+    def show_notification(self, text: str, duration: float = 2.0, now: bool = False) -> None:
         """Show a temporary notification. One slot (BUG-145): while another notice is showing, the new one waits in a small
         queue and then gets its full duration. A notice of the same group as the one on screen (the same text, or another
-        "Level N!") replaces it in place; one of the same group as a waiting notice replaces that one."""
+        "Level N!") replaces it in place; one of the same group as a waiting notice replaces that one.
+
+        now=True is menu / shop feedback (the answer to a key press): it jumps the queue and shows at once, and the
+        gameplay notice it interrupts goes back to the front of the queue with the time it had left. Feedback that arrives
+        while other feedback is showing waits behind it, still ahead of every gameplay notice."""
         group = _notice_group(text)
         if self.notification_timer <= 0:
-            self.notification, self.notification_timer = text, duration
+            self._show(text, duration, now)
         elif group == _notice_group(self.notification):
             self.notification, self.notification_timer = text, max(self.notification_timer, duration)
+            self._now = self._now or now
         else:
-            for k, (t, _d) in enumerate(self._queue):
+            for k, (t, _d, n) in enumerate(self._queue):
                 if _notice_group(t) == group:
-                    self._queue[k] = (text, duration)               # e.g. "Level 3!" waiting becomes "Level 4!"
+                    self._queue[k] = (text, duration, n or now)     # e.g. "Level 3!" waiting becomes "Level 4!"
                     return
-            self._queue.append((text, duration))
+            if not now:
+                self._queue.append((text, duration, False))
+            elif not self._now:                                   # interrupt a gameplay notice; it resumes next
+                self._push_front((self.notification, self.notification_timer, False))
+                self._show(text, duration, True)
+            else:                                                 # behind the feedback already waiting, before gameplay
+                k = next((k for k, e in enumerate(self._queue) if not e[2]), len(self._queue))
+                self._insert(k, (text, duration, True))
+
+    def _show(self, text: str, duration: float, now: bool) -> None:
+        self.notification, self.notification_timer, self._now = text, duration, now
+
+    def _push_front(self, entry: Tuple[str, float, bool]) -> None:
+        self._insert(0, entry)
+
+    def _insert(self, k: int, entry: Tuple[str, float, bool]) -> None:
+        if len(self._queue) == self._queue.maxlen:
+            self._queue.pop()                                     # full: the newest waiting notice drops
+        self._queue.insert(min(k, len(self._queue)), entry)
 
     def update(self, dt: float) -> None:
         """Update notification timer; the next queued notice starts when the current one ends."""
         if self.notification_timer > 0:
             self.notification_timer -= dt
             if self.notification_timer <= 0 and self._queue:
-                self.notification, duration = self._queue.popleft()
-                self.notification_timer += duration          # carry the overshoot: each notice shows its full duration
+                text, duration, now = self._queue.popleft()
+                self._show(text, duration + self.notification_timer, now)   # carry the overshoot: full duration each
 
     @property
     def pending_notifications(self) -> List[str]:
-        """Texts waiting behind the one on screen (oldest first)."""
-        return [t for t, _d in self._queue]
+        """Texts waiting behind the one on screen (next first)."""
+        return [e[0] for e in self._queue]
 
     def draw(
         self,

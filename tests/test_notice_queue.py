@@ -115,3 +115,75 @@ def test_warden_kill_shows_the_archive_notice_and_then_the_artifact(make_game, m
     order = [t for t, _n in shown]
     assert archive[0] in order and artifact[0] in order
     assert dict(shown)[archive[0]] >= 3.5 * 60 - 1 and dict(shown)[artifact[0]] >= 3.0 * 60 - 1
+
+
+# --- Producer follow-up: menu / shop feedback never waits behind gameplay notices (it jumps the queue) -------------------
+
+def test_feedback_jumps_a_gameplay_notice_which_then_resumes_with_its_time_left(hud):
+    hud.show_notification("Archive: X remembered", 3.5)
+    hud.show_notification("Boss Artifact: Y!", 3.0)
+    hud.update(1.0)
+    hud.show_notification("Purchased: Z!", 2.0, now=True)
+    assert hud.notification == "Purchased: Z!"
+    assert hud.pending_notifications == ["Archive: X remembered", "Boss Artifact: Y!"]
+    shown = _timeline(hud, 9.0)
+    assert [t for t, _n in shown] == ["Purchased: Z!", "Archive: X remembered", "Boss Artifact: Y!"]
+    frames = dict(shown)
+    assert abs(frames["Purchased: Z!"] - 120) <= 1
+    assert abs(frames["Archive: X remembered"] - 150) <= 1         # 3.5 s minus the 1.0 s it had already shown
+    assert abs(frames["Boss Artifact: Y!"] - 180) <= 1
+
+
+def test_feedback_after_feedback_waits_in_order_but_ahead_of_gameplay(hud):
+    hud.show_notification("Layer breached!", 3.0)
+    hud.show_notification("Descended into Z", 3.0)
+    hud.show_notification("+20 Max HP!", now=True)
+    hud.show_notification("Max upgrade level!", 2.0, now=True)
+    assert hud.notification == "+20 Max HP!"
+    assert hud.pending_notifications == ["Max upgrade level!", "Layer breached!", "Descended into Z"]
+
+
+def test_gameplay_notice_still_waits_behind_feedback(hud):
+    hud.show_notification("Sound: OFF", 1.5, now=True)
+    hud.show_notification("Entering: Fight", 2.0)
+    assert hud.notification == "Sound: OFF" and hud.pending_notifications == ["Entering: Fight"]
+
+
+def test_a_full_queue_keeps_the_interrupted_notice(hud):
+    hud.show_notification("now", 2.0)
+    for k in range(config.HUD_NOTICE_QUEUE):
+        hud.show_notification(f"w{k}", 1.0)
+    hud.show_notification("Purchased: Z!", 2.0, now=True)
+    assert hud.notification == "Purchased: Z!"
+    assert hud.pending_notifications[0] == "now" and len(hud.pending_notifications) == config.HUD_NOTICE_QUEUE
+
+
+def test_shop_purchase_shows_at_once_after_a_warden_kill(make_game, monkeypatch):
+    """Real paths: kill notices are queued, then a run-shop purchase (menu feedback) is on screen in the same frame."""
+    g = make_game()
+    for name in ("play", "play_act_music", "play_menu_music"):
+        monkeypatch.setattr(g.audio, name, lambda *a, **k: None)
+    g._start_new_run()
+    g.story = None
+    g.state = GameState.PLAYING
+    g.player = Player(Vector2(1000, 1000))
+    monkeypatch.setattr(random, "random", lambda: 0.0)
+    g._on_boss_killed(Boss(Vector2(1100, 1000), 0))
+    assert g.hud.pending_notifications
+    shown_before = g.hud.notification
+    g.hud.show_notification("Purchased: Thick Membrane!", 2.0, now=True)       # what _handle_meta_key does
+    assert g.hud.notification == "Purchased: Thick Membrane!"
+    assert g.hud.pending_notifications[0] == shown_before
+
+
+def test_every_menu_and_shop_call_site_passes_now():
+    """The handlers that answer a key press in a menu / shop / options screen mark their notices as feedback."""
+    import inspect
+    from blob_evolution.game import Game
+    for name in ("_try_upgrade_skill", "_purchase_shop_item", "_handle_event_key", "_handle_blacksmith_key",
+                 "_handle_meta_key", "_handle_options_key"):
+        src = inspect.getsource(getattr(Game, name))
+        calls = src.count("show_notification(")
+        assert calls and src.count("now=True") == calls, name
+    for name in ("_on_boss_killed", "_on_creature_killed", "_update_xp_orbs", "_complete_current_node", "_load_encounter"):
+        assert "now=True" not in inspect.getsource(getattr(Game, name)), name
