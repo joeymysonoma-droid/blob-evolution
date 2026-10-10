@@ -64,25 +64,26 @@ def test_queue_drops_one_owner_s_requests():
 # --------------------------------------------------------------------------- director
 
 def test_a_queued_pool_becomes_a_hazard_zone_then_expires():
-    """Boss.queue_spawn("pool") -> a HazardZone with the request's type/radius, live for its lifetime, then gone."""
+    """Boss.queue_spawn("pool") -> a HazardZone with the request's type/radius, live for its lifetime, then gone.
+    BUG-152/153: a 0.1 s delay at 60 fps places it on update 6 exactly (was 7, float drift), and a 0.5 s lifetime keeps
+    it for exactly 30 frames (was 29: the placement frame's dt was counted)."""
     b = _boss()
     game = _arena(b)
     d = SpawnDirector()
     req = b.queue_spawn(POOL, Vector2(900, 900), delay=0.1, lifetime=0.5, hazard="lava", radius=40)
     assert req.owner is b and b.spawn_outbox == [req]
-    d.update(DT, game)
-    assert b.spawn_outbox == [] and len(d.queue) == 1 and game.hazards.zones == []
-    for _ in range(6):
+    for _ in range(5):
         d.update(DT, game)
+    assert b.spawn_outbox == [] and len(d.queue) == 1 and game.hazards.zones == []
+    d.update(DT, game)                                                  # update 6 = 0.1 s
     (zone,) = game.hazards.zones
     assert (zone.hazard_type, zone.radius, (zone.pos.x, zone.pos.y)) == (HazardType.LAVA, 40.0, (900, 900))
     assert zone._sprite is not None                                    # baked when placed, not in the first draw
     assert game.hazards.get_player_effects(Vector2(900, 900), DT)["speed_mult"] < 1.0
     for _ in range(29):
         d.update(DT, game)
-    assert game.hazards.zones == [zone]
-    for _ in range(2):
-        d.update(DT, game)
+    assert game.hazards.zones == [zone]                                 # 30 frames on screen (6..35)
+    d.update(DT, game)
     assert game.hazards.zones == [] and d.live == []
 
 
@@ -96,7 +97,7 @@ def test_pool_defaults_come_from_config():
     (zone,) = game.hazards.zones
     want = boss_spawns.HAZARD_TYPES[config.BOSS_POOL_HAZARD]
     assert (zone.hazard_type, zone.radius) == (want, config.BOSS_POOL_RADIUS)
-    assert d.live[0].left == pytest.approx(config.BOSS_POOL_LIFETIME - DT)
+    assert d.live[0].left == config.BOSS_POOL_LIFETIME                  # BUG-153: counts from the next frame
 
 
 def test_spawns_go_with_their_boss():
@@ -130,6 +131,8 @@ def test_other_kinds_use_registered_handlers_and_unknown_kinds_are_counted():
     b.queue_spawn("decoy", Vector2())
     d.update(DT, game)
     assert placed == [12] and d.unhandled == 1 and removed == []
+    d.update(DT, game)
+    assert removed == [] and d.live[0].left == pytest.approx(DT * 0.5)   # BUG-153: the placement frame is not counted
     d.update(DT, game)
     assert removed == [12] and d.live == []
 

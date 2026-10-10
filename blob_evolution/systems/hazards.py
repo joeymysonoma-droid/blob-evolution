@@ -33,11 +33,12 @@ class HazardZone:
 
     __slots__ = ("pos", "radius", "hazard_type", "phase", "damage_timer", "_sprite", "_core", "_anim")
 
-    def __init__(self, pos: Vector2, radius: float, hazard_type: HazardType) -> None:
+    def __init__(self, pos: Vector2, radius: float, hazard_type: HazardType, phase: Optional[float] = None) -> None:
         self.pos = pos.copy()
         self.radius = radius
         self.hazard_type = hazard_type
-        self.phase = random.uniform(0, math.pi * 2)
+        # map zones draw their phase from the global RNG (as before); boss pools pass their own (BUG-155)
+        self.phase = random.uniform(0, math.pi * 2) if phase is None else phase
         self.damage_timer = 0.0
         self._sprite: Optional[pygame.Surface] = None      # static baked art, (2r + 2 pad)^2 SRCALPHA
         self._core: List[pygame.Surface] = []             # lava: cached core sizes 50% -> 60%

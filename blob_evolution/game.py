@@ -1068,6 +1068,8 @@ class Game:
         self.hud.update(dt)
         self.audio.tick(dt)
         self._update_shake(dt)
+        if self.boss_spawns and self.state in (GameState.MAIN_MENU, GameState.GAME_OVER, GameState.VICTORY):
+            self.boss_spawns.clear(self)                   # BUG-151: any way out of the run (menu, pause -> menu)
 
         if self.state == GameState.STORY and self.story:
             self.cinematic.update(self.story, dt)
@@ -1406,6 +1408,7 @@ class Game:
             return
         boss.active = False
         boss.hp = 0
+        self.boss_spawns.drop_owner(boss, self)            # BUG-151: its pending and live spawns go now
         self.player.kills += 1
         xp = int(boss.xp_value * self._xp_multiplier() * 2)
         messages = self.player.add_xp(xp)
@@ -1459,10 +1462,12 @@ class Game:
 
     def _complete_level(self) -> None:
         """Handle combat encounter completion."""
+        self.boss_spawns.clear(self)                       # BUG-151: fight won, nothing boss-owned carries over
         self._complete_current_node()
 
     def _trigger_game_over(self) -> None:
         """Transition to game over."""
+        self.boss_spawns.clear(self)                       # BUG-151
         if not self.player:
             return
         self.run_stats = {

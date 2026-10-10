@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
@@ -68,7 +70,7 @@ class SpawnQueue:
         keep: List[SpawnRequest] = []
         for req in self.pending:
             req.delay -= dt
-            (due if req.delay <= 0 else keep).append(req)
+            (due if req.delay <= config.BOSS_SPAWN_EPS else keep).append(req)   # BUG-152: no 1-frame-late fire
         self.pending = keep
         return due
 
@@ -87,7 +89,12 @@ class SpawnDirector:
         self.live: List[LiveSpawn] = []
         self.handlers: Dict[str, Tuple[Place, Optional[Remove]]] = {}
         self.unhandled = 0
+        self.rng = random.Random(config.BOSS_SPAWN_SEED)   # BUG-155: spawns never draw from the global RNG
         self.register(POOL, place_pool, remove_pool)
+
+    def __bool__(self) -> bool:
+        """True while anything is pending or live."""
+        return bool(self.queue.pending or self.live)
 
     def register(self, kind: str, place: Place, remove: Optional[Remove] = None) -> None:
         """Say how to place (and optionally remove) one kind; later boss tickets add sprouts, adds and decoys."""
@@ -103,11 +110,14 @@ class SpawnDirector:
                 b.spawn_outbox.clear()
 
     def update(self, dt: float, game: Game) -> None:
-        """Collect, place what is due, then expire timed spawns and those whose boss died."""
+        """Collect, place what is due, then expire timed spawns and those whose boss died. A spawn placed this frame
+        starts its lifetime on the next one (BUG-153: a 1 s pool is on screen for 60 frames at 60 fps)."""
         self.collect(game.bosses)
         if not self.queue.pending and not self.live:
             return
+        dt = min(dt, config.BOSS_SPAWN_MAX_DT)          # BUG-154: a dt spike cannot place and remove a pool unseen
         die_with_owner = config.BOSS_SPAWNS_DIE_WITH_OWNER
+        placed: List[LiveSpawn] = []
         for req in self.queue.update(dt):
             if die_with_owner and req.owner is not None and not req.owner.active:
                 continue
@@ -115,27 +125,50 @@ class SpawnDirector:
             if handler is None:
                 self.unhandled += 1
                 continue
+            if "phase" not in req.params:
+                req.params["phase"] = self.rng.uniform(0, math.tau)    # BUG-155: animation phase, not global random
             obj = handler[0](req, game)
             if obj is not None and (req.lifetime is not None or req.owner is not None):
-                self.live.append(LiveSpawn(req.kind, obj, req.owner, req.lifetime))
+                placed.append(LiveSpawn(req.kind, obj, req.owner, req.lifetime))
         keep: List[LiveSpawn] = []
         for ls in self.live:
             if ls.left is not None:
                 ls.left -= dt
-            gone = (ls.left is not None and ls.left <= 0) or (
+            gone = (ls.left is not None and ls.left <= config.BOSS_SPAWN_EPS) or (
                 die_with_owner and ls.owner is not None and not ls.owner.active)
             if not gone:
                 keep.append(ls)
                 continue
-            remove = self.handlers.get(ls.kind, (None, None))[1]
-            if remove is not None:
-                remove(ls.obj, game)
-        self.live = keep
+            self._remove(ls, game)
+        self.live = keep + placed
 
-    def clear(self) -> None:
-        """Forget everything (a new encounter rebuilds the hazards, creatures and bosses anyway)."""
+    def _remove(self, ls: LiveSpawn, game: Optional[Game]) -> None:
+        remove = self.handlers.get(ls.kind, (None, None))[1]
+        if remove is not None and game is not None:
+            remove(ls.obj, game)
+
+    def drop_owner(self, owner: Boss, game: Optional[Game] = None) -> int:
+        """BUG-151: `owner` died: forget its pending requests and remove its live spawns now (if they die with it).
+        Returns how many pending requests were dropped."""
+        dropped = self.queue.drop_owner(owner)
+        if config.BOSS_SPAWNS_DIE_WITH_OWNER and self.live:
+            keep = []
+            for ls in self.live:
+                if ls.owner is owner:
+                    self._remove(ls, game)
+                else:
+                    keep.append(ls)
+            self.live = keep
+        return dropped
+
+    def clear(self, game: Optional[Game] = None) -> None:
+        """Forget everything and reseed the RNG (new encounter, fight won, game over, main menu). With `game`, live
+        spawns are also taken out of the arena (a new encounter rebuilds the hazards anyway)."""
+        for ls in self.live:
+            self._remove(ls, game)
         self.queue.pending.clear()
         self.live.clear()
+        self.rng.seed(config.BOSS_SPAWN_SEED)
 
 
 def place_pool(req: SpawnRequest, game: Game) -> HazardZone:
@@ -143,7 +176,8 @@ def place_pool(req: SpawnRequest, game: Game) -> HazardZone:
     if req.lifetime is None:
         req.lifetime = config.BOSS_POOL_LIFETIME
     hazard = HAZARD_TYPES[req.params.get("hazard", config.BOSS_POOL_HAZARD)]
-    zone = HazardZone(req.pos, float(req.params.get("radius", config.BOSS_POOL_RADIUS)), hazard)
+    phase = float(req.params.get("phase", 0.0))         # the director fills it from its own RNG (BUG-155)
+    zone = HazardZone(req.pos, float(req.params.get("radius", config.BOSS_POOL_RADIUS)), hazard, phase)
     zone.build()                                       # bake now, as the map does, not lazily in draw
     game.hazards.zones.append(zone)
     return zone
