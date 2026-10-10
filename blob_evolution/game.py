@@ -57,6 +57,7 @@ from blob_evolution.ui.cinematic import CinematicRenderer, StoryPage, StorySeque
 from blob_evolution.ui.hud import HUD
 from blob_evolution.ui.menus import MenuRenderer
 from blob_evolution.ui.overworld_map import OverworldRenderer
+from blob_evolution.utils import boss_shapes
 from blob_evolution.utils import clock as anim_clock
 from blob_evolution.utils.enums import CreatureType, Difficulty, GameState, NodeType
 from blob_evolution.utils.layers import DepthLayers
@@ -330,6 +331,7 @@ class Game:
 
         self.bosses = []
         self.boss_spawns.clear()
+        boss_shapes.clear()                         # TASK-058: the last map's boss sprites go
         for i in range(params.get("bosses", 0)):
             pos = Vector2(random.randint(400, config.WORLD_WIDTH - 400),
                           random.randint(400, config.WORLD_HEIGHT - 400))
@@ -338,6 +340,8 @@ class Game:
             pos = Vector2(random.randint(300, config.WORLD_WIDTH - 300),
                           random.randint(300, config.WORLD_HEIGHT - 300))
             self.bosses.append(Boss(pos, act, diff, miniboss=True, variant=node_anchor_variant(self.overworld, node)))
+        for boss in self.bosses:
+            boss.warm_art()                         # bake during the intro card, not in the first fight frame
 
         self.projectiles.clear()
         self.xp_orbs.clear()
