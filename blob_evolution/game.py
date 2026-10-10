@@ -721,7 +721,7 @@ class Game:
             self.player._update_stats()
             evo = self.player.evolution.check_evolution(self.player.skills)
             if evo:
-                self.hud.show_notification(evo, 3.0)
+                self.hud.show_notification(evo, 3.0, now=True)
 
     def _handle_shop_key(self, key: int) -> None:
         """Shop input."""
@@ -752,55 +752,55 @@ class Game:
         if item["type"] == "consumable":
             self.player.heal(25)
             self.audio.play("heal")
-            self.hud.show_notification("Healed 25 HP!")
+            self.hud.show_notification("Healed 25 HP!", now=True)
         elif item["type"] == "skill_point":
             self.player.skill_points += 1
-            self.hud.show_notification("+1 Skill Point!")
+            self.hud.show_notification("+1 Skill Point!", now=True)
         elif item["type"] == "artifact":
             art_id = ArtifactManager.random_drop()
             art = self.player.artifacts.add(art_id)
             if art:
                 self._unlock_artifact_archive(art_id)
-                self.hud.show_notification(f"Got: {art['name']}!")
+                self.hud.show_notification(f"Got: {art['name']}!", now=True)
                 self.player._update_stats()
         elif item["type"] == "max_health":
             self.player.shop_max_hp_bonus += 20
             self.player._update_stats()
-            self.hud.show_notification("+20 Max HP!")
+            self.hud.show_notification("+20 Max HP!", now=True)
         elif item["type"] == "damage_boost":
             self.economy.run_damage_boost += 0.1
-            self.hud.show_notification("+10% Damage!")
+            self.hud.show_notification("+10% Damage!", now=True)
         elif item["type"] == "essence_cache":
             self.economy.add_essence(30, self._essence_multiplier())
-            self.hud.show_notification("+30 Essence!")
+            self.hud.show_notification("+30 Essence!", now=True)
         elif item["type"] == "speed_boost":
             self.economy.run_speed_boost += 0.12
-            self.hud.show_notification("+12% Speed!")
+            self.hud.show_notification("+12% Speed!", now=True)
         elif item["type"] == "xp_boost":
             self.economy.run_xp_boost += 0.20
-            self.hud.show_notification("+20% XP!")
+            self.hud.show_notification("+20% XP!", now=True)
         elif item["type"] == "magnet_boost":
             self.economy.run_magnet_flat += 40
             self.player._update_stats()
-            self.hud.show_notification("+40 Magnet Radius!")
+            self.hud.show_notification("+40 Magnet Radius!", now=True)
         elif item["type"] == "size_boost":
             self.economy.run_size_boost += 0.12
             self.player.shop_size_boost = self.economy.run_size_boost
             self.player._update_stats()
-            self.hud.show_notification("+12% Size!")
+            self.hud.show_notification("+12% Size!", now=True)
         elif item["type"] == "shield":
             self.player.has_shield = True
-            self.hud.show_notification("Shield acquired!")
+            self.hud.show_notification("Shield acquired!", now=True)
         elif item["type"] == "cleanse":
             self.player.run_modifiers["damage_taken_mult"] = 1.0
             self.player.run_modifiers["speed_mult"] = min(1.0, self.player.run_modifiers["speed_mult"] / 0.88)
             self.player.run_modifiers["hp_mult"] = min(1.0, self.player.run_modifiers["hp_mult"] / 0.88)
             self.player.run_modifiers["regen_mult"] = 1.0
             self.player._update_stats()
-            self.hud.show_notification("Curses cleansed!")
+            self.hud.show_notification("Curses cleansed!", now=True)
         elif item["type"] == "pierce_boost":
             self.economy.run_piercing = True
-            self.hud.show_notification("Piercing shots enabled!")
+            self.hud.show_notification("Piercing shots enabled!", now=True)
 
     def _handle_game_over_key(self, key: int) -> None:
         """Game over input."""
@@ -943,7 +943,7 @@ class Game:
             for art_id in set(self.player.artifacts.collected) - before:
                 self._unlock_artifact_archive(art_id)
             for msg in boons + curses:
-                self.hud.show_notification(msg, 3.0)
+                self.hud.show_notification(msg, 3.0, now=True)
             self._finish_non_combat_node()
 
     def _handle_blacksmith_key(self, key: int) -> None:
@@ -953,7 +953,7 @@ class Game:
             return
         arts = self.player.artifacts.collected
         if not arts:
-            self.hud.show_notification("No artifacts to upgrade!", 2.0)
+            self.hud.show_notification("No artifacts to upgrade!", 2.0, now=True)
             if self._is_menu_select(key) or key == pygame.K_ESCAPE:
                 self._finish_non_combat_node()
             return
@@ -967,10 +967,10 @@ class Game:
                 art = ARTIFACT_DEFINITIONS.get(art_id)
                 level = self.player.artifacts.get_upgrade_level(art_id)
                 if art:
-                    self.hud.show_notification(f"Upgraded {art['name']} to +{level * 10}%!")
+                    self.hud.show_notification(f"Upgraded {art['name']} to +{level * 10}%!", now=True)
                 self.player._update_stats()
             else:
-                self.hud.show_notification("Max upgrade level!", 2.0)
+                self.hud.show_notification("Max upgrade level!", 2.0, now=True)
         elif key == pygame.K_ESCAPE:
             self._finish_non_combat_node()
 
@@ -990,11 +990,11 @@ class Game:
             elif self._is_menu_select(key):
                 upgrade = items[self.meta_selected]
                 if self.permanent.purchase_upgrade(upgrade["id"]):
-                    self.hud.show_notification(f"Purchased: {upgrade['name']}!", 2.0)
+                    self.hud.show_notification(f"Purchased: {upgrade['name']}!", 2.0, now=True)
                     self._save_game()
                 else:
                     reason = self.permanent.get_purchase_failure_reason(upgrade["id"])
-                    self.hud.show_notification(reason, 2.0)
+                    self.hud.show_notification(reason, 2.0, now=True)
         else:
             items = SKINS
             if self._is_menu_up(key):
@@ -1005,14 +1005,14 @@ class Game:
                 skin = items[self.meta_selected]
                 if skin["id"] in self.permanent.unlocked_skins:
                     self.permanent.equip_skin(skin["id"])
-                    self.hud.show_notification(f"Equipped: {skin['name']}", 2.0)
+                    self.hud.show_notification(f"Equipped: {skin['name']}", 2.0, now=True)
                 elif self.permanent.purchase_skin(skin["id"]):
                     self.permanent.equip_skin(skin["id"])
-                    self.hud.show_notification(f"Unlocked: {skin['name']}!", 2.0)
+                    self.hud.show_notification(f"Unlocked: {skin['name']}!", 2.0, now=True)
                     self._save_game()
                 else:
                     self.hud.show_notification(
-                        self.permanent.get_skin_lock_reason(skin["id"]), 2.5,
+                        self.permanent.get_skin_lock_reason(skin["id"]), 2.5, now=True,
                     )
 
     def _handle_options_key(self, key: int) -> None:
@@ -1038,7 +1038,7 @@ class Game:
                 self.audio.play("ui_select")
             elif self.options_selected == 3:
                 enabled = self.audio.toggle()
-                self.hud.show_notification(f"Sound: {'ON' if enabled else 'OFF'}", 1.5)
+                self.hud.show_notification(f"Sound: {'ON' if enabled else 'OFF'}", 1.5, now=True)
                 if enabled:
                     self.audio.play_menu_music()
                     self.audio.play("ui_confirm")
