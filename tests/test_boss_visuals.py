@@ -769,7 +769,7 @@ NON_BLOB_MINIS = [k for k in bs.MINIS if bs.flashes_by_tint(k, 1)]
 
 # At the specified 55 % lerp two light-art minis fall short of the 60 gate (Rime Sentinel 55.4, First Split 58.8; a 65 %
 # lerp would lift both past 60): reported to the Visual Designer. strict: the marks must go when they pass.
-_FLASH_SHORT = {"rime_sentinel", "first_split"}
+_FLASH_SHORT = {"rime_sentinel"} | (set() if hasattr(bs, "HIT_BODY") else {"first_split"})   # 058b's disc: First Split 60.7
 
 
 @pytest.mark.parametrize("key", [pytest.param(k, marks=pytest.mark.xfail(strict=True, reason="BUG-176: < 60 at 55 %, VD"))
