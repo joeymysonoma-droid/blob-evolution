@@ -997,6 +997,9 @@ def _hit_body_flash(key, phase, R, pl):
     w = HIT_BODY_FLASH_TO_WHITE
     fill = tuple(int(round(c + (255 - c) * w)) for c in B)
     cv = Cv(R, True)
+    pad = globals().get("FLASH_OUTLINE", 0)            # 058's BUG-176 3 px white flash outline, when that commit is in
+    if pad:
+        cv.circ_px((255, 255, 255, 255), 0, 0, R + pad, pad)
     cv.circ_px((*fill, HIT_BODY_FLASH_FILL_ALPHA), 0, 0, R)
     cv.circ_px((255, 255, 255, 255), 0, 0, R, HIT_BODY_EDGE_W)
     return _crop(cv)
