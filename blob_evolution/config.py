@@ -34,6 +34,7 @@ MAX_SKILL_LEVEL = 10
 # Camera
 CAMERA_SMOOTH = 0.12
 SCREEN_SHAKE_DECAY = 0.85
+HUD_NOTICE_QUEUE = 6                   # BUG-145: notices waiting behind the one on screen (the oldest waiting one drops beyond this)
 
 # Colors
 VOID_COLOR_SCALE = 0.5          # ground edge fill (outside the world) = the act's DARK ground tone x this

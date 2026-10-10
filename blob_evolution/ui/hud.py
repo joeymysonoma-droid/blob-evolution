@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple
+import re
+from collections import deque
+from typing import Deque, List, Tuple
 
 import pygame
 
@@ -29,6 +31,14 @@ def skills_overlay_layout(count: int) -> Tuple[pygame.Rect, List[pygame.Rect]]:
     return panel, rows
 
 
+_LEVEL_UP = re.compile(r"Level \d+!")
+
+
+def _notice_group(text: str) -> str:
+    """Notices of one group replace each other instead of queueing: a burst of level-ups shows only the latest level."""
+    return "level-up" if _LEVEL_UP.fullmatch(text) else text
+
+
 class HUD:
     """Renders in-game HUD elements."""
 
@@ -40,17 +50,37 @@ class HUD:
         self.show_fps = False
         self.notification = ""
         self.notification_timer = 0.0
+        self._queue: Deque[Tuple[str, float]] = deque(maxlen=config.HUD_NOTICE_QUEUE)    # BUG-145: waiting notices
         self.shop_item_rects: list = []
 
     def show_notification(self, text: str, duration: float = 2.0) -> None:
-        """Show temporary notification."""
-        self.notification = text
-        self.notification_timer = duration
+        """Show a temporary notification. One slot (BUG-145): while another notice is showing, the new one waits in a small
+        queue and then gets its full duration. A notice of the same group as the one on screen (the same text, or another
+        "Level N!") replaces it in place; one of the same group as a waiting notice replaces that one."""
+        group = _notice_group(text)
+        if self.notification_timer <= 0:
+            self.notification, self.notification_timer = text, duration
+        elif group == _notice_group(self.notification):
+            self.notification, self.notification_timer = text, max(self.notification_timer, duration)
+        else:
+            for k, (t, _d) in enumerate(self._queue):
+                if _notice_group(t) == group:
+                    self._queue[k] = (text, duration)               # e.g. "Level 3!" waiting becomes "Level 4!"
+                    return
+            self._queue.append((text, duration))
 
     def update(self, dt: float) -> None:
-        """Update notification timer."""
+        """Update notification timer; the next queued notice starts when the current one ends."""
         if self.notification_timer > 0:
             self.notification_timer -= dt
+            if self.notification_timer <= 0 and self._queue:
+                self.notification, duration = self._queue.popleft()
+                self.notification_timer += duration          # carry the overshoot: each notice shows its full duration
+
+    @property
+    def pending_notifications(self) -> List[str]:
+        """Texts waiting behind the one on screen (oldest first)."""
+        return [t for t, _d in self._queue]
 
     def draw(
         self,
