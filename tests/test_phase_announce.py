@@ -14,6 +14,24 @@ from blob_evolution.utils.vector2 import Vector2
 DT = 1 / 60
 
 
+@pytest.fixture(autouse=True)
+def _shared_caches():
+    """Leave the shared drawing caches as found (test_boss_visuals' pattern): these tests draw real bosses, and
+    test_readability bounds the shared caches' size."""
+    from blob_evolution.utils.graphics import get_graphics_cache
+    try:
+        from blob_evolution.utils import boss_shapes as bs
+    except ImportError:                                    # 055c alone has no boss art
+        bs = None
+    gc = get_graphics_cache()
+    before = (dict(gc._circles), dict(gc._shadows))
+    yield
+    if bs is not None:
+        bs.clear()
+    gc._circles.clear(), gc._circles.update(before[0])
+    gc._shadows.clear(), gc._shadows.update(before[1])
+
+
 @pytest.fixture
 def game(make_game, monkeypatch):
     g = make_game()
