@@ -289,3 +289,8 @@ SHOT_DRAW_RADIUS = {"player": 5, "enemy": 6, "boss": 8}   # sprite size only; th
 SHOT_HALO_ALPHA = 55
 SHADOW_ALPHAS = (38, 90)                # outer soft ellipse, inner ellipse
 SHADOW_MIN_RADIUS = 4
+
+# Boss phases (TASK-055). The roster gives the thresholds (data/bosses.py); these are the numbers it leaves open.
+BOSS_PHASE2_SPECIAL_COOLDOWN = 1.5      # special fires this soon after phase 2 starts (as on main)
+BOSS_PHASE3_SPECIAL_COOLDOWN = 1.0      # same for phase 3 (main used it on layers 9-10 only; layers 4-8 get it too)
+BOSS_VERDICT_ORDER = ("radial", "targeted", "cross")   # layer 9 verdicts cycle in this order

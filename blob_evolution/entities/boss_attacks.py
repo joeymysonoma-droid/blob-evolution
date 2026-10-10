@@ -6,6 +6,7 @@ import math
 import random
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
+from blob_evolution import config
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.utils.vector2 import Vector2
 
@@ -385,14 +386,14 @@ class VoidRing(Special):
 
 
 class Verdict(Special):
-    """Strata: radial, targeted or cross verdict, picked by the boss slot (as on main; only slot 0 spawns)."""
+    """Strata: radial, targeted and cross verdicts in turn (config.BOSS_VERDICT_ORDER), starting at the boss slot."""
 
     key, telegraph_type = "verdict", "verdict"
-    PATTERNS = ("radial", "targeted", "cross")
 
     def spawn(self, b: Boss, player_pos: Vector2, projectiles: List[Projectile], dmg: float) -> None:
-        """Spawn the picked verdict."""
-        pick = self.PATTERNS[b.slot % len(self.PATTERNS)]
+        """Spawn this special's verdict; the next special plays the next one (main always played the slot's)."""
+        order = config.BOSS_VERDICT_ORDER
+        pick = order[(b.slot + b.specials_fired) % len(order)]
         if pick == "radial":
             b._radial(projectiles, 10, 220, dmg * 0.7, (180, 200, 255))
         elif pick == "targeted":
