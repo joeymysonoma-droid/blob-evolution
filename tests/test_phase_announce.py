@@ -156,6 +156,8 @@ def _plate_texts(b, monkeypatch):
 
 
 def test_bug_169_layer_9_plate_switches_only_when_each_banner_shows(game, monkeypatch):
+    from blob_evolution import config
+    monkeypatch.setattr(config, "GFX_BOSS_ART", False, raising=False)   # the text plate (058's art plate has its own test)
     b = Boss(Vector2(1300, 1000), 8, None)
     game.bosses = [b]
     start = b.name
