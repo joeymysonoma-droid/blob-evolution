@@ -1,7 +1,9 @@
-"""TASK-054 boss data + phase framework: kits moved to data/bosses.py and entities/boss_attacks.py, behaviour unchanged.
+"""TASK-054/055 boss data + phase framework: kits in data/bosses.py and entities/boss_attacks.py, the roster's phases.
 
-The golden digests below were recorded with tests/boss_trace.py on main 1916a5f (the pre-054 Boss): every scripted fight
-hashes the boss state, the global RNG state, the phase announces and every shot spawned, frame by frame.
+GOLDEN was recorded with tests/boss_trace.py on main 1916a5f (the pre-054 Boss): every scripted fight hashes the boss
+state, the global RNG state, the phase announces and every shot spawned, frame by frame. TASK-055 changes the phase
+table on layers 4-10 (and layer 9's verdict pick), so exactly those wardens' fights have new digests in GOLDEN_055;
+acts 0-2 and every mini-boss fight still hash as on main.
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ import random
 
 import pytest
 
+from blob_evolution import config
 from blob_evolution.data import bosses
 from blob_evolution.data.lore import get_boss_name, get_warden_fragment_id
 from blob_evolution.entities import boss_attacks
@@ -181,16 +184,120 @@ GOLDEN = {
     "9/mini/4711": "cf150186d9e3cb30949584ef88291c27b42020d5",
 }
 
+# Recorded on task-055-boss-phases 2b4c276 (behaviour change: roster phase table + layer 9 verdict cycle).
+GOLDEN_055 = {
+    "3/slot1/3": "7180b016c2372fcdbb0df8835fbbbe5b438472f0",
+    "3/slot1/17": "091a80ca2405744972c2772b8f18f59ec7ea82b7",
+    "3/slot1/202": "30eda849fdb5de8a8364e479b5ce92b0d7189926",
+    "3/slot1/4711": "d7223f5fb4ed1ed7bceddda6879270e576359c12",
+    "3/slot2/3": "29c1ebc23e497a7b1d9fdaa5932cca66065d098d",
+    "3/slot2/17": "29d49390fb5b25516c67b8315021932907773d16",
+    "3/slot2/202": "7ea3a0b0348c997ad8d685a27fb384f4e534136f",
+    "3/slot2/4711": "08e53b1bafb3f0ba7ae8cf259800abbd559394ff",
+    "3/warden/3": "91a1aaac387b278d0f9ce25c4f35c71da85604d9",
+    "3/warden/17": "fe14512eb686c0a7e940c840be597da8f3bbcc34",
+    "3/warden/202": "87b2ff3a78b4c8d940f92e4d05d8331644293feb",
+    "3/warden/4711": "491c0faec9ed43ca3459e9ec258affc947f86a50",
+    "4/slot1/3": "e3574ecc62cd1a59aac2d1c04365ba6ad03d8ade",
+    "4/slot1/17": "ad5d0c19f1f1bf09955ad50c2e5ed2b94d9ba06a",
+    "4/slot1/202": "bfb4a01fbb7034fceea6ec7d4248dd57bc24e54d",
+    "4/slot1/4711": "2c901d4beccffe37550e9bf5ea17e3e9c674cf89",
+    "4/slot2/3": "d9570404605a21b1e513e6c243ff94abea32c9c2",
+    "4/slot2/17": "79ba9bc74e66f2c21b1511322aae0bde6bbc55c1",
+    "4/slot2/202": "3067c976ab16a5e1be5b5d99072d9d87282fdf9c",
+    "4/slot2/4711": "e6e88343a2e3b845f11f32e0353153b6db57b15d",
+    "4/warden/3": "3af01e4ce1f1ebb3713df719e32b6601599a81b1",
+    "4/warden/17": "45b5543c874f2e3569ba46a78e8c9fcc46463e42",
+    "4/warden/202": "9aa3c86ba38d33006a068674a983bae74a688c2e",
+    "4/warden/4711": "1db82fdea86e523c803edb51473c2ce0f235cc73",
+    "5/slot1/3": "7eee4ca54c84df47b3b356e4324191db70474a50",
+    "5/slot1/17": "bf066ae45afdc08d2a4890f1c43052f8ac097d77",
+    "5/slot1/202": "53adae7689644541c64a5c841fa4419d45a13f16",
+    "5/slot1/4711": "4d997048d7261a754a4374c0c39307d5d462929f",
+    "5/slot2/3": "d65e99e180f09f2012d04da3e7557bb71ef1c61b",
+    "5/slot2/17": "d3cf321e118f444eb80608a2f7b6da28f81bd808",
+    "5/slot2/202": "7a37132654f57f8b7a2bb83552b4eb1bc098a560",
+    "5/slot2/4711": "f2b1af4993054d01e2c57ae144addffaefbfed31",
+    "5/warden/3": "09feb73c1187d31e786a405d3dd655950fe41bfa",
+    "5/warden/17": "81f7d70a5647ee766bac607c6d52afd9dff5d725",
+    "5/warden/202": "796374c98a7b880838d03d8831f9df8db66a31bf",
+    "5/warden/4711": "6e8cb198bbe37c30155c89538d55ecc752a89bd9",
+    "6/slot1/3": "572eac1a0e5d72e1d5b2acce88afd312633a0e17",
+    "6/slot1/17": "02652fbc66b20936903bdba2b6d6bd53603109f5",
+    "6/slot1/202": "59d591c611416c1955d92e54656617011ab85b29",
+    "6/slot1/4711": "eb5ca14ff76b6516d657dbda25df0a759d42e71d",
+    "6/slot2/3": "bf4e7033b995c905d0a3831cf0c47ceb2bb78173",
+    "6/slot2/17": "bb5737d325204569a8ec83713de48d635209206e",
+    "6/slot2/202": "2d38440aa39408a242d05bfdeec4fe0815c220ab",
+    "6/slot2/4711": "05797012fdd236501d3b2a663b3da12dd0d29af1",
+    "6/warden/3": "5d73944c730f3e49a6492deb2f1cb5e9cf6ee2d1",
+    "6/warden/17": "28e8036e3d4faa17b32970c1b0c35937f2ed0dee",
+    "6/warden/202": "c25b18ffbdcd892ee88fcbdadfd1cde7ed1b782e",
+    "6/warden/4711": "28cec35dde1a6970f535f0bfc39ab478eb363e9a",
+    "7/slot1/3": "f70ec4b8472dcde1473a715e9f6dff8a875dbbe0",
+    "7/slot1/17": "bcc17806c75518091bf030847e244648762dcddc",
+    "7/slot1/202": "d2cdf7ea06041ebdd142dc0a25ff54c385bc7986",
+    "7/slot1/4711": "17dd1e92a2258bd7fec9925a1e8f1edc0b2afc0d",
+    "7/slot2/3": "a40c302418057474035a85082fd2d9162483a1d4",
+    "7/slot2/17": "6e055f5a061d400204f5a4b53007efcf98615571",
+    "7/slot2/202": "272bde40cf2cb5f0cbe45bcbe9427e20ad8e5a18",
+    "7/slot2/4711": "ced82dd2462187cf72b1171d7ab36e6fa3fdbe40",
+    "7/warden/3": "ef15dd798c93ba3b8a22c886ff397f43f77cb769",
+    "7/warden/17": "caf8184105b1b245d335220bd6c2e99015537ad5",
+    "7/warden/202": "5fd6765994b2cbbac27b3c5d00432e352aa5b3d5",
+    "7/warden/4711": "021d21866a5129e2cf12afe35aec40b9c0249214",
+    "8/slot1/3": "5ce53780058ed2dd1f0acc0fb7b9774cd2dca672",
+    "8/slot1/17": "fe889e4991d832f540b00ed3853847b38fe9efa5",
+    "8/slot1/202": "de1d4828b589968aa525a8193d84268b5688525f",
+    "8/slot1/4711": "1ff61057236a8f4ee41975f7acf7fb8bca1eb0ad",
+    "8/slot2/3": "9d337fb949b145446b3e59e9ca387e393a9419c6",
+    "8/slot2/17": "282cbeaa393701419ba001e9470d1e9fe9ac3d98",
+    "8/slot2/202": "1766f5f09636e8e2bfb164844f707bff298a5330",
+    "8/slot2/4711": "300b9e5bc5d6cec8cabbdfcc69f9a2e8d3bd9c44",
+    "8/warden/3": "d4f8da20e5943236708ec11cbc8c0e2afa0e63ff",
+    "8/warden/17": "ac59b6f140d75bca5d40fa55ec78664f9a0f5762",
+    "8/warden/202": "9e845d1cdbb2a0fec2d5b1d298ff551854968593",
+    "8/warden/4711": "fed95f9101d05811c7bfcd19d53759d7feb8620d",
+    "9/slot1/3": "7cbb7a853e8f403c306eeffad48a5f1de8123d88",
+    "9/slot1/17": "7644445ecc105bf6c17cbeed5159795829de7dba",
+    "9/slot1/202": "1cc54cb64d1313a28fecfdaf35d56b093c725fb1",
+    "9/slot1/4711": "2fd394eaea061c134c2379b50459fe4c2f9703d1",
+    "9/slot2/3": "eec5a74091e6cc921519848a1e599057d075fb86",
+    "9/slot2/17": "163bd1960053a66d554fde22953024e82f2212b5",
+    "9/slot2/202": "9bd755f11f506172c84eae582f022d6b3ed0b210",
+    "9/slot2/4711": "95ab85856f66ffa65d99e73ece800cccafe8abc3",
+    "9/warden/3": "f6a8c2371d1fca2fe37b670c5b2ab3dc972fa33f",
+    "9/warden/17": "c5806b94a3c46c0ab534a066f48d5c36c7e89288",
+    "9/warden/202": "98fcc4e2bb333cd2f4d8b6c0f1f5ac0c3b8d64e5",
+    "9/warden/4711": "81e4b7671b814335652378c9808321be12fd3f53",
+}
+CHANGED_BY_055 = {f"{act}/{kind}/{seed}" for act in range(3, 10) for kind in ("warden", "slot1", "slot2") for seed in SEEDS}
+
 ARCHIVE_IDS = [f"warden_{i}" for i in range(10)]
+ROSTER_PHASES = {act: ((2, 0.5),) for act in range(3)}                        # layers 1-3: 2 phases
+ROSTER_PHASES.update({act: ((2, 0.5), (3, 0.25)) for act in range(3, 8)})    # layers 4-8: 3 phases
+ROSTER_PHASES[8] = ((2, 0.66), (3, 0.33))                                     # layer 9 (Ascent / Echoes / Stillness)
+ROSTER_PHASES[9] = ((2, 0.66), (3, 0.25))                                     # layer 10 (Producer ruling)
+
+
+def _expected(key: str) -> str:
+    """The digest a scripted fight must have on this branch."""
+    return GOLDEN_055.get(key, GOLDEN[key])
 
 
 @pytest.mark.parametrize("act", range(10))
-def test_scripted_fights_match_main_frame_for_frame(act):
-    """Boss state, RNG, phases and shots of every scripted fight hash the same as on 1916a5f."""
+def test_scripted_fights_match_the_recorded_digests(act):
+    """Every scripted fight hashes as recorded: main's digest, or 055's where the phase table changed."""
     for kind in KINDS:
         for seed in SEEDS:
             key = f"{act}/{kind}/{seed}"
-            assert fight_digest(act, kind, seed, draw=False) == GOLDEN[key], key
+            assert fight_digest(act, kind, seed, draw=False) == _expected(key), key
+
+
+def test_only_the_changed_phase_tables_changed_digests():
+    """055 changed exactly the layer 4-10 warden fights (all slots); layers 1-3 and all mini-bosses are main's."""
+    assert set(GOLDEN_055) == CHANGED_BY_055
+    assert all(GOLDEN_055[k] != GOLDEN[k] for k in GOLDEN_055)
 
 
 def test_trace_sees_a_changed_shot():
@@ -203,7 +310,7 @@ def test_trace_sees_a_changed_shot():
 
     try:
         boss_attacks.AimedShot.fire = tinted
-        assert fight_digest(3, "warden", SEEDS[0], draw=False) != GOLDEN[f"3/warden/{SEEDS[0]}"]
+        assert fight_digest(3, "warden", SEEDS[0], draw=False) != _expected(f"3/warden/{SEEDS[0]}")
     finally:
         boss_attacks.AimedShot.fire = real
 
@@ -240,27 +347,71 @@ def test_stats_are_the_old_formulas(act):
 
 
 @pytest.mark.parametrize("act", range(10))
-def test_phase_two_below_half_once_and_phase_three_only_in_layers_nine_and_ten(act):
-    """Phase 2 starts below 50 % (enraged, special in 1.5 s, one announce); phase 3 below 25 % only for acts 8-9."""
+def test_wardens_follow_the_roster_phase_table(act):
+    """Each phase starts just under its threshold, once, with one announce and the configured special cooldown."""
     b = Boss(Vector2(500, 500), act, None)
-    b.take_damage(b.max_hp * 0.49)
-    assert (b.phase, b.enraged) == (1, False) and not b.consume_phase_announce()
-    b.take_damage(b.max_hp * 0.02)
-    assert (b.phase, b.enraged, b.special_cooldown) == (2, True, 1.5)
-    assert b.consume_phase_announce() and not b.consume_phase_announce()
-    b.special_cooldown = 9.0
-    b.take_damage(b.max_hp * 0.1)
-    assert b.special_cooldown == 9.0 and not b.consume_phase_announce()      # phase 2 starts only once
-    b.take_damage(b.max_hp * 0.2)
-    final = act >= bosses.FINAL_PHASE_FROM_ACT
-    assert b.phase == (3 if final else 2) and b.consume_phase_announce() == final
-    if final:
-        assert b.special_cooldown == 1.0
+    assert tuple((pd.phase, pd.below) for pd in b.phase_defs) == ROSTER_PHASES[act]
+    hp_left = 1.0
+    for phase, below in ROSTER_PHASES[act]:
+        b.take_damage(b.max_hp * (hp_left - below - 0.005))
+        hp_left = below + 0.005
+        assert b.phase == phase - 1 and not b.consume_phase_announce()
+        b.take_damage(b.max_hp * 0.01)
+        hp_left -= 0.01
+        cd = config.BOSS_PHASE2_SPECIAL_COOLDOWN if phase == 2 else config.BOSS_PHASE3_SPECIAL_COOLDOWN
+        assert (b.phase, b.enraged, b.special_cooldown) == (phase, True, cd)
+        assert b.consume_phase_announce() and not b.consume_phase_announce()
+        b.special_cooldown = 9.0
+        b.take_damage(b.max_hp * 0.01)
+        hp_left -= 0.01
+        assert b.special_cooldown == 9.0 and not b.consume_phase_announce()      # each phase starts only once
+    b.take_damage(b.max_hp * (hp_left - 0.01))
+    assert b.phase == len(ROSTER_PHASES[act]) + 1 and b.hp > 0
+
+
+def test_layer_nine_is_one_body_with_three_names():
+    """Warden of Ascent becomes Warden of Echoes at 66 % and Warden of Stillness at 33 %; its Archive id stays."""
+    triad = ("Warden of Ascent", "Warden of Echoes", "Warden of Stillness")
+    b = Boss(Vector2(500, 500), 8, None)
+    assert b.name == triad[0] and b.defn.archive_id == "warden_8"
+    b.take_damage(b.max_hp * 0.35)
+    assert (b.phase, b.name) == (2, triad[1])
+    b.take_damage(b.max_hp * 0.33)                                              # 65 % -> 32 %
+    assert (b.phase, b.name) == (3, triad[2])
+    for act in (0, 3, 7, 9):                                                    # nobody else is renamed
+        o = Boss(Vector2(500, 500), act, None)
+        name = o.name
+        o.take_damage(o.max_hp * 0.8)
+        assert o.name == name
+
+
+@pytest.mark.parametrize("act", range(10))
+def test_mini_bosses_keep_main_s_phases(act):
+    """Lattice Anchor: 50 % on every layer, plus 25 % from layer 9 on, as on main, and never renamed."""
+    m = Boss(Vector2(500, 500), act, None, miniboss=True)
+    want = ((2, 0.5), (3, 0.25)) if act >= bosses.FINAL_PHASE_FROM_ACT else ((2, 0.5),)
+    assert tuple((pd.phase, pd.below) for pd in m.phase_defs) == want
+    assert all(pd.name is None for pd in m.phase_defs)
+
+
+@pytest.mark.parametrize("slot", range(3))
+def test_layer_nine_verdicts_cycle_through_all_three(slot):
+    """Main played only the slot's verdict; now radial (10), targeted (5) and cross (12) take turns from the slot's."""
+    random.seed(4)
+    b = Boss(Vector2(1200, 1100), 8, None, slot=slot)
+    sizes = {"radial": 10, "targeted": 5, "cross": 12}
+    seen = []
+    for _ in range(6):
+        shots: list = []
+        b._special_attack(Vector2(900, 900), shots)
+        seen.append(len(shots))
+    order = [sizes[k] for k in config.BOSS_VERDICT_ORDER]
+    assert seen == [order[(slot + i) % 3] for i in range(6)] and b.specials_fired == 6
 
 
 def test_one_big_hit_runs_both_phase_starts_in_order():
-    """A hit from full HP to 20 % enrages and lands in phase 3 (layer 10), phase 2 (layer 5)."""
-    for act, phase in ((9, 3), (4, 2)):
+    """A hit from full HP to 20 % enrages and lands in the last phase: 3 on layers 5 and 10, 2 on layer 2."""
+    for act, phase in ((9, 3), (4, 3), (1, 2)):
         b = Boss(Vector2(500, 500), act, None)
         b.take_damage(b.max_hp * 0.8)
         assert (b.phase, b.enraged) == (phase, True)
