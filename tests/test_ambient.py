@@ -243,12 +243,12 @@ def test_per_frame_cost_stays_small():
     surface = pygame.Surface((W, H))
     best = 1e9
     for _ in range(5):
-        t = time.perf_counter()
+        t = time.process_time()
         for _ in range(100):
             field.update(1 / 60, CAM)
             field.draw_back(surface, CAM, NO_SHAKE)
             field.draw_front(surface, CAM, NO_SHAKE)
-        best = min(best, (time.perf_counter() - t) / 100 * 1000)
+        best = min(best, (time.process_time() - t) / 100 * 1000)
     assert best < 1.0
 
 

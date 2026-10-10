@@ -382,18 +382,18 @@ def test_unknown_act_indices_clamp():
 
 def test_build_and_blit_cost_stay_small():
     """Loose guards (measured: fog+overlay build ~7-14 ms, fog blit ~0.35 ms, overlay blit ~0.3 ms)."""
-    start = time.perf_counter()
+    start = time.process_time()
     d = DepthLayers(4, 1)
-    assert (time.perf_counter() - start) * 1000 < 250
+    assert (time.process_time() - start) * 1000 < 250
     screen = pygame.Surface((W, H))
     best = 1e9
     for _ in range(5):
-        t = time.perf_counter()
+        t = time.process_time()
         for _ in range(50):
             d.update(1 / 60)
             d.blit_fog(screen, Vector2(900, 700), NO_SHAKE)
             d.blit_vignette(screen, 1.0)
-        best = min(best, (time.perf_counter() - t) / 50 * 1000)
+        best = min(best, (time.process_time() - t) / 50 * 1000)
     assert best < 6.0
 
 

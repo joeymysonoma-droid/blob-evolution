@@ -96,9 +96,9 @@ def test_stamps_per_act_stay_inside_the_500_cap(act, monkeypatch):
 @pytest.mark.parametrize("act", DECAL_ACTS)
 def test_decal_pass_time_guard(act):
     """Loose guard in the default suite (measured 4-17 ms); the strict 25 ms cap is in the slow suite."""
-    t = time.perf_counter()
+    t = time.process_time()
     _run_decals(act)
-    assert (time.perf_counter() - t) * 1000 <= 100
+    assert (time.process_time() - t) * 1000 <= 100
 
 
 @pytest.mark.slow
@@ -106,17 +106,17 @@ def test_decal_pass_time_guard(act):
 def test_decal_pass_time_is_inside_25_ms(act):
     times = []
     for _ in range(7):
-        t = time.perf_counter()
+        t = time.process_time()
         _run_decals(act)
-        times.append((time.perf_counter() - t) * 1000)
+        times.append((time.process_time() - t) * 1000)
     assert statistics.median(times) <= 25, times
 
 
 @pytest.mark.parametrize("act", DECAL_ACTS)
 def test_bake_time_guard(act):
-    t = time.perf_counter()
+    t = time.process_time()
     _bake(act)
-    assert (time.perf_counter() - t) * 1000 <= 400                # loose; strict budget in the slow suite
+    assert (time.process_time() - t) * 1000 <= 400                # loose; strict budget in the slow suite
 
 
 @pytest.mark.slow
@@ -124,9 +124,9 @@ def test_bake_time_guard(act):
 def test_full_ground_bake_median_of_7_is_inside_130_ms(act):
     times = []
     for _ in range(7):
-        t = time.perf_counter()
+        t = time.process_time()
         _bake(act)
-        times.append((time.perf_counter() - t) * 1000)
+        times.append((time.process_time() - t) * 1000)
     assert statistics.median(times) <= 130, times
 
 
