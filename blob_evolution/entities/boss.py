@@ -51,6 +51,7 @@ class Boss:
         self.enraged = False
         self.phase = 1
         self.phase_announced = False
+        self.phase_starts: List[Tuple[int, str, float]] = []    # BUG-147: (phase, name, special cd) per start, unannounced
         self.xp_value = int(self.max_hp)
         self.shoot_cooldown = CADENCE.first_basic
         self.special_cooldown = CADENCE.first_special
@@ -101,16 +102,23 @@ class Boss:
             return
         self.phase = pd.phase
         self.phase_announced = True
-        self.special_cooldown = pd.special_cooldown
+        self.special_cooldown = pd.special_cooldown       # in phase order: a hit crossing two ends on the deeper phase's
         if pd.name:
             self.name = pd.name
+        self.phase_starts.append((pd.phase, self.name, pd.special_cooldown))
 
     def consume_phase_announce(self) -> bool:
-        """Return True once when a new phase begins."""
-        if self.phase_announced:
-            self.phase_announced = False
-            return True
-        return False
+        """Return True once when a new phase begins (all phase starts since the last call count as one)."""
+        return bool(self.take_phase_starts())
+
+    def take_phase_starts(self) -> List[Tuple[int, str, float]]:
+        """BUG-147: every phase start since the last call, in order, as (phase, name at that phase, special cooldown it set); one hit crossing two
+        thresholds gives two. Clears them and phase_announced."""
+        if not self.phase_announced:
+            return []
+        starts, self.phase_starts = self.phase_starts, []
+        self.phase_announced = False
+        return starts
 
     def update(
         self,
