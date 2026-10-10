@@ -75,7 +75,7 @@ def test_stats_are_057_s_for_every_warden_slot_and_anchor():
 
 
 def test_warm_and_draw_change_no_gameplay_field():
-    """warm_art() and draw() (art on and off) write only the draw-private _art_* / _flash_* fields."""
+    """warm_art() and draw() (art on and off) write only the draw-private _art_* / _flash_* / _plate_* fields."""
     screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
     for flag in (True, False):
         config.GFX_BOSS_ART = flag
@@ -85,7 +85,7 @@ def test_warm_and_draw_change_no_gameplay_field():
 
             def snap():
                 return {k: ((v.x, v.y) if isinstance(v, Vector2) else v) for k, v in vars(b).items()
-                        if not k.startswith(("_art", "_flash"))}
+                        if not k.startswith(("_art", "_flash", "_plate"))}
             before = snap()
             b.warm_art()
             b.draw(screen, CAM, NO_SHAKE)
@@ -277,7 +277,7 @@ def test_phase_change_selects_the_new_set_fades_and_rings_once(monkeypatch):
     screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
     b = make_boss(3, False, 0)                       # Ash, three phases
     b.draw(screen, CAM, NO_SHAKE)
-    boss_calls, rings = _spy(monkeypatch, "draw_boss"), _spy(monkeypatch, "ring_out")
+    boss_calls, rings = _spy(monkeypatch, "draw_boss"), _spy(monkeypatch, "phase_ring")
     b.take_damage(b.max_hp * 0.55)
     for _ in range(70):
         b.update(DT, Vector2(1000, 900), [])
@@ -286,13 +286,10 @@ def test_phase_change_selects_the_new_set_fades_and_rings_once(monkeypatch):
     fades = [k["fade"] for _, k in boss_calls]
     assert set(phases) == {2} and all(k["fade_from"] == 1 for _, k in boss_calls)
     assert fades == sorted(fades) and fades[0] < 0.1 and fades[-1] == 1.0          # monotonic 0.6 s cross-fade
-    ph = [(a[3], a[5]) for a, k in rings if k.get("style") == "phase"]
-    alphas = [al for _, al in ph]
-    radii = [r for r, _ in ph]
-    assert alphas[0] == pytest.approx(config.BOSS_PHASE_RING_ALPHA, abs=5) and alphas[-1] < 10
-    assert alphas == sorted(alphas, reverse=True) and radii == sorted(radii)
-    assert radii[0] == pytest.approx(b.size, abs=4) and radii[-1] <= bs.phase_ring_end(int(b.size))
-    assert len(ph) == round(config.BOSS_PHASE_RING_TIME / DT)                       # one ring, 0.8 s, then none
+    progress = [a[4] for a, _ in rings]
+    assert progress == sorted(progress) and progress[0] < 0.05 and progress[-1] > 0.95
+    assert all(a[3] == int(b.size) for a, _ in rings)
+    assert len(progress) == round(config.BOSS_PHASE_RING_TIME / DT)                  # one ring, 0.8 s, then none
     assert {k[3] for k in bs._layers if k[:3] == ("ash", 2, int(b.size))} == {"b", "f"}      # phase 2 set baked
 
 
@@ -306,7 +303,7 @@ def test_faded_layers_are_restored_to_full_alpha():
 
 @pytest.mark.parametrize("act,names,notches", [
     (8, ("Warden of Ascent", "Warden of Echoes", "Warden of Stillness"), (0.66, 0.33)),
-    (9, ("Prime Anchor",) * 3, (0.66, 0.25)),
+    (9, ("Warden of the Divide",) * 3, (0.66, 0.25)),
     (0, ("Warden of Sprouting",) * 2, (0.5,)),
 ])
 def test_plate_name_pips_and_bar_notches_follow_the_phase_table(act, names, notches, monkeypatch):
@@ -323,7 +320,107 @@ def test_plate_name_pips_and_bar_notches_follow_the_phase_table(act, names, notc
         seen.append((plates[-1][0][0], pips[-1][0][:2], bars[-1][0][6]))
     for i, (name, pip, notch) in enumerate(seen):
         assert name == names[i] and pip == (len(notches) + 1, i + 1) and notch == notches, (act, i, seen)
-    assert seen[-1][0] == b.name
+    assert seen[-1][0] == b.plate_name()
+
+
+ROSTER_PLATES = ("Warden of Sprouting", "Warden of Rot", "Warden of Echoes", "Warden of Ash", "Warden of Frost",
+                 "Warden of Thirst", "Warden of Masks", "Warden of Silence", "Warden of Ascent", "Warden of the Divide")
+
+
+def test_plate_names_are_the_roster_s_and_the_game_name_is_untouched():
+    """BOSS-ROSTER.md: plate titles; L10's game / lore name stays "Prime Anchor" (Narrative owns it), slot suffixes kept."""
+    assert [make_boss(a, False, 0).plate_name() for a in range(10)] == list(ROSTER_PLATES)
+    assert make_boss(9, False, 0).name == "Prime Anchor"
+    assert Boss(Vector2(0, 0), 9, None, slot=1).plate_name() == "Warden of the Divide 2"
+    assert all(make_boss(a, True, v).plate_name() == make_boss(a, True, v).anchor.name for a in range(10) for v in (0, 1))
+
+
+# ---- VD r2: plate position, clamp, large phase ring ----------------------------------------------------------------
+
+@pytest.mark.parametrize("act,mini", [(9, False), (0, False), (4, True)])
+def test_plate_sits_above_the_art(act, mini):
+    b = make_boss(act, mini, 0)
+    sy = config.SCREEN_HEIGHT // 2
+    name_h = bs.name_plate(b.plate_name()).get_height()
+    pips_h = 10 if not mini else 0
+    bw, bar_y, name_y, pips_y = b.plate_layout(sy, name_h, pips_h)
+    assert bar_y == sy - int(1.72 * b.size + 18) and bw == int(2.5 * b.size)
+    assert name_y + name_h == bar_y - 4
+    if pips_h:
+        assert pips_y + pips_h == name_y - 4
+    assert bar_y + config.BOSS_BAR_HEIGHT <= sy - 1.7 * b.size                     # clear of every art extent
+
+
+def test_drawn_bar_uses_the_layout(monkeypatch):
+    b = make_boss(8, False, 0)
+    screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    want = b.plate_layout(config.SCREEN_HEIGHT // 2, bs.name_plate(b.plate_name(), config.BOSS_NAME_COLOUR).get_height(), 10)
+    bars = _spy(monkeypatch, "health_bar")
+    b.draw(screen, CAM, NO_SHAKE)
+    assert bars[-1][0][1:3] == (config.SCREEN_WIDTH // 2 - want[0] // 2, want[1])
+
+
+@pytest.mark.parametrize("dy", [-200, -300, -360, -500])
+def test_plate_is_clamped_6_px_below_the_screen_top(dy):
+    b = make_boss(9, False, 0)
+    sy = config.SCREEN_HEIGHT // 2 + dy
+    name_h = bs.name_plate(b.plate_name()).get_height()
+    _, bar_y, name_y, pips_y = b.plate_layout(sy, name_h, 10)
+    assert pips_y >= 6 and name_y - pips_y == 10 + 4 and bar_y - name_y == name_h + 4
+    if sy - int(1.72 * b.size + 18) - 4 - name_h - 4 - 10 >= 6:
+        assert bar_y == sy - int(1.72 * b.size + 18)                                 # no clamp needed: untouched
+    else:
+        assert pips_y == 6
+
+
+def test_clamped_plate_draws_inside_the_screen():
+    b = make_boss(9, False, 0)
+    screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    screen.fill((0, 0, 0))
+    b.pos = Vector2(CAM.x, CAM.y - config.SCREEN_HEIGHT // 2 + 40)              # boss centre 40 px from the top
+    b.draw(screen, CAM, NO_SHAKE)
+    top = min(y for y in range(0, 60) if any(screen.get_at((x, y))[:3] != (0, 0, 0)
+                                               for x in range(config.SCREEN_WIDTH // 2 - 30, config.SCREEN_WIDTH // 2 + 30)))
+    assert top >= 0
+    rows = [y for y in range(6) if any(screen.get_at((x, y))[:3] in ((255, 255, 255),)
+                                       for x in range(config.SCREEN_WIDTH // 2 - 20, config.SCREEN_WIDTH // 2 + 20))]
+    assert not rows                                                            # no pip edge above y = 6
+
+
+def test_small_wardens_keep_the_cached_fading_ring_and_big_ones_draw_it_directly(monkeypatch):
+    small = [a for a in range(10) if 3 * make_boss(a, False, 0).size <= 224]
+    assert small == [0, 1, 2]                                                      # R 50 / 60 / 70
+    assert all(not bs.phase_ring_direct(int(make_boss(a, True, v).size)) for a in range(10) for v in (0, 1))
+    rings = _spy(monkeypatch, "ring_out")
+    screen = pygame.Surface((400, 400))
+    bs.phase_ring(screen, 200, 200, 70, 0.5, (190, 240, 255), (40, 56, 104))
+    assert rings[-1][1]["style"] == "phase" and rings[-1][0][5] == pytest.approx(85)
+    n = len(rings)
+    bs.phase_ring(screen, 200, 200, 80, 0.5, (255, 205, 90), (80, 36, 22))
+    assert len(rings) == n                                                         # 3 R = 240 > 224: no sprite
+
+
+def test_large_ring_fades_its_colour_toward_the_light_ground():
+    colour, ground, R = (255, 205, 90), tuple(config.GROUND_RAMPS[3][2]), 80
+    seen = []
+    for p in (0.0, 0.25, 0.5, 0.75, 1.0):
+        s = pygame.Surface((600, 600))
+        s.fill(ground)
+        bs.phase_ring(s, 300, 300, R, p, colour, ground, 170)
+        r = int(R + 2 * R * p)
+        px = s.get_at((300, 300 - r + 1))[:3]
+        seen.append(sum(abs(a - b) for a, b in zip(px, ground)))
+        if p == 0.0:
+            want = tuple(int(round(c + (g - c) * (1 - 170 / 255))) for c, g in zip(colour, ground))
+            assert px == want                                                      # = the cached ring's look at alpha 170
+    assert seen == sorted(seen, reverse=True) and seen[0] > 100 and seen[-1] == 0
+
+
+def test_flash_gap_is_0_34_s_so_fire_every_0_06_s_flashes_at_most_3_hz():
+    assert config.BOSS_FLASH_MIN_GAP == 0.34
+    b = make_boss(9, False, 0)
+    starts = _flash_starts(b, 300, 4)                                              # a hit every 4 frames = 0.067 s
+    assert len(starts) <= 15 and all(b2 - a2 >= 0.34 * 60 - 1e-6 for a2, b2 in zip(starts, starts[1:]))
 
 
 # ---- 12. no allocations ------------------------------------------------------------------------------------------------

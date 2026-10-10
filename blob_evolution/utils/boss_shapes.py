@@ -1707,14 +1707,27 @@ def warm_entity(key: str, R: int, names=(), name_colours=(), bar_w: int = 0, bar
         _bar_sprite(bar_w, bar_h, False)
         _bar_sprite(bar_w, bar_h, True)
     if ring_colour is not None:
-        for r in range(max(8, (R // 8) * 8), phase_ring_end(R) + 9, 8):    # every 8 px step the ring passes
-            if r <= RING_CACHE_MAX:
+        for r in range(max(8, (R // 8) * 8), 3 * R + 9, 8):              # every 8 px step a cached ring passes
+            if 3 * R <= RING_CACHE_MAX:
                 ring_out(scratch, -999, -999, r, ring_colour, 0, style="phase")
 
 
-def phase_ring_end(R: int) -> int:
-    """Final phase-ring radius: 3 R (spec 2.5), capped at RING_CACHE_MAX so the ring stays a cached, fading sprite."""
-    return min(3 * R, RING_CACHE_MAX)
+def phase_ring_direct(R: int) -> bool:
+    """True when the phase ring outgrows the ring cache (3 R > RING_CACHE_MAX) and is drawn directly."""
+    return 3 * R > RING_CACHE_MAX
+
+
+def phase_ring(dst, sx: int, sy: int, R: int, p: float, colour: Color, ground: Color, alpha0: float = 170) -> None:
+    """Spec 2.5 phase ring at progress p (0..1): radius R -> 3 R, 3 px. Up to RING_CACHE_MAX the cached sprite fades by
+    alpha (alpha0 -> 0); larger rings (VD r2, spec 9.9) are pygame.draw.circle with the colour lerped toward the
+    layer's LIGHT ground tone, matching the sprite's look at p = 0 and reaching the ground colour at p = 1."""
+    radius = R + 2 * R * p
+    if not phase_ring_direct(R):
+        ring_out(dst, sx, sy, radius, colour, alpha0 * (1 - p), style="phase")
+        return
+    k = 1.0 - (alpha0 / 255.0) * (1.0 - p)                      # share of the ground in the ring colour
+    col = tuple(int(round(c + (g - c) * k)) for c, g in zip(colour, ground))
+    pygame.draw.circle(dst, col, (int(sx), int(sy)), int(radius), 3)
 
 
 def entity_element_colour(key: str) -> Color:
