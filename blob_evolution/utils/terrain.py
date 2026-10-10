@@ -607,9 +607,15 @@ def _drift_sprite(w: int, h: int, act: int) -> pygame.Surface:
     return make_sprite(w + 4, h + 4, draw, bg=fill)
 
 
+FERN_LUMA_CAP = 0.20                      # BUG-119: act 4 fern strokes stay under this luma over the MID tone
+
+
 def _fern_sprite(stem: int, act: int) -> pygame.Surface:
-    """Frost fern: a stem from the sprite centre with 4-6 branch pairs at +/-55 degrees, each pair 15% shorter."""
-    color = _ink(act, (150, 196, 230))
+    """Frost fern: a stem from the sprite centre with 4-6 branch pairs at +/-55 degrees, each pair 15% shorter.
+    BUG-119 (Visual Designer): the stroke colour is pre-mixed with the MID tone up to FERN_LUMA_CAP, as acts 5-9 do with
+    _fit_alpha, so the brightest fern pixel is <= (96,128,156) (was (150,196,230) strokes, up to (130,172,205) on screen)."""
+    base = _ink(act, (150, 196, 230))
+    color = _blend(act, base, _fit_alpha(act, base, FERN_LUMA_CAP))
     size = 72
     pairs = 4 + stem % 3
 
@@ -663,7 +669,8 @@ def decals_act_4(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
     for x, y in scatter(10, 150):
         segs = _grow(rng, (x, y), rng.uniform(0, TAU), 160, 4)
         cracks.extend(segs)
-        _stroke_layer(surface, segs, [(3, (*_ink(act, (20, 36, 52)), 120)), (1, (*_ink(act, (150, 190, 225)), 170))])
+        # BUG-119 (Visual Designer): crack highlight alpha 170 -> 110 (same colour), after the fern dimming alone left 3.28
+        _stroke_layer(surface, segs, [(3, (*_ink(act, (20, 36, 52)), 120)), (1, (*_ink(act, (150, 190, 225)), 110))])
     for x, y in scatter(24):
         stamp(surface, _drift_sprite(rng.randint(60, 180), rng.randint(20, 60), act), (x, y), angle=rng.uniform(-20, 20))
     ferns = {s: _fern_sprite(s, act) for s in range(14, 31, 4)}
