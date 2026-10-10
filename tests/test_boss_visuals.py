@@ -679,3 +679,30 @@ def test_bug_162_flash_copies_are_built_at_warm_up_and_counted_in_the_cache():
         b.update(DT, Vector2(1000, 900), [])
         b.draw(screen, CAM, NO_SHAKE)
     assert len(bs._tints) == n
+
+
+@pytest.mark.parametrize("what", ["telegraph", "warning"])
+def test_bug_165_telegraph_and_warning_rings_show_past_the_body_cull_margin(what):
+    """Producer: the BUG-165 rule covers the telegraph ring (up to 2.3 R) and the warning rings (any radius) too."""
+    b = make_boss(9, False, 0)
+    if what == "telegraph":
+        b.size = 200                                       # (1.5 + 0.8) R passes 1.9 R + 60 only above R 150 (wardens are
+    R = b.size                                             # <= 140 today); the rule must hold for any size
+    if what == "telegraph":
+        b.telegraph = 0.01                                 # ring radius (1.5 + 0.79) R
+        reach, colour = int(R * (1.5 + 0.79)), (255, 200, 100)
+    else:
+        reach, colour = int(3.2 * R), None
+        b.warning_rings = [(reach, 1.0, (255, 80, 80))]
+    off = 1.9 * R + 60 + 2
+    assert reach > off
+    screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    screen.fill((1, 2, 3))
+    cam = Vector2(b.pos.x + config.SCREEN_WIDTH // 2 + off, b.pos.y)
+    b.draw(screen, cam, NO_SHAKE)
+    cols = int(reach - off) + 2
+    drawn = [tuple(screen.get_at((x, y)))[:3] for y in range(config.SCREEN_HEIGHT) for x in range(cols)]
+    if colour:
+        assert colour in drawn
+    else:
+        assert any(c != (1, 2, 3) for c in drawn)

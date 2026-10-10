@@ -321,6 +321,10 @@ class Boss:
         m = 1.9 * R + 60                                # spec 2.1 cull: nothing of the boss (plate included) shows
         if self.act_index == 7 and self.pull_pulse > 0.3:              # BUG-165: the L8 pull circle reaches 2.5 R
             m = max(m, self.size * (1.5 + self.pull_pulse) + 2)
+        if self.telegraph > 0:                                         # BUG-165 (Producer): so does the telegraph ring
+            m = max(m, self.size * (1.5 + (0.8 - min(0.8, self.telegraph))) + 2)
+        for radius, _life, _col in self.warning_rings:                 # and every warning ring
+            m = max(m, radius + 2)
         if sx < -m or sx > w + m or sy < -m or sy > h + m:
             return
         since = t - self._art_phase_t0
