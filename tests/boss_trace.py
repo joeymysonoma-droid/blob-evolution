@@ -12,8 +12,9 @@ from blob_evolution import config
 from blob_evolution.entities.boss import Boss
 from blob_evolution.utils.vector2 import Vector2
 
-KINDS = ("warden", "slot1", "slot2", "mini")
-SLOTS = {"warden": 0, "slot1": 1, "slot2": 2, "mini": 0}
+KINDS = ("warden", "slot1", "slot2", "mini", "mini_b")
+SLOTS = {"warden": 0, "slot1": 1, "slot2": 2, "mini": 0, "mini_b": 0}
+MINIS = {"mini": 0, "mini_b": 1}           # mini-boss kinds -> anchor variant (the layer's first / second anchor)
 SEEDS = (3, 17, 202, 4711)
 DIFFS = (
     {"hp": 1.0, "damage": 1.0, "speed": 1.0},
@@ -54,7 +55,7 @@ def trace(act: int, kind: str, seed: int, frames: int = FRAMES, draw: bool = Tru
     """Run one scripted fight; one digest per frame (boss state, RNG, shots spawned, phase announces, draws)."""
     random.seed(seed)
     diff = DIFFS[seed % len(DIFFS)]
-    b = Boss(Vector2(1200, 1100), act, diff, miniboss=(kind == "mini"), slot=SLOTS[kind])
+    b = Boss(Vector2(1200, 1100), act, diff, miniboss=kind in MINIS, slot=SLOTS[kind], variant=MINIS.get(kind, 0))
     surf = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT)) if draw else None
     cam, shake = Vector2(1200, 1100), Vector2(0, 0)
     shots: list = []
@@ -93,6 +94,6 @@ def fight_digest(act: int, kind: str, seed: int, **kw) -> str:
 
 
 def all_digests(**kw) -> Dict[str, str]:
-    """Digest of every scripted fight: 10 acts x (warden, slots 1 and 2, mini) x the seeds."""
+    """Digest of every scripted fight: 10 acts x (warden, slots 1 and 2, both anchors) x the seeds."""
     return {f"{act}/{kind}/{seed}": fight_digest(act, kind, seed, **kw)
             for act in range(10) for kind in KINDS for seed in SEEDS}

@@ -3,7 +3,8 @@
 GOLDEN was recorded with tests/boss_trace.py on main 1916a5f (the pre-054 Boss): every scripted fight hashes the boss
 state, the global RNG state, the phase announces and every shot spawned, frame by frame. TASK-055 changes the phase
 table on layers 4-10 (and layer 9's verdict pick), so exactly those wardens' fights have new digests in GOLDEN_055;
-acts 0-2 and every mini-boss fight still hash as on main.
+acts 0-2 and every mini-boss fight still hash as on main. TASK-057 makes each mini-boss a named anchor (roster name,
+TASK-045 radius); GOLDEN_057 holds those fights ("mini" = the layer's first anchor, the new "mini_b" = its second).
 """
 from __future__ import annotations
 
@@ -273,6 +274,91 @@ GOLDEN_055 = {
 }
 CHANGED_BY_055 = {f"{act}/{kind}/{seed}" for act in range(3, 10) for kind in ("warden", "slot1", "slot2") for seed in SEEDS}
 
+# Recorded on task-057-mini-bosses f94d392: named anchors (name + TASK-045 radius); mini_b is new (second anchor).
+GOLDEN_057 = {
+    "0/mini/3": "9e03295f980cc26b4bd5e684571e51802d50d79c",
+    "0/mini/17": "c638ed8e65e182f175b68f047ac1ad7669487066",
+    "0/mini/202": "ba5ac726c73cfb17e9947d53aa2edfffc4b724ba",
+    "0/mini/4711": "ae17ae35084ac0d9d63b60de1ab533694ad54d13",
+    "1/mini/3": "a38c8ad4eeca22f1f2cbba811ec55a31671432be",
+    "1/mini/17": "a715bbce320958b30e14388bed79786dc13927cf",
+    "1/mini/202": "d97e8886f3727207ee43acf1f597d854fdf03a3a",
+    "1/mini/4711": "69c8dff85337fc7c613deea722ba81cd5c00d7ee",
+    "2/mini/3": "4b3ed030a858eceb4136ecc7b861a98475b2a91d",
+    "2/mini/17": "78b7c73e8bd2e43bf3607795d6093c8db335fc3c",
+    "2/mini/202": "d143cf8a2ea5a37147bde67978ee5996de8d8537",
+    "2/mini/4711": "6ee2ceb3ba8254f7fba60d53f41ab4ec322b47f5",
+    "3/mini/3": "df0915e958a16b523f494dffdc1d7282f8e9303c",
+    "3/mini/17": "9a8fe8ab9b1c277c0ea45dc94009310a45bf4e68",
+    "3/mini/202": "0024ff9034b3dd1f296a7cd5ce0b096eb818bc43",
+    "3/mini/4711": "85927b2e149b4f76fbb8cea2a2371d13bc6f248a",
+    "4/mini/3": "331d4d1bfd23c977ab74aa28d6fbb8670040e603",
+    "4/mini/17": "b4bdb44771cb65d314d4e97c7e1b474219387bac",
+    "4/mini/202": "63af4897318dd840af9fc2479f7b51539e4354ed",
+    "4/mini/4711": "92d0b50961157246441003c618d1f4fcbd80582c",
+    "5/mini/3": "6841356a2844f457e236e146dbc5335f3013a978",
+    "5/mini/17": "2ebcd490833ecb1fa01a7e4405ed66a09f125fa3",
+    "5/mini/202": "2b33aaedb44a32099dce310e14c0ae9b8147ac10",
+    "5/mini/4711": "e3fb3ba09d88ead2648e875d07386c62bb392536",
+    "6/mini/3": "76a25979c852a69370235b00945f84a89bbc699e",
+    "6/mini/17": "1dd841f5efe4f48b00f032e448e7b15023b34a49",
+    "6/mini/202": "c49de16edd7a4d145c0db3b2d3aab64632f0cabc",
+    "6/mini/4711": "0878e0c72a1bdcc5efcb631cd6910d849fe5b205",
+    "7/mini/3": "362dcb27621e5ea86f54774bf83dbce11b48a9e2",
+    "7/mini/17": "46644b63e753583b2db1a42b3ee626b1c8f7a900",
+    "7/mini/202": "ddd91e78dfa6c6279a4107ef49b20188f143bfde",
+    "7/mini/4711": "c21c6c3771853a0589a1b0c27d3e294070b3d23c",
+    "8/mini/3": "8372841babd8d5b81a1329b34155a35512127daf",
+    "8/mini/17": "20bd23df2c381272f805f36f3ea8b881974030a9",
+    "8/mini/202": "45be928d57da31e6f80bcf61589fa3c8977ef47d",
+    "8/mini/4711": "67b924ecabea2eca3b3330c7a35307009e13da79",
+    "9/mini/3": "b2afd9b77208dd067fa19a1a83dccc5c326b7e4d",
+    "9/mini/17": "6d2eb6f22b24f6b9719eb24fe07fb53987940266",
+    "9/mini/202": "862a89fb339eb5167d95e396ad449592dc1816a2",
+    "9/mini/4711": "acbcd85cf3cb266e631753b83a53b7fe2f98424b",
+    "0/mini_b/3": "bf3902a1968429ee39683beb4c864fe7289a63ab",
+    "0/mini_b/17": "1e596b95a59fca6ea5f1625b1eb6930abd9b147d",
+    "0/mini_b/202": "6b69ab572c4eae1f3c1768b3989847f11d3971a4",
+    "0/mini_b/4711": "3d8463e150a98ea81792c9c55a6a8c98e6c8cd8e",
+    "1/mini_b/3": "2bebca433cdedc3d90c7b669464c0e5587d2ae65",
+    "1/mini_b/17": "1436d0747cd81a2f9f2ec591995ba49b817db3dd",
+    "1/mini_b/202": "27560acc7077603cf22e104da738bb72f9539f1b",
+    "1/mini_b/4711": "e7c06965837983b69eb30e84de53c31728f5e350",
+    "2/mini_b/3": "7ec7b0fc34f4c1791943f61c22a04078fc24c066",
+    "2/mini_b/17": "5e218c5cf38c30da9968de13fd115e9ab243f06e",
+    "2/mini_b/202": "58a222ebbb1dbfd9f6eca18d051042ba683a9302",
+    "2/mini_b/4711": "a74e35955816be5cdfbf435a424a39eec3971d60",
+    "3/mini_b/3": "f72b4db7ecab4f811cbb0e4a571f2ab4d05678fa",
+    "3/mini_b/17": "23fe0e77c438cbd852b38cfcb9296d7c16cf095f",
+    "3/mini_b/202": "d0645c399662698606a095ac0077d0af44485b88",
+    "3/mini_b/4711": "d59211a850093e8ed357fa51c88708c73fa5042e",
+    "4/mini_b/3": "8c1373d9dbe92562f357e8ea6d508fda2bd3846e",
+    "4/mini_b/17": "84735053e9b518b596a5a7afb408aa42bfc23443",
+    "4/mini_b/202": "dcdff7e33a6fe60f13be46b4ecf023f0b545b0cb",
+    "4/mini_b/4711": "ced7ad264d30ceeabcd4419d4b4158968d4bf5b5",
+    "5/mini_b/3": "7b11dd396960804e8ff985c5ba9c341d3473e1b2",
+    "5/mini_b/17": "77413aea3e179ecf4e943aaae4406a2b85060f06",
+    "5/mini_b/202": "d1360db8441bf1a943beb911315375bb41a74900",
+    "5/mini_b/4711": "607588e630f636b10d7ae408e2d0fc60c88e0d3d",
+    "6/mini_b/3": "d4a0c004a22e08836bb130eafef7d56fa9d9d18c",
+    "6/mini_b/17": "df0084e5fc8119839b5f9f554c31ba07e330b836",
+    "6/mini_b/202": "493034acf94e0a64b7506add5af0fbd9073d97a0",
+    "6/mini_b/4711": "e7d4c427689d070fbe86b8f9ed041f55b15d31ce",
+    "7/mini_b/3": "57b53264732b5db5eac27c9bcfd621464829ebda",
+    "7/mini_b/17": "1de5486da59fc4d4429e554a3f0d1b8084a9b351",
+    "7/mini_b/202": "474ca03a6583e7edab5c820aa974660046d53f17",
+    "7/mini_b/4711": "fe1c11cc0562d0cca4ccd7442f1cb34dd8393c64",
+    "8/mini_b/3": "41e6b42f3171af46e226ecf4aa0634d648e0848d",
+    "8/mini_b/17": "3095daa732200f08017499d6b2003fe2c139fd75",
+    "8/mini_b/202": "928e0bfc08269df863b7ec0de5b445e82d08050e",
+    "8/mini_b/4711": "7c93afe54e0195630958f7404b798316b2eb53da",
+    "9/mini_b/3": "31071e2bde2a9a937de5878a6e520083c1faf5e8",
+    "9/mini_b/17": "ac4a79d2ee68bb695ccdf36b08a49b079b0338ce",
+    "9/mini_b/202": "c72affa1bc639c8ec2cd1da27997043199313351",
+    "9/mini_b/4711": "84883ea92b6093e2c2351e9be3b00e67d4d9e0a6",
+}
+CHANGED_BY_057 = {f"{act}/{kind}/{seed}" for act in range(10) for kind in ("mini", "mini_b") for seed in SEEDS}
+
 ARCHIVE_IDS = [f"warden_{i}" for i in range(10)]
 ROSTER_PHASES = {act: ((2, 0.5),) for act in range(3)}                        # layers 1-3: 2 phases
 ROSTER_PHASES.update({act: ((2, 0.5), (3, 0.25)) for act in range(3, 8)})    # layers 4-8: 3 phases
@@ -282,12 +368,12 @@ ROSTER_PHASES[9] = ((2, 0.66), (3, 0.25))                                     # 
 
 def _expected(key: str) -> str:
     """The digest a scripted fight must have on this branch."""
-    return GOLDEN_055.get(key, GOLDEN[key])
+    return GOLDEN_057.get(key) or GOLDEN_055.get(key) or GOLDEN[key]
 
 
 @pytest.mark.parametrize("act", range(10))
 def test_scripted_fights_match_the_recorded_digests(act):
-    """Every scripted fight hashes as recorded: main's digest, or 055's where the phase table changed."""
+    """Every scripted fight hashes as recorded: main's digest, 055's where the phase table changed, 057's for anchors."""
     for kind in KINDS:
         for seed in SEEDS:
             key = f"{act}/{kind}/{seed}"
@@ -298,6 +384,8 @@ def test_only_the_changed_phase_tables_changed_digests():
     """055 changed exactly the layer 4-10 warden fights (all slots); layers 1-3 and all mini-bosses are main's."""
     assert set(GOLDEN_055) == CHANGED_BY_055
     assert all(GOLDEN_055[k] != GOLDEN[k] for k in GOLDEN_055)
+    assert set(GOLDEN_057) == CHANGED_BY_057 and not set(GOLDEN_057) & set(GOLDEN_055)        # 057: anchors only
+    assert all(GOLDEN_057[k] != GOLDEN[k] for k in GOLDEN_057 if k.split("/")[1] == "mini")
 
 
 def test_trace_sees_a_changed_shot():
@@ -333,7 +421,7 @@ def test_every_key_in_the_data_has_a_kit():
 
 @pytest.mark.parametrize("act", range(10))
 def test_stats_are_the_old_formulas(act):
-    """Radius, HP, damage, speed and XP equal main's formulas for slots 0-1 and the mini-boss."""
+    """Radius, HP, damage, speed and XP equal main's formulas for slots 0-1; anchors keep main's mini HP and cadence."""
     diff = {"hp": 1.5, "damage": 1.2, "speed": 0.9}
     for slot in (0, 1):
         b = Boss(Vector2(500, 500), act, diff, slot=slot)
@@ -341,9 +429,11 @@ def test_stats_are_the_old_formulas(act):
         want = (50 + p * 10, (300 + p * 100) * 1.5, (20 + p * 5) * 1.2, 60 * 0.9)
         assert (b.size, b.max_hp, b.damage, b.speed) == want
         assert b.radius == b.size and b.xp_value == int(b.max_hp) and b.name == get_boss_name(act, slot=slot)
-    m = Boss(Vector2(500, 500), act, diff, miniboss=True)
-    assert (m.size, m.max_hp) == (35 + act * 2, (300 + act * 100) * 1.5 * 0.55)
-    assert (m.shoot_cooldown, m.special_cooldown) == (1.5, 4.0)
+    for variant in (0, 1):
+        m = Boss(Vector2(500, 500), act, diff, miniboss=True, variant=variant)
+        assert (m.size, m.max_hp) == (bosses.anchor_def(act, variant).radius, (300 + act * 100) * 1.5 * 0.55)
+        assert (m.damage, m.speed, m.xp_value) == ((20 + act * 5) * 1.2, 60 * 0.9, int(m.max_hp))
+        assert (m.shoot_cooldown, m.special_cooldown) == (1.5, 4.0)
 
 
 @pytest.mark.parametrize("act", range(10))
