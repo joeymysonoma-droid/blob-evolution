@@ -290,12 +290,12 @@ class Boss:
         key, t, R = self.art_key, self.pulse_time, int(self.size)
         ent = boss_shapes.entity(key)
         self.warm_art()
+        if self.phase != self._art_phase:               # before the cull: an off-screen phase change ages too
+            self._art_prev_phase, self._art_phase, self._art_phase_t0 = self._art_phase, self.phase, t
         w, h = surface.get_size()
         m = 1.9 * R + 60                                # spec 2.1 cull: nothing of the boss (plate included) shows
         if sx < -m or sx > w + m or sy < -m or sy > h + m:
             return
-        if self.phase != self._art_phase:
-            self._art_prev_phase, self._art_phase, self._art_phase_t0 = self._art_phase, self.phase, t
         since = t - self._art_phase_t0
         if config.GFX_READABILITY:
             draw_contact_shadow(surface, sx, sy, self.size)
