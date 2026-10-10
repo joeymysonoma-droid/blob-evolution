@@ -6,8 +6,9 @@ crack highlight alpha 170 -> 110) QA's sweep gives act 4 >= 3.3 on both passes.
 
 "Bright" here: Rec.601 grey >= 2 x the act's LIGHT-tone grey (pygame grayscale, so no numpy). The share is taken over
 the player-sized annulus (r 23-30 px, player R = 20) at every 6 px of the baked ground, worst position reported.
-Acts 2, 3 and 10 (index 9) have designed bright landmarks (glass crystals, lava seams, the lattice) at 7-10 % today and
-still pass QA's >= 3.3 sweep; they are held at their current level until the Visual Designer rules on them.
+Per-act targets (Producer / Visual Designer, Oct 10): acts 0, 1 and 4-8 < 5 %. Acts 2, 3 and 9 have designed bright
+landmarks (glass crystals, lava seams, the lattice); each is capped at its measured worst share (seeds 0/7/145/999 on
+8ccf54c) + 1 point. ANY INCREASE OF THESE CAPS NEEDS VISUAL SIGN-OFF.
 """
 from __future__ import annotations
 
@@ -24,7 +25,8 @@ from blob_evolution.utils.graphics import generate_map_texture
 W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
 R0, R1, STEP = 23, 30, 6
 LIMIT = 0.05
-HELD = {2: 0.13, 3: 0.10, 9: 0.11}          # designed landmarks: current worst (seeds 0/7/145) rounded up, pending VD
+# measured worst share + 1 point; raising any of these needs Visual Designer sign-off
+HELD = {2: 0.0947 + 0.01, 3: 0.0973 + 0.01, 9: 0.1015 + 0.01}
 
 
 def _grey(c) -> float:
