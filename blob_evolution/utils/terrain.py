@@ -597,11 +597,14 @@ def decals_act_3(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
 
 # --- Act 4, The Still Expanse: night ice, cracks, drifts, frost ferns, the frozen lake -----------------------------
 
+DRIFT_FILL_ALPHA = 56                     # BUG-119 (Visual Designer): act 4 snow drift fill 70 -> 56 (a drift beside the player cost 3.24)
+
+
 def _drift_sprite(w: int, h: int, act: int) -> pygame.Surface:
     fill, crest = _ink(act, (112, 140, 168)), _ink(act, (160, 190, 220))
 
     def draw(big: pygame.Surface) -> None:
-        pygame.draw.ellipse(big, (*fill, 70), (2 * SS, 2 * SS, w * SS, h * SS))
+        pygame.draw.ellipse(big, (*fill, DRIFT_FILL_ALPHA), (2 * SS, 2 * SS, w * SS, h * SS))
         pygame.draw.arc(big, (*crest, 80), (2 * SS, 2 * SS, w * SS, h * SS), math.radians(15), math.radians(165), SS)
 
     return make_sprite(w + 4, h + 4, draw, bg=fill)
