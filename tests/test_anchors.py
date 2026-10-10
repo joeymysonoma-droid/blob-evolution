@@ -108,20 +108,58 @@ def test_random_pick_is_per_node_and_stable():
     assert set(got) == {0, 1} and got == [anchor_variant(seed, 2, "3_1", [], pick="random") for seed in range(60)]
 
 
-def test_alternation_follows_map_layers_not_id_spelling():
-    """node_anchor_variant orders a map's mini nodes by (layer, col), so n_10_0 comes after n_8_0."""
+def _walk(ow: OverworldMap, rng: random.Random) -> list:
+    """Play a random path through the map the way the game does (pick an available node, complete it); return the
+    anchor each mini-boss node gets when its encounter loads, in visit order."""
+    got = []
+    while True:
+        nodes = ow.get_available_nodes()
+        if not nodes:
+            return got
+        n = rng.choice(nodes)
+        ow.select_node(n.id)
+        if n.node_type == NodeType.MINIBOSS:
+            got.append(node_anchor_variant(ow, n))
+        ow.complete_current_node()
+
+
+def test_bug_158_anchors_alternate_in_visit_order_along_the_path():
+    """Whatever path the player takes, consecutive mini-bosses of a layer alternate, from the layer's seeded start;
+    any two mini-bosses on one path are both anchors (QA t50: map order gave both only 230/344 times)."""
+    two_plus = 0
     for seed in range(60):
-        ow = OverworldMap(act_index=2, seed=seed)
-        minis = sorted((n for n in ow.nodes.values() if n.node_type == NodeType.MINIBOSS),
-                       key=lambda n: (n.layer, n.col))
-        got = [node_anchor_variant(ow, n) for n in minis]
-        assert all(a != b for a, b in zip(got, got[1:]))
+        for walk in range(3):
+            ow = OverworldMap(act_index=2, seed=seed)
+            got = _walk(ow, random.Random(seed * 10 + walk))
+            assert all(a != b for a, b in zip(got, got[1:])), (seed, walk, got)
+            if got:
+                assert got[0] == anchor_variant(seed, 2, "", rank=0)
+            two_plus += len(got) >= 2
+    assert two_plus >= 30
 
 
-def test_a_saved_and_reloaded_map_picks_the_same_anchors():
-    """The pick reads only fields the save already has (seed, act, node ids, types): the save is unchanged."""
+def test_the_rank_counts_completed_mini_nodes_only():
+    ow = OverworldMap(act_index=4, seed=7)
+    minis = [n for n in ow.nodes.values() if n.node_type == NodeType.MINIBOSS]
+    if len(minis) < 2:
+        pytest.skip("map has fewer than two mini nodes")
+    a, b = minis[:2]
+    first = node_anchor_variant(ow, b)
+    a.completed = True
+    assert node_anchor_variant(ow, b) == 1 - first                      # one mini done -> the other anchor
+    for n in ow.nodes.values():
+        if n.node_type != NodeType.MINIBOSS:
+            n.completed = True
+    assert node_anchor_variant(ow, b) == 1 - first                      # other node types do not count
+
+
+def test_a_map_rebuilt_from_its_dict_picks_the_same_anchors():
+    """The pick reads only OverworldMap.to_dict fields (seed, act, node types, completed flags), so a map rebuilt with
+    from_dict picks the same anchors and no key is added. (The game does not write the map today: a reload starts a new
+    run; this keeps the pick safe if a mid-run save ever stores it.)"""
     for seed in (3, 99, 4242):
         ow = OverworldMap(act_index=5, seed=seed)
+        _walk(ow, random.Random(seed)) if seed == 99 else None          # one map part-played (completed flags set)
         again = OverworldMap.from_dict(ow.to_dict())
         minis = [n for n in ow.nodes.values() if n.node_type == NodeType.MINIBOSS]
         assert [node_anchor_variant(ow, n) for n in minis] == [node_anchor_variant(again, again.nodes[n.id])
@@ -144,3 +182,60 @@ def test_a_mini_boss_node_spawns_its_picked_anchor(make_game):
         assert m.anchor is anchor_def(6, node_anchor_variant(ow, minis[0])) and m.radius == 49
         return
     pytest.fail("no mini-boss node in 8 maps")
+
+
+# --------------------------------------------------------------------------- BUG-159 / BUG-160
+
+ROSTER_CARD_LINES = {
+    "cradle_husk": "A husk of the nursery, still shaped like a hug.",
+    "first_sprout": "The first thing the Rim ever grew. It has not moved since.",
+    "sinking_bloat": "A mercy that swelled until it could not hold itself.",
+    "green_mourner": "It weeps for names no one finished.",
+    "glass_clerk": "It records everything that crosses the glass.",
+    "unfinished_entry": "A Seedling that stopped halfway. It remembers your last step.",
+    "cinder_anvil": "A shape forged to test the next shape.",
+    "ember_runner": "It runs until there is nothing left to burn.",
+    "rime_sentinel": "A guard who agreed to stay.",
+    "drift_sleeper": "It slows you the way sleep does.",
+    "oasis_lure": "The water you were promised.",
+    "dry_maw": "What the mirage hides underneath.",
+    "borrowed_face": "It wears the last shape it saw.",
+    "pollen_sleeper": "A dream that learned to walk.",
+    "quiet_hollow": "Nothing here wants to be remembered. This is how.",
+    "forgotten_shape": "A form you already ended, returned without a name.",
+    "updraft_herald": "It carries the verdict upward.",
+    "verdict_pillar": "A judgment that no longer needs a judge.",
+    "first_split": "The moment one became two.",
+    "last_whole": "The last shape that stayed whole.",
+}
+
+
+def test_every_card_line_matches_the_roster_word_for_word():
+    """BUG-159: roster section 5 card bodies, pinned exactly (a one-word edit fails)."""
+    assert {a.key: a.card_line for a in ANCHORS} == ROSTER_CARD_LINES
+
+
+def test_the_starting_anchor_depends_on_the_layer():
+    """BUG-160: the alternation start is seeded by map seed AND act, so layers of one run do not all start alike."""
+    mixed = sum(len({anchor_variant(seed, act, "", rank=0) for act in range(10)}) == 2 for seed in range(20))
+    assert mixed >= 18
+    assert {anchor_variant(seed, act, "", rank=0) for seed in range(20) for act in range(10)} == {0, 1}
+
+
+@pytest.mark.parametrize("variant", [0, 1])
+def test_the_game_spawns_the_picked_anchor_for_both_variants(make_game, variant):
+    """BUG-159: Game._load_encounter spawns the anchor node_anchor_variant names, for maps where it is 0 and where it is 1
+    (one map only hid a game that ignored or inverted the variant)."""
+    g = make_game()
+    g._start_new_run()
+    for seed in range(40):
+        ow = OverworldMap(act_index=6, seed=seed)
+        minis = [n for n in ow.nodes.values() if n.node_type == NodeType.MINIBOSS]
+        if not minis or node_anchor_variant(ow, minis[0]) != variant:
+            continue
+        g.overworld = ow
+        g._load_encounter(minis[0])
+        (m,) = [b for b in g.bosses if b.is_miniboss]
+        assert m.anchor is anchor_def(6, variant) and m.name == anchor_def(6, variant).name
+        return
+    pytest.fail(f"no act 6 map in 40 seeds whose first mini node picks variant {variant}")
