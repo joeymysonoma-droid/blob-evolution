@@ -967,6 +967,23 @@ def _crop(cv):
     return (cv.surf.subsurface(bb).copy(), bb.x - cv.h, bb.y - cv.h)
 
 
+# BUG-163 (Visual Designer): these five anchors' shapes do not cover their round hitbox, so a "hit body" disc at exactly
+# the hit radius (R) is baked into the back layer under the shape: body colour at alpha 70, a 2 px edge in the rim colour
+# at alpha 170 (>= 3:1 on the layer's light ground; raise in steps of 20 if a palette ever drops below). The shape draws
+# on top unchanged; the disc is part of the back sprite, so the BUG-162 flash copy and the warm-up include it. Their
+# recipes draw nothing else in the back layer; a decoy (12-dash rim) skips it.
+HIT_BODY = ("first_split", "drift_sleeper", "verdict_pillar", "updraft_herald", "cinder_anvil")
+HIT_BODY_FILL_ALPHA = 70
+HIT_BODY_EDGE_ALPHA = 170
+HIT_BODY_EDGE_W = 2
+
+
+def _hit_body(bk, R, pl):
+    B, _C, K = pl
+    bk.circ_px((*B, HIT_BODY_FILL_ALPHA), 0, 0, R)
+    bk.circ_px((*K, HIT_BODY_EDGE_ALPHA), 0, 0, R, HIT_BODY_EDGE_W)
+
+
 def _get_layers(key, phase, R, var=0, step=0):
     """-> (back, front), each None or (cropped sprite, ox, oy) with the offset of its top-left from the boss centre."""
     d = _ENT[key]
@@ -977,6 +994,8 @@ def _get_layers(key, phase, R, var=0, step=0):
     kf = (key, phase, R, "f") + ((var, step) if _is_dyn(key, "front") else ())
     if kb not in _layers or kf not in _layers:
         bk, fr = Cv(R, d["mini"]), Cv(R, d["mini"])
+        if key in HIT_BODY:
+            _hit_body(bk, R, pal(key, phase))
         RECIPES[key](bk, fr, phase, var, step, R, pal(key, phase))
         for k_, cv in ((kb, bk), (kf, fr)):
             if k_ not in _layers:
@@ -1162,6 +1181,8 @@ def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=Fa
     if decoy:
         ox = int(round(math.sin(TAU * 0.7 * t)))
         rim = "decoy"
+        if key in HIT_BODY:                            # BUG-163: decoys keep their 12-dash rim only (their back is the disc)
+            back = None
     elif shadow:
         _graphics().draw_contact_shadow(dst, sx, sy, R)
     if old is not None and old[0] is not None:
