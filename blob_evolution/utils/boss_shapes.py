@@ -1102,17 +1102,41 @@ def pulse_for(t: float) -> float:
     return round((-0.03 * (1.0 + math.sin(3.0 * t))) / 0.02) * 0.02
 
 
-FLASH_LIFT = 150                                       # BUG-162: RGB added to a non-blob sprite's flash copy (alpha kept)
+FLASH_TO_WHITE = 0.55                                  # BUG-176 (VD): a non-blob flash copy is its art lerped 55 % to white ...
+FLASH_OUTLINE = 3                                      # ... inside a 3 px white outline (alpha 255) dilated from its alpha mask
+FLASH_PAD = FLASH_OUTLINE                              # the copy is this much bigger on every side (draw offsets - FLASH_PAD)
+_DILATE = None                                         # the 7 x 7 disc the alpha mask is dilated with (built on first use)
 _tints: Dict[int, pygame.Surface] = {}                 # id(sprite) -> its flash copy (built at warm-up, never per frame)
 _tint_src: Dict[int, pygame.Surface] = {}              # keeps the source alive so its id is never reused
 
 
+def _flash_copy(spr: pygame.Surface) -> pygame.Surface:
+    """BUG-176: spr's art lerped FLASH_TO_WHITE toward white (alpha kept), on a white FLASH_OUTLINE px outline made by
+    dilating its alpha mask; FLASH_PAD px bigger on every side."""
+    global _DILATE
+    if _DILATE is None:
+        o = FLASH_OUTLINE
+        _DILATE = pygame.mask.Mask((2 * o + 1, 2 * o + 1))
+        for y in range(2 * o + 1):                     # a symmetric disc: every bit within o px of the centre
+            for x in range(2 * o + 1):
+                if (x - o) ** 2 + (y - o) ** 2 <= o * o + o * 0.5:
+                    _DILATE.set_at((x, y), 1)
+    art = spr.copy()
+    keep = round(255 * (1 - FLASH_TO_WHITE))
+    art.fill((keep, keep, keep), special_flags=pygame.BLEND_RGB_MULT)          # rgb * 0.45 ...
+    lift = 255 - keep
+    art.fill((lift, lift, lift), special_flags=pygame.BLEND_RGB_ADD)           # ... + 255 * 0.55
+    grown = pygame.mask.from_surface(spr, 1).convolve(_DILATE)                 # (w + 6) x (h + 6), the art at (3, 3)
+    out = grown.to_surface(setcolor=(255, 255, 255, 255), unsetcolor=(0, 0, 0, 0))
+    out.blit(art, (FLASH_PAD, FLASH_PAD))
+    return out
+
+
 def _tinted(spr: pygame.Surface) -> pygame.Surface:
-    """BUG-162: the cached white-lifted copy of a layer / spin sprite, for the hit flash of art with no blob body."""
+    """BUG-162 / 176: the cached flash copy of a layer / spin sprite, for art with no blob body (built at warm-up)."""
     t_ = _tints.get(id(spr))
     if t_ is None:
-        t_ = spr.copy()
-        t_.fill((FLASH_LIFT, FLASH_LIFT, FLASH_LIFT), special_flags=pygame.BLEND_RGB_ADD)
+        t_ = _flash_copy(spr)
         _tints[id(spr)], _tint_src[id(spr)] = t_, spr
     return t_
 
@@ -1156,9 +1180,9 @@ def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=Fa
     B, C, K = pal(key, phase)
     ox = oy = 0
     if flash and not blob:                             # BUG-162: non-blob art flashes through its cached lifted copies
-        back = back and (_tinted(back[0]), back[1], back[2])
-        front = front and (_tinted(front[0]), front[1], front[2])
-        parts = tuple((_tinted(spr), px, py) for spr, px, py in parts)
+        back = back and (_tinted(back[0]), back[1] - FLASH_PAD, back[2] - FLASH_PAD)
+        front = front and (_tinted(front[0]), front[1] - FLASH_PAD, front[2] - FLASH_PAD)
+        parts = tuple((_tinted(spr), px - FLASH_PAD, py - FLASH_PAD) for spr, px, py in parts)
     if decoy:
         ox = int(round(math.sin(TAU * 0.7 * t)))
         rim = "decoy"
