@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import math
+import random
 import sys
 from typing import Dict, List
 
@@ -556,3 +557,125 @@ def test_offscreen_boss_draws_nothing():
     b.pos = CAM + Vector2(config.SCREEN_WIDTH // 2 + 1.9 * b.size + 61, 0)
     b.draw(screen, CAM, NO_SHAKE)
     assert pygame.transform.average_color(screen)[:3] == (1, 2, 3)
+
+
+# ---- BUG-162 / 164 / 165 (QA t51): non-blob flash, flash end + re-flash, edge, L8 pull circle -------------------------
+
+NON_BLOB_MINIS = ("cradle_husk", "glass_clerk", "unfinished_entry", "cinder_anvil", "ember_runner", "rime_sentinel",
+                  "drift_sleeper", "oasis_lure", "quiet_hollow", "updraft_herald", "verdict_pillar", "first_split")
+
+
+def _twins(act, mini, var):
+    """Two identical bosses; the first one takes the hits, the second is the unhit reference."""
+    return make_boss(act, mini, var), make_boss(act, mini, var)
+
+
+def _step_pair(a: Boss, b: Boss, f: int, cam=CAM):
+    """Advance both by one frame the way update() advances the draw clocks (pulse_time, hit_flash), without moving
+    them (so the twins stay pixel-identical except for the flash), and draw; -> (frame of a, frame of b)."""
+    out = []
+    for x in (a, b):
+        x.pulse_time += DT
+        if x.hit_flash > 0:
+            x.hit_flash -= DT
+        s = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+        s.fill(GRAY)
+        x.draw(s, cam, NO_SHAKE)
+        out.append(s)
+    return out
+
+
+def _lift(sa: pygame.Surface, sb: pygame.Surface) -> int:
+    """Pixels where the hit boss is clearly brighter than the reference (sum of RGB > 60 higher)."""
+    w, h = sa.get_size()
+    n = 0
+    for y in range(0, h, 2):
+        for x in range(0, w, 2):
+            ca, cb = sa.get_at((x, y)), sb.get_at((x, y))
+            if ca.r + ca.g + ca.b > cb.r + cb.g + cb.b + 60:
+                n += 1
+    return n
+
+
+def test_bug_162_the_twelve_non_blob_minis_are_the_tinted_ones():
+    keys = {make_boss(a, m, v).art_key for a, m, v in ENTITIES if m}
+    assert sorted(k for k in keys if bs.flashes_by_tint(k, 1)) == sorted(NON_BLOB_MINIS)
+
+
+@pytest.mark.parametrize("act,var", [(a, v) for a in range(10) for v in (0, 1)])
+def test_bug_162_every_mini_and_the_split_anchor_flash_when_hit(act, var):
+    a, b = _twins(act, True, var)
+    a.take_damage(0.001)
+    fa, fb = _step_pair(a, b, 0)
+    assert _lift(fa, fb) >= 40, (act, var, a.art_key)
+
+
+def test_bug_162_layer_10_phase_2_split_halves_flash():
+    a, b = _twins(9, False, 0)
+    for x in (a, b):
+        x.take_damage(x.max_hp * 0.5)
+        x.update(DT, Vector2(1000, 900), [])
+        x.pos = Vector2(1200, 1100)
+    assert a.phase == 2 and bs.flashes_by_tint("anchor", 2)
+    for f in range(40):                                   # past the first damage flash and the phase fade
+        _step_pair(a, b, f)
+    a.take_damage(0.001)
+    fa, fb = _step_pair(a, b, 40)
+    assert _lift(fa, fb) >= 40
+
+
+@pytest.mark.parametrize("act,mini,var", [(0, False, 0), (3, True, 0), (8, True, 1)])
+def test_bug_164_a_flash_ends_and_a_later_hit_flashes_again(act, mini, var):
+    """One hit at frame 0: flashing at once, over by 0.25 s (BOSS_FLASH_TIME 0.2) and staying over; a hit at 0.5 s
+    (past the 0.34 s gap) flashes again."""
+    a, b = _twins(act, mini, var)
+    seen = []
+    for f in range(45):
+        if f in (0, 30):
+            a.take_damage(0.001)
+        fa, fb = _step_pair(a, b, f)
+        seen.append(_lift(fa, fb) >= 40)
+    assert seen[0] and seen[30], seen
+    assert not any(seen[15:30]) and not any(seen[45 - 3:]), seen
+
+
+def test_bug_164_a_boss_half_off_the_screen_edge_still_draws_and_flashes():
+    a, b = _twins(4, True, 1)                            # Drift Sleeper (non-blob), centre 0.75 R left of the screen
+    R = a.size
+    cam = Vector2(a.pos.x + config.SCREEN_WIDTH // 2 + 0.75 * R, a.pos.y)
+    fa0, fb0 = _step_pair(a, b, 0, cam)
+    blank = pygame.Surface(fb0.get_size())
+    blank.fill(GRAY)
+    assert _lift(fb0, blank) + _lift(blank, fb0) > 0         # the visible part is drawn (a 0.5 R cull would drop it)
+    a.take_damage(0.001)
+    fa, fb = _step_pair(a, b, 1, cam)
+    assert _lift(fa, fb) > 0
+
+
+def test_bug_165_the_layer_8_pull_circle_shows_past_the_body_cull_margin():
+    b = make_boss(7, False, 0)
+    R = b.size
+    b.pull_pulse = 1.0                                     # circle radius 2.5 R
+    screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    screen.fill((1, 2, 3))
+    off = 1.9 * R + 60 + 5                                 # body culled: centre beyond the 1.9 R + 60 margin
+    assert 2.5 * R > off
+    cam = Vector2(b.pos.x + config.SCREEN_WIDTH // 2 + off, b.pos.y)
+    b.draw(screen, cam, NO_SHAKE)
+    hits = sum(1 for y in range(config.SCREEN_HEIGHT) for x in range(int(2.5 * R - off) + 2)
+               if tuple(screen.get_at((x, y)))[:3] == (90, 60, 140))
+    assert hits > 0
+
+
+def test_bug_162_flash_copies_are_built_at_warm_up_and_counted_in_the_cache():
+    b = make_boss(8, True, 1)                             # Verdict Pillar
+    b.warm_art()
+    n = len(bs._tints)
+    assert n > 0 and bs.cache_bytes()["flash_tints"] > 0
+    screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    for f in range(30):
+        if f % 3 == 0:
+            b.take_damage(0.001)
+        b.update(DT, Vector2(1000, 900), [])
+        b.draw(screen, CAM, NO_SHAKE)
+    assert len(bs._tints) == n
