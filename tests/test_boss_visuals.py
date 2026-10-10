@@ -767,12 +767,13 @@ def _disc_mask(r):
 NON_BLOB_MINIS = [k for k in bs.MINIS if bs.flashes_by_tint(k, 1)]
 
 
-# At the specified 55 % lerp two light-art minis fall short of the 60 gate (Rime Sentinel 55.4, First Split 58.8; a 65 %
-# lerp would lift both past 60): reported to the Visual Designer. strict: the marks must go when they pass.
-_FLASH_SHORT = {"rime_sentinel"} | (set() if hasattr(bs, "HIT_BODY") else {"first_split"})   # 058b's disc: First Split 60.7
+# At 55 % Rime Sentinel (55.4) and First Split (58.8) fell short of the 60 gate. VD: Rime Sentinel gets a 65 % override
+# (config.FLASH_LERP_OVERRIDE); First Split stays at 55 % and passes (60.7) with 058b's hit-body disc, so its mark is
+# expected only without the disc (strict: with the disc it must pass).
+_FLASH_SHORT = set() if hasattr(bs, "HIT_BODY") else {"first_split"}   # 058b's disc lifts First Split to 60.7
 
 
-@pytest.mark.parametrize("key", [pytest.param(k, marks=pytest.mark.xfail(strict=True, reason="BUG-176: < 60 at 55 %, VD"))
+@pytest.mark.parametrize("key", [pytest.param(k, marks=pytest.mark.xfail(strict=True, reason="BUG-176: First Split 58.8 < 60 without 058b's disc"))
                                  if k in _FLASH_SHORT else k for k in NON_BLOB_MINIS])
 def test_bug_176_flash_changes_the_art_and_ring_by_60_and_the_outline_is_3_to_1(key):
     change, cr, ring = flash_metrics(key)
@@ -797,6 +798,13 @@ def test_bug_176_the_flash_copy_is_the_art_lerped_55_percent_to_white_on_a_3_px_
     assert tuple(t.get_at((3 + 5 - 3, 3 + 9))) == (255, 255, 255, 255)        # 3 px left of the art: outline
     assert t.get_at((3 + 5 - 4, 3 + 9))[3] == 0                                # 4 px: nothing
     assert t.get_at((0, 0))[3] == 0
+
+
+def test_bug_176_only_rime_sentinel_overrides_the_55_percent_lerp():
+    assert config.FLASH_LERP_OVERRIDE == {"rime_sentinel": 0.65}
+    assert all(k in bs.MINIS for k in config.FLASH_LERP_OVERRIDE)
+    assert bs.flash_lerp("rime_sentinel") == 0.65 and all(bs.flash_lerp(k) == 0.55 for k in NON_BLOB_MINIS
+                                                            if k != "rime_sentinel")
 
 
 def test_bug_176_the_flash_gap_is_still_0_34_s():
