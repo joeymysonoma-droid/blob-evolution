@@ -261,7 +261,8 @@ def test_set_alpha_works_on_per_pixel_alpha_surfaces_in_this_pygame():
             dst.fill((0, 100, 0))
             dst.blit(src, (0, 0))
             full.append(dst.get_at((3, 3))[:3])
-        assert full[0] == (78, 60, 0)                       # 100/255 of red over green
+        assert all(abs(g - w) <= 1 for g, w in zip(full[0], (78, 60, 0)))      # 100/255 of red over green (+-1: BUG-117,
+        #                                                                         blitters may round the blend either way)
         assert full[1][0] < full[0][0] and full[1][1] > full[0][1]       # half as strong
         assert full[2] == (0, 100, 0)                       # fully transparent
 

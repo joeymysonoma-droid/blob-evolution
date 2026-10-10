@@ -357,10 +357,37 @@ ACTS_0_4_PINNED = {
 }
 
 
+# BUG-117: the same pins for pygame-ce's GENERIC smoothscale backend (the one non-x86 machines use; SSE2 and MMX give the
+# digests above). Taken at the same commits (dd4bccd, act 2 at 050ad5a) with set_smoothscale_backend("GENERIC"); at those
+# commits SSE2 reproduced ACTS_0_4_PINNED exactly, so both tables pin the same 038-tip textures.
+ACTS_0_4_PINNED_GENERIC = {
+    0: ("0c11e40a71b9d526", "6913b43c22536ca5"),
+    1: ("4c5940a07e15512b", "c1c793aafd402973"),
+    2: ("ce2acd5b2c0fb1bf", "cee61ec92976ad7b"),
+    3: ("2e3cb86c153aa32e", "f1c39bdddc647fdf"),
+    4: ("8aa8468f5744bb8c", "7d7860d1b80b1416"),
+}
+PINS_BY_BACKEND = {"SSE2": ACTS_0_4_PINNED, "MMX": ACTS_0_4_PINNED, "GENERIC": ACTS_0_4_PINNED_GENERIC}
+
+
+@pytest.fixture
+def smoothscale_backend(request):
+    """Run under the requested smoothscale backend (skip where the CPU lacks it), then restore the default."""
+    before = pygame.transform.get_smoothscale_backend()
+    try:
+        pygame.transform.set_smoothscale_backend(request.param)
+    except ValueError:
+        pytest.skip(f"smoothscale backend {request.param} not available here")
+    yield request.param
+    pygame.transform.set_smoothscale_backend(before)
+
+
+@pytest.mark.parametrize("smoothscale_backend", ["GENERIC", "SSE2"], indirect=True)
 @pytest.mark.parametrize("act", sorted(ACTS_0_4_PINNED))
-def test_acts_0_to_4_ground_is_pixel_identical_to_the_038_tip(act):
-    """TASK-039 only adds acts 5-9: the acts 0-4 textures of a seed must not move by a single pixel."""
-    assert (_digest(act, 7)[:16], _digest(act, 145)[:16]) == ACTS_0_4_PINNED[act]
+def test_acts_0_to_4_ground_is_pixel_identical_to_the_038_tip(act, smoothscale_backend):
+    """TASK-039 only adds acts 5-9: the acts 0-4 textures of a seed must not move by a single pixel (on every backend)."""
+    pins = PINS_BY_BACKEND[smoothscale_backend]
+    assert (_digest(act, 7)[:16], _digest(act, 145)[:16]) == pins[act]
 
 
 # --- 38 acceptance: decals must not hide gameplay-critical visuals (contrast with everything on) -------------------
