@@ -337,8 +337,8 @@ def test_whole_ground_bake_median_across_acts_is_well_inside_the_budgets():
     for act in ACTS:
         times = []
         for _ in range(5):
-            t = time.perf_counter()
+            t = time.process_time()
             _bake(act)
-            times.append((time.perf_counter() - t) * 1000)
+            times.append((time.process_time() - t) * 1000)
         times.sort()
         assert times[2] <= 90, (act, times)

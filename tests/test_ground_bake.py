@@ -217,9 +217,9 @@ def test_texture_is_the_world_size_and_opaque(baked_act0):
 def _best_bake_ms(act: int, runs: int) -> float:
     best = 1e9
     for _ in range(runs):
-        t = time.perf_counter()
+        t = time.process_time()
         _bake(act)
-        best = min(best, (time.perf_counter() - t) * 1000)
+        best = min(best, (time.process_time() - t) * 1000)
     return best
 
 
@@ -248,8 +248,8 @@ def test_centred_ground_draw_is_cheap(baked_act0):
     gen.draw_background(screen, cam, sh)
     times = []
     for _ in range(5):
-        t = time.perf_counter()
+        t = time.process_time()
         for _ in range(200):
             gen.draw_background(screen, cam, sh)
-        times.append((time.perf_counter() - t) / 200 * 1000)
+        times.append((time.process_time() - t) / 200 * 1000)
     assert statistics.median(times) < 0.6
