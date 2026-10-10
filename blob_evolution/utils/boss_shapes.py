@@ -984,6 +984,24 @@ def _hit_body(bk, R, pl):
     bk.circ_px((*K, HIT_BODY_EDGE_ALPHA), 0, 0, R, HIT_BODY_EDGE_W)
 
 
+# BUG-176 (VD): in the hit flash the disc is its own baked copy (it replaces the back layer, which for these five holds
+# only the disc): fill 55 % toward white at alpha 130 (was 70), a white 2 px edge. Independent of how the shape's flash
+# copy is made (the BUG-162 lift or BUG-176's lerp + outline), so this works with or without 058's BUG-176 commit.
+HIT_BODY_FLASH_FILL_ALPHA = 130
+HIT_BODY_FLASH_TO_WHITE = 0.55
+_hb_flash: Dict[tuple, tuple] = {}                     # (key, phase, R) -> (sprite, ox, oy), baked with the layers
+
+
+def _hit_body_flash(key, phase, R, pl):
+    B = pl[0]
+    w = HIT_BODY_FLASH_TO_WHITE
+    fill = tuple(int(round(c + (255 - c) * w)) for c in B)
+    cv = Cv(R, True)
+    cv.circ_px((*fill, HIT_BODY_FLASH_FILL_ALPHA), 0, 0, R)
+    cv.circ_px((255, 255, 255, 255), 0, 0, R, HIT_BODY_EDGE_W)
+    return _crop(cv)
+
+
 def _get_layers(key, phase, R, var=0, step=0):
     """-> (back, front), each None or (cropped sprite, ox, oy) with the offset of its top-left from the boss centre."""
     d = _ENT[key]
@@ -996,6 +1014,7 @@ def _get_layers(key, phase, R, var=0, step=0):
         bk, fr = Cv(R, d["mini"]), Cv(R, d["mini"])
         if key in HIT_BODY:
             _hit_body(bk, R, pal(key, phase))
+            _hb_flash[(key, phase, R)] = _hit_body_flash(key, phase, R, pal(key, phase))
         RECIPES[key](bk, fr, phase, var, step, R, pal(key, phase))
         for k_, cv in ((kb, bk), (kf, fr)):
             if k_ not in _layers:
@@ -1185,6 +1204,8 @@ def draw_boss(dst, key, phase, sx, sy, R, t, aim, *, var=0, pulse=None, flash=Fa
             back = None
     elif shadow:
         _graphics().draw_contact_shadow(dst, sx, sy, R)
+    if flash and not decoy and key in HIT_BODY:        # BUG-176: the flash disc (fill 130, white edge) for the back layer
+        back = _hb_flash.get((key, min(max(1, phase), d["phases"]), R), back)
     if old is not None and old[0] is not None:
         old[0][0].set_alpha(a_old)
         dst.blit(old[0][0], (sx + old[0][1] + ox, sy + old[0][2] + oy))
@@ -1255,7 +1276,7 @@ def warm(key: str, R: Optional[int] = None, all_steps: bool = True):
 
 
 def clear():
-    for c in (_layers, _pieces, _comp, _rims, _kit, _tints, _tint_src):
+    for c in (_layers, _pieces, _comp, _rims, _kit, _tints, _tint_src, _hb_flash):
         c.clear()
     global _scratch
     _scratch = None
@@ -1278,7 +1299,7 @@ def _bytes(c):
 def cache_bytes():
     return {"layers": _bytes(_layers), "pieces": _bytes(_pieces), "composites": _bytes(_comp),
             "kit": _bytes(_kit), "masks": _bytes(_masks), "plates": _bytes(_plates),
-            "flash_tints": _bytes(_tints)}
+            "flash_tints": _bytes(_tints), "hit_body_flash": _bytes(_hb_flash)}
 
 
 # =====================================================================  shared kit

@@ -801,3 +801,35 @@ def test_bug_163_a_decoy_keeps_its_12_dash_rim_and_no_disc():
         ring = [tuple(s.get_at((n // 2 + round(math.cos(a) * (R - 3)), n // 2 + round(math.sin(a) * (R - 3)))))[:3]
                 for a in (i * math.tau / 72 for i in range(72))]
         assert not any(px == _over(K, GRAY, bs.HIT_BODY_EDGE_ALPHA) for px in ring), key
+
+
+@pytest.mark.parametrize("key", ["first_split", "drift_sleeper", "verdict_pillar", "updraft_herald", "cinder_anvil"])
+def test_bug_176_the_flash_disc_has_fill_alpha_130_and_a_white_edge(key):
+    """The hit flash swaps the disc for its baked flash copy: fill 55 % to white at alpha 130, a white 2 px edge.
+    Works whichever way the shape's own flash copy is made (058's BUG-162 lift or BUG-176 lerp + outline)."""
+    b = _anchor(key)
+    R = int(b.size)
+    bs.bake(key, 1, R)
+    spr, ox, oy = bs._hb_flash[(key, 1, R)]
+    B = bs.pal(key, 1)[0]
+    h = -ox
+    fill = tuple(int(round(c + (255 - c) * 0.55)) for c in B)
+    assert tuple(spr.get_at((h + R // 2, h + R // 2))) == (*fill, bs.HIT_BODY_FLASH_FILL_ALPHA) == (*fill, 130)
+    edge = [tuple(spr.get_at((round(h + math.cos(a) * (R - 1)), round(h + math.sin(a) * (R - 1)))))
+            for a in (i * math.tau / 36 for i in range(36))]
+    assert sum(px == (255, 255, 255, 255) for px in edge) >= 30
+    n = 4 * R
+    s = pygame.Surface((n, n))
+    G = bs.GROUND[b.act_index]
+    front = bs.bake(key, 1, R, step=0)[1]
+    fh = front.get_width() // 2
+    spot = next((round(math.cos(a) * (R - 1)), round(math.sin(a) * (R - 1))) for a in (i * math.tau / 72 for i in range(72))
+                if all(front.get_at((fh + round(math.cos(a) * (R - 1)) + dx, fh + round(math.sin(a) * (R - 1))))[3] == 0
+                       for dx in (-4, 0, 4)))
+    s.fill(G)
+    bs.draw_boss(s, key, 1, n // 2, n // 2, R, 0.0, 0.0, glow=False, pulse=0.0, flash=True)
+    assert tuple(s.get_at((n // 2 + spot[0], n // 2 + spot[1])))[:3] == (255, 255, 255), key
+    s.fill(G)
+    bs.draw_boss(s, key, 1, n // 2, n // 2, R, 0.0, 0.0, glow=False, pulse=0.0, flash=False)
+    assert tuple(s.get_at((n // 2 + spot[0], n // 2 + spot[1])))[:3] != (255, 255, 255), key
+    assert bs.cache_bytes()["hit_body_flash"] > 0
