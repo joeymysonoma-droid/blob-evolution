@@ -28,10 +28,11 @@ class Creature:
         CreatureType.SHIELDER: ((90, 130, 200), (160, 200, 255)),
         CreatureType.ORBITER: ((220, 180, 60), (255, 230, 120)),
         CreatureType.BOMBER: ((230, 90, 40), (255, 160, 60)),
-        CreatureType.PHANTOM: ((120, 100, 160), (180, 160, 220)),
+        CreatureType.PHANTOM: config.ENEMY_PHANTOM_COLORS,
         CreatureType.LEECH: config.ENEMY_LEECH_COLORS,
     }
     LEGACY_LEECH_COLORS = ((60, 160, 100), (120, 230, 160))      # used when config.GFX_ENEMY_SHAPES is False
+    LEGACY_PHANTOM_COLORS = ((120, 100, 160), (180, 160, 220))   # likewise (BUG-137 changed the shapes-on body)
 
     def __init__(
         self,
@@ -350,6 +351,8 @@ class Creature:
         colors = self.COLORS.get(self.ctype, ((200, 60, 60), (255, 120, 120)))
         if self.ctype == CreatureType.LEECH:
             colors = self.LEGACY_LEECH_COLORS
+        elif self.ctype == CreatureType.PHANTOM:
+            colors = self.LEGACY_PHANTOM_COLORS
         if self.hit_flash > 0:
             colors = ((255, 255, 255), (255, 200, 200))
         if self.phased:
