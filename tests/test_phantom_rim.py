@@ -114,3 +114,10 @@ def test_drawn_phantom_and_basic_bodies_differ_in_grayscale():
 def test_toggle_off_keeps_the_pre_046_phantom_colour(monkeypatch):
     monkeypatch.setattr(config, "GFX_ENEMY_SHAPES", False)
     assert Creature.LEGACY_PHANTOM_COLORS == ((120, 100, 160), (180, 160, 220))
+
+
+def test_phantom_core_is_the_approved_colour_about_2_6_to_1_against_the_body():
+    """Visual Designer: core (232,222,255), ~2.6:1 vs the (150,130,200) body."""
+    body, core = Creature.COLORS[CT.PHANTOM]
+    assert core == (232, 222, 255)
+    assert 2.5 <= _cr(core, body) <= 2.7
