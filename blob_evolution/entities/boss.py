@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import pygame
 
@@ -12,11 +12,13 @@ from blob_evolution import config
 from blob_evolution.data.bosses import CADENCE, MINI, STATS, BossDef, PhaseDef, mini_phases, warden_def
 from blob_evolution.data.lore import get_boss_name
 from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
+from blob_evolution.entities.boss_spawns import SpawnRequest
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow, draw_health_bar, get_boss_palette
 from blob_evolution.utils.vector2 import Vector2
 
 Color = Tuple[int, int, int]
+HitFilter = Callable[["Boss", Optional[Vector2]], float]     # (boss, unit direction to the hit or None) -> damage mult
 
 
 class Boss:
@@ -75,12 +77,29 @@ class Boss:
         self.basic_shot: BasicShot = BASIC_SHOTS[basic_key]
         self.special: Special = SPECIALS[MINI.special if miniboss else self.defn.special]
         self.mover: Mover = MOVERS[MINI.move if miniboss else self.defn.move]
+        # TASK-056 framework (unused by today's kits): spawn outbox, hit direction, damage-taken multipliers
+        self.spawn_outbox: List[SpawnRequest] = []
+        self.last_hit_dir: Optional[Vector2] = None     # unit vector boss -> where the last directed hit landed
+        self.damage_taken_mult = 1.0
+        self.hit_filter: Optional[HitFilter] = None
         # Visual telegraph rings for special arenas
         self.warning_rings: List[Tuple[float, float, Color]] = []  # radius, life, color
 
-    def take_damage(self, amount: float, ignore_defense: float = 0.0) -> bool:
-        """Take damage. Returns True if killed. Sets phase_announced when crossing thresholds."""
+    def take_damage(self, amount: float, ignore_defense: float = 0.0, hit_from: Optional[Vector2] = None) -> bool:
+        """Take damage (landing at `hit_from` if given). Returns True if killed; starts phases on threshold hits."""
         actual = amount * (1.0 + ignore_defense)
+        hit_dir = None
+        if hit_from is not None:
+            hit_dir = (hit_from - self.pos).normalize()
+            if hit_dir.x or hit_dir.y:
+                self.last_hit_dir = hit_dir
+            else:
+                hit_dir = None                          # a hit at the centre has no direction
+        mult = self.damage_taken_mult
+        if self.hit_filter is not None:
+            mult *= self.hit_filter(self, hit_dir)
+        if mult != 1.0:
+            actual *= mult
         prev_ratio = self.hp / self.max_hp if self.max_hp else 0
         self.hp -= actual
         self.hit_flash = 0.2
@@ -104,6 +123,19 @@ class Boss:
         self.special_cooldown = pd.special_cooldown
         if pd.name:
             self.name = pd.name
+
+    def heal(self, amount: float) -> float:
+        """Heal up to max HP (phases already started stay started); return the HP gained."""
+        before = self.hp
+        self.hp = min(self.max_hp, self.hp + max(0.0, amount))
+        return self.hp - before
+
+    def queue_spawn(self, kind: str, pos: Vector2, *, delay: float = 0.0, lifetime: Optional[float] = None,
+                    **params) -> SpawnRequest:
+        """Ask the game to place a `kind` spawn (see entities/boss_spawns.py); it is owned by this boss."""
+        req = SpawnRequest(kind, pos.copy(), self, delay, lifetime, params)
+        self.spawn_outbox.append(req)
+        return req
 
     def consume_phase_announce(self) -> bool:
         """Return True once when a new phase begins."""
