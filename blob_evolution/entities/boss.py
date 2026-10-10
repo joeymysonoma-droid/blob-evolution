@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import pygame
 
@@ -53,7 +53,7 @@ class Boss:
         self.phase_announced = False
         self.phase_starts: List[Tuple[int, str, float]] = []    # BUG-147: (phase, name, special cd) per start, unannounced
         self.phase_before_starts: Tuple[int, str] = (1, "")   # BUG-169: phase / name before the first unannounced start
-        self.plate_hold: Optional[Tuple[int, str]] = None   # BUG-169: (phase, name) the plate shows until its banner shows
+        self.plate_hold: "Optional[Tuple[int, str]]" = None  # BUG-169: (phase, name) the plate shows until its banner shows
         self.xp_value = int(self.max_hp)
         self.shoot_cooldown = CADENCE.first_basic
         self.special_cooldown = CADENCE.first_special
