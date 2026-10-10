@@ -600,6 +600,7 @@ def test_toggle_off_renders_the_same_frame_as_main(monkeypatch):
 
 def test_toggle_on_renders_a_different_frame_and_off_is_repeatable(monkeypatch):
     monkeypatch.setattr(config, "GFX_ENEMY_SHAPES", False)       # TASK-046: keep this test about the 043 toggle only
+    monkeypatch.setattr(config, "GFX_BOSS_ART", False)           # TASK-058 (QA t51): and not about the boss art
     on = _scene_digest()
     assert on != MAIN_SCENE_DIGEST and on == _scene_digest()
     monkeypatch.setattr(config, "GFX_READABILITY", False)
