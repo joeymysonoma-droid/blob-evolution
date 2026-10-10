@@ -11,7 +11,7 @@ import pygame
 from blob_evolution import config
 from blob_evolution.data.bosses import (CADENCE, MINI, STATS, AnchorDef, BossDef, PhaseDef, anchor_def, mini_phases,
                                          warden_def)
-from blob_evolution.data.lore import get_boss_name
+from blob_evolution.data.lore import get_act_lore, get_boss_name
 from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
 from blob_evolution.entities.boss_spawns import SpawnRequest
 from blob_evolution.entities.projectile import Projectile
@@ -103,6 +103,8 @@ class Boss:
         self._art_phase_t0 = -1e9
         self._flash_t0 = -1e9
         self._flash_seen = 0.0
+        self._plate_src: Optional[str] = None
+        self._plate_name = ""
         # Visual telegraph rings for special arenas
         self.warning_rings: List[Tuple[float, float, Color]] = []  # radius, life, color
 
@@ -282,11 +284,34 @@ class Boss:
             return
         self._art_warm = True
         key = self.art_key
-        names = boss_shapes.ASCENT_NAMES if key == "ascent" and not self.is_miniboss else (self.name,)
+        names = boss_shapes.ASCENT_NAMES if key == "ascent" and not self.is_miniboss else (self.plate_name(),)
         colours = (config.BOSS_NAME_COLOUR,) + tuple(boss_shapes.pal(key, ph)[2] for ph in range(1, 4))
         boss_shapes.warm_entity(key, int(self.size), names, colours, int(self.size * 2.5), 8,
                                 boss_shapes.entity_element_colour(key))
         get_shadow_sprite(self.size)                    # the contact shadow's sprite for this radius
+
+    def plate_name(self) -> str:
+        """Name on the art plate (BOSS-ROSTER.md): the game name, with the lore warden name swapped for the roster's
+        plate title where they differ (Layer 10: "Prime Anchor" -> "Warden of the Divide"). Lore, cards, Archive and
+        the phase announce keep the game name (Narrative owns those)."""
+        if self._plate_src != self.name:                # recomputed only when the name changes (layer 9 phases)
+            self._plate_src, self._plate_name = self.name, self.name
+            roster = None if self.is_miniboss else config.BOSS_PLATE_TITLES.get(self.act_index)
+            warden = get_act_lore(self.act_index).get("warden", "") if roster else ""
+            if roster and warden and self.name.startswith(warden):
+                self._plate_name = roster + self.name[len(warden):]
+        return self._plate_name
+
+    def plate_layout(self, sy: int, name_h: int, pips_h: int) -> Tuple[int, int, int, int]:
+        """(bar width, bar top, name top, pips top): bar top at sy - (1.72 R + 18), the name 4 px above it, the pips
+        4 px above the name; the whole plate is pushed down to stay >= BOSS_PLATE_TOP_MIN px from the screen top."""
+        gap = config.BOSS_PLATE_GAP
+        bar_y = sy - int(config.BOSS_PLATE_LIFT * self.size + 18)
+        name_y = bar_y - gap - name_h
+        pips_y = name_y - gap - pips_h
+        top = pips_y if pips_h else name_y
+        shift = max(0, config.BOSS_PLATE_TOP_MIN - top)
+        return int(self.size * 2.5), bar_y + shift, name_y + shift, pips_y + shift
 
     def _aim_angle(self) -> float:
         """Screen angle toward the player (last update), else along the velocity, else 0."""
@@ -324,25 +349,25 @@ class Boss:
                               fade=min(1.0, since / config.BOSS_PHASE_FADE))
         if since < config.BOSS_PHASE_RING_TIME:
             p = since / config.BOSS_PHASE_RING_TIME
-            boss_shapes.ring_out(surface, sx, sy, R + (boss_shapes.phase_ring_end(R) - R) * p,
-                                 boss_shapes.entity_element_colour(key),
-                                 config.BOSS_PHASE_RING_ALPHA * (1 - p), style="phase")
+            boss_shapes.phase_ring(surface, sx, sy, R, p, boss_shapes.entity_element_colour(key),
+                                   config.GROUND_RAMPS[self.act_index][2], config.BOSS_PHASE_RING_ALPHA)
         for radius, life, col in self.warning_rings:
             boss_shapes.ring_out(surface, sx, sy, radius, col, max(30, int(180 * life)), quant=1)
         if self.act_index == 7 and self.pull_pulse > 0.3:
             pygame.draw.circle(surface, (90, 60, 140), (sx, sy), int(self.size * (1.5 + self.pull_pulse)), 1)
-        bar_w = int(self.size * 2.5)
-        bar_y = sy - int(self.size) - 20
-        ratio = self.hp / self.max_hp if self.max_hp > 0 else 0.0
-        boss_shapes.health_bar(surface, sx - bar_w // 2, bar_y, bar_w, 8, ratio,
-                               tuple(pd.below for pd in self.phase_defs), config.BOSS_BAR_NOTCH)
         colour = config.BOSS_NAME_COLOUR if self.phase == 1 else boss_shapes.pal(key, self.phase)[2]
-        plate = boss_shapes.name_plate(self.name, colour)
-        surface.blit(plate, (sx - plate.get_width() // 2, bar_y - 18))
+        plate = boss_shapes.name_plate(self.plate_name(), colour)
+        pips = None
         if ent["phases"] > 1:
             pips = boss_shapes.phase_pips(ent["phases"], min(self.phase, ent["phases"]),
                                           boss_shapes.entity_element_colour(key))
-            surface.blit(pips, (sx - pips.get_width() // 2, bar_y - 32))
+        bar_w, bar_y, name_y, pips_y = self.plate_layout(sy, plate.get_height(), pips.get_height() if pips else 0)
+        ratio = self.hp / self.max_hp if self.max_hp > 0 else 0.0
+        boss_shapes.health_bar(surface, sx - bar_w // 2, bar_y, bar_w, config.BOSS_BAR_HEIGHT, ratio,
+                               tuple(pd.below for pd in self.phase_defs), config.BOSS_BAR_NOTCH)
+        surface.blit(plate, (sx - plate.get_width() // 2, name_y))
+        if pips is not None:
+            surface.blit(pips, (sx - pips.get_width() // 2, pips_y))
         if self.telegraph > 0:
             ring_r = int(self.size * (1.5 + (0.8 - min(0.8, self.telegraph))))
             pygame.draw.circle(surface, (255, 200, 100), (sx, sy), ring_r, 2)

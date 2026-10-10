@@ -323,3 +323,8 @@ BOSS_PHASE_RING_TIME = 0.8              # s of the one-shot phase ring, R -> 3 R
 BOSS_PHASE_RING_ALPHA = 170
 BOSS_NAME_COLOUR = (230, 210, 180)      # phase 1 plate colour; later phases use the boss rim colour (module rule)
 BOSS_BAR_NOTCH = (255, 255, 255)        # 2 px phase-threshold ticks on the boss health bar (spec 2.6)
+BOSS_BAR_HEIGHT = 8
+BOSS_PLATE_LIFT = 1.72                  # VD r2: bar top at sy - (1.72 R + 18), clear of the art (extents <= 1.7 R)
+BOSS_PLATE_GAP = 4                      # px between bar and name, and name and pips
+BOSS_PLATE_TOP_MIN = 6                  # the plate (pips or name) never starts above this screen y
+BOSS_PLATE_TITLES = {9: "Warden of the Divide"}    # BOSS-ROSTER.md plate / card title where it differs from lore
