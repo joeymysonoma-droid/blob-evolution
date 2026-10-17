@@ -237,3 +237,10 @@ def test_bug_210_the_game_deals_one_hit_and_a_shield_blocks_it(fight):
         b.start_attack("telegraph_strike", g.player.pos.copy(), [], kind="zone", radius=90.0, damage=dmg, warn=0.2)
     _run(g, 0.5)
     assert hits == [13.0] and g.player.hp == hp and not g.player.has_shield
+
+
+def test_bug_211_touching_the_safe_rect_edge_is_a_hit_like_touching_a_zone_edge():
+    safe = Telegraph("safe", (0, 0, 200, 200))
+    assert safe.hits(Vector2(10, 100), 10) and safe.hits(Vector2(0, 100), 0) and safe.hits(Vector2(100, 190), 10)
+    assert not safe.hits(Vector2(11, 100), 10) and not safe.hits(Vector2(100, 100), 10)
+    assert Telegraph("zone", (0, 0, 50)).hits(Vector2(62, 0), 12)          # the zone's tangent, for comparison
