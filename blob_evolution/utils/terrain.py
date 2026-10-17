@@ -1202,6 +1202,7 @@ VEIN_HL_CAP = 0.11         # max share of a window's pixels that may be highligh
 VEIN_HL_DIM_ALPHA = 0.55   # highlight alpha inside every over-cap window
 VEIN_HL_FALLOFF = 8        # px of linear ramp from VEIN_HL_DIM_ALPHA back to full alpha outside them
 _HL_BLOCK = 8
+_HL_TILE = 64
 
 
 def _window_sums(hl: pygame.mask.Mask, x0: int, y0: int, w: int, h: int) -> List[List[int]]:
@@ -1270,6 +1271,151 @@ def _cap_vein_highlights(layer: pygame.Surface, color: Color) -> int:
     return centres
 
 
+def _draw_capped_vein_highlight_full(surface: pygame.Surface, segs: List[Segment], light: Color) -> None:
+    """Reference BUG-205 pass (kept for tests): the highlight on a full-size layer, every 8 x 8 block of window centres
+    box-counted, capped, blitted. _draw_capped_vein_highlight gives the same pixels much faster."""
+    highlight = _layer(*surface.get_size())
+    _stroke(highlight, segs, 1, (*light, 255))
+    _cap_vein_highlights(highlight, light)
+    surface.blit(highlight, (0, 0))
+
+
+def _candidate_blocks(segs: List[Segment], size: Tuple[int, int]) -> List[Tuple[int, int]]:
+    """8 x 8 blocks of window centres whose 39 x 39 box COULD hold more than the cap of highlight, from the segments.
+
+    A 1 px line has at most one pixel per step along its major axis, so a piece of a segment with Chebyshev length L
+    puts at most min(L + 2, 39) pixels in any 39 px box (+2 covers the rounded ends). Each segment is cut into <= 16 px
+    pieces, each piece adds that bound to every block whose box its (1 px padded) bounding box touches; only blocks whose
+    sum is over the cap can hold an over-cap window. An upper bound, so no over-cap window is missed.
+    """
+    w, h = size
+    half, span = VEIN_HL_WINDOW // 2, _HL_BLOCK + VEIN_HL_WINDOW - 1
+    limit = VEIN_HL_CAP * VEIN_HL_WINDOW * VEIN_HL_WINDOW
+    hi = _HL_BLOCK - 1 + half                            # a block's box is [b - half, b + hi] on each axis
+    nbx, nby = (w + _HL_BLOCK - 1) // _HL_BLOCK, (h + _HL_BLOCK - 1) // _HL_BLOCK
+    bound = [0] * (nbx * nby)
+    ceil, floor = math.ceil, math.floor
+    for x0, y0, x1, y1 in segs:
+        ax, ay = round(x0), round(y0)
+        dx, dy = round(x1) - ax, round(y1) - ay
+        n = max(1, -(-max(abs(dx), abs(dy)) // 16))
+        add = min(span, ceil(max(abs(dx), abs(dy)) / n) + 2)
+        for k in range(n):
+            px0, px1 = ax + dx * k / n, ax + dx * (k + 1) / n
+            py0, py1 = ay + dy * k / n, ay + dy * (k + 1) / n
+            if px0 > px1:
+                px0, px1 = px1, px0
+            if py0 > py1:
+                py0, py1 = py1, py0
+            i0, i1 = max(0, ceil((px0 - 1 - hi) / _HL_BLOCK)), min(nbx - 1, floor((px1 + 1 + half) / _HL_BLOCK))
+            for j in range(max(0, ceil((py0 - 1 - hi) / _HL_BLOCK)), min(nby - 1, floor((py1 + 1 + half) / _HL_BLOCK)) + 1):
+                row = j * nbx
+                for i in range(row + i0, row + i1 + 1):
+                    bound[i] += add
+    return [((i % nbx) * _HL_BLOCK, (i // nbx) * _HL_BLOCK) for i, v in enumerate(bound) if v > limit]
+
+
+def _draw_capped_vein_highlight(surface: pygame.Surface, segs: List[Segment], light: Color) -> None:
+    """BUG-205 (option a): act 9's 1 px highlight, at VEIN_HL_DIM_ALPHA inside every over-cap VEIN_HL_WINDOW window and
+    ramping back to full alpha over VEIN_HL_FALLOFF px. Same pixels as _draw_capped_vein_highlight_full, faster:
+
+    - the highlight pixels come from the same strokes on an 8 bit colour-keyed layer (cheap to make a mask from);
+    - only the 8 x 8 blocks of window centres near the segments are looked at (_candidate_blocks, an upper bound), each
+      gets one exact 39 x 39 box count, and only blocks whose box is over the cap get the per-window counts;
+    - the dimmed patches are rebuilt from mask dilations, restoring just those rects from a snapshot.
+    """
+    w, h = surface.get_size()
+    if 0.299 * light[0] + 0.587 * light[1] + 0.114 * light[2] <= VEIN_HL_GREY:
+        _stroke(surface, segs, 1, light)
+        return
+    half, limit = VEIN_HL_WINDOW // 2, VEIN_HL_CAP * VEIN_HL_WINDOW * VEIN_HL_WINDOW
+    span = _HL_BLOCK + VEIN_HL_WINDOW - 1
+    over = pygame.mask.Mask((w, h))
+    found = False
+    blocks = _candidate_blocks(segs, (w, h))
+    if blocks:
+        marks = pygame.Surface((w, h), 0, 8)              # the same 1 px strokes, on a cheap 8 bit layer
+        marks.set_palette([(0, 0, 0), (255, 255, 255)] + [(0, 0, 0)] * 254)
+        marks.set_colorkey(0)
+        _stroke(marks, segs, 1, 1)
+        hl = pygame.mask.Mask((w, h))                    # highlight pixels, only on the tiles a candidate box touches
+        tiles = set()                                    # each candidate box, + the fall-off reach of its windows
+        lo, far = half + VEIN_HL_FALLOFF, span - 1 - half + VEIN_HL_FALLOFF
+        for bx, by in blocks:
+            for ty in range(max(0, by - lo) // _HL_TILE, min(h - 1, by + far) // _HL_TILE + 1):
+                for tx in range(max(0, bx - lo) // _HL_TILE, min(w - 1, bx + far) // _HL_TILE + 1):
+                    tiles.add((tx, ty))
+        loaded: set = set()
+
+        def load(want) -> None:
+            for tx, ty in want - loaded:
+                r = pygame.Rect(tx * _HL_TILE, ty * _HL_TILE, _HL_TILE, _HL_TILE).clip(marks.get_rect())
+                hl.draw(pygame.mask.from_surface(marks.subsurface(r)), r.topleft)
+            loaded.update(want)
+
+        load(tiles)
+        box = pygame.mask.Mask((span, span), fill=True)
+        win = pygame.mask.Mask((VEIN_HL_WINDOW, VEIN_HL_WINDOW), fill=True)
+        rects = []
+        for bx, by in blocks:
+            if hl.overlap_area(box, (bx - half, by - half)) <= limit:
+                continue
+            hit = None
+            for cy in range(by, min(h, by + _HL_BLOCK)):
+                for cx in range(bx, min(w, bx + _HL_BLOCK)):
+                    if hl.overlap_area(win, (cx - half, cy - half)) > limit:
+                        over.draw(win, (cx - half, cy - half))
+                        r = pygame.Rect(cx - half, cy - half, VEIN_HL_WINDOW, VEIN_HL_WINDOW)
+                        hit = r if hit is None else hit.union(r)
+            if hit is not None:
+                rects.append(hit.inflate(2 * VEIN_HL_FALLOFF, 2 * VEIN_HL_FALLOFF).clip(surface.get_rect()))
+        found = bool(rects)
+    if not found:
+        _stroke(surface, segs, 1, light)
+        return
+    merged = True                                        # merge overlapping patches so each pixel is rebuilt once
+    while merged:
+        merged = False
+        out: list = []
+        for r in rects:
+            for k, o in enumerate(out):
+                if r.colliderect(o):
+                    out[k] = o.union(r)
+                    merged = True
+                    break
+            else:
+                out.append(r)
+        rects = out
+    for r in rects:                                      # a merged patch can reach past the loaded tiles at its corners
+        load({(tx, ty) for ty in range(r.top // _HL_TILE, (r.bottom - 1) // _HL_TILE + 1)
+              for tx in range(r.left // _HL_TILE, (r.right - 1) // _HL_TILE + 1)})
+    under = [surface.subsurface(r).copy() for r in rects]
+    _stroke(surface, segs, 1, light)
+    ring = pygame.mask.Mask((3, 3), fill=True)
+    # Patches that do not touch are >= 9 px apart (each holds its windows + 8 px), more than the 7 px the fall-off
+    # reaches, so each patch's dilations only need its own over-cap pixels.
+    for rect, below in zip(rects, under):
+        def part(m: pygame.mask.Mask) -> pygame.mask.Mask:
+            sub = pygame.mask.Mask(rect.size)
+            sub.draw(m, (-rect.x, -rect.y))
+            return sub
+        hl_r, g_r = part(hl), [part(over)]               # g_r[k]: within Chebyshev distance k of the over-cap area
+        for _ in range(VEIN_HL_FALLOFF - 1):
+            g_r.append(g_r[-1].convolve(ring, pygame.mask.Mask(rect.size), (-1, -1)))   # 3 x 3 dilation, same size
+        layer = _layer(rect.w, rect.h)
+        full = part(hl)
+        full.erase(g_r[-1], (0, 0))
+        full.to_surface(layer, setcolor=(*light, 255), unsetcolor=None)
+        for k in range(VEIN_HL_FALLOFF):
+            ring_k = hl_r.overlap_mask(g_r[k], (0, 0))
+            if k:
+                ring_k.erase(g_r[k - 1], (0, 0))
+            a = VEIN_HL_DIM_ALPHA + (1 - VEIN_HL_DIM_ALPHA) * k / VEIN_HL_FALLOFF
+            ring_k.to_surface(layer, setcolor=(*light, round(255 * a)), unsetcolor=None)
+        surface.blit(below, rect.topleft)
+        surface.blit(layer, rect.topleft)
+
+
 def decals_act_9(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
     """The First Divide: a living wound -- veins, craters and pustules over the whole map, and the stitched seam."""
     act = 9
@@ -1291,12 +1437,11 @@ def decals_act_9(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
         _stroke(surface, all_levels[level], widths[level] + 4, shadow)
     for level in (0, 1, 2, 3):
         _stroke(surface, all_levels[level], widths[level], body)
-    highlight = _layer(width, height)                    # BUG-205: the highlight goes on its own layer, capped, then blitted
+    hl_segs = []
     for level in (0, 1, 2):
         off = widths[level] // 4
-        _stroke(highlight, [(x0, y0 - off, x1, y1 - off) for x0, y0, x1, y1 in all_levels[level]], 1, (*light, 255))
-    _cap_vein_highlights(highlight, light)
-    surface.blit(highlight, (0, 0))
+        hl_segs += [(x0, y0 - off, x1, y1 - off) for x0, y0, x1, y1 in all_levels[level]]
+    _draw_capped_vein_highlight(surface, hl_segs, light)      # BUG-205
     # wound craters spread over a 4 x 3 grid of the map
     craters = {r: _crater_sprite(r, act) for r in (40, 55, 70, 85, 100, 120)}
     cells = [(i, j) for i in range(4) for j in range(3)]
