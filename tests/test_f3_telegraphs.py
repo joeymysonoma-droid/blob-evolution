@@ -244,3 +244,61 @@ def test_bug_211_touching_the_safe_rect_edge_is_a_hit_like_touching_a_zone_edge(
     assert safe.hits(Vector2(10, 100), 10) and safe.hits(Vector2(0, 100), 0) and safe.hits(Vector2(100, 190), 10)
     assert not safe.hits(Vector2(11, 100), 10) and not safe.hits(Vector2(100, 100), 10)
     assert Telegraph("zone", (0, 0, 50)).hits(Vector2(62, 0), 12)          # the zone's tangent, for comparison
+
+
+# BUG-212: QA t64 mutants that survived the F3 tests (zone edge, ring inner edge, lane width, fan edge, draw layer,
+# hurt sound while invulnerable)
+def test_bug_212_a_circle_exactly_tangent_to_a_zone_is_hit():
+    assert Telegraph("zone", (0, 0, 50)).hits(Vector2(62, 0), 12)
+    assert Telegraph("mark", (0, 0, 20)).hits(Vector2(0, 25), 5)
+
+
+def test_bug_212_the_ring_s_inner_edge_counts_the_player_radius():
+    ring = Telegraph("ring", (0, 0, 100, 140))
+    assert ring.hits(Vector2(95, 0), 10) and not ring.hits(Vector2(85, 0), 10)
+
+
+def test_bug_212_a_lane_is_its_width_wide_not_twice_that():
+    lane = Telegraph("lane", (0, 0, 300, 0, 40))
+    assert lane.hits(Vector2(150, 25), 5) and not lane.hits(Vector2(150, 30), 5)
+
+
+def test_bug_212_a_fan_edge_counts_the_player_radius():
+    fan = Telegraph("fan", (0, 0, 0.0, 0.6, 300))
+    a = 0.3 + 0.04                                         # 0.04 rad past the edge, inside asin(10 / 200) = 0.05
+    assert fan.hits(Vector2(200 * math.cos(a), 200 * math.sin(a)), 10)
+    a = 0.3 + 0.07
+    assert not fan.hits(Vector2(200 * math.cos(a), 200 * math.sin(a)), 10)
+
+
+def test_bug_212_telegraphs_draw_on_the_ground_under_every_entity(fight, monkeypatch):
+    from blob_evolution import game as game_module
+    from blob_evolution.entities.creature import Creature
+    from blob_evolution.utils.enums import CreatureType
+    g, b = fight
+    b.start_attack("telegraph_strike", g.player.pos.copy(), [], kind="zone", warn=5.0)
+    g.creatures = [Creature(g.player.pos + Vector2(100, 0), CreatureType.BASIC)]
+    order = []
+
+    def spy(name, real):
+        return lambda *a, **k: (order.append(name), real(*a, **k))[1]
+    monkeypatch.setattr(game_module, "draw_telegraphs", spy("telegraphs", game_module.draw_telegraphs))
+    monkeypatch.setattr(g.hazards, "draw", spy("hazards", g.hazards.draw))
+    for name, obj in (("creature", g.creatures[0]), ("boss", b), ("player", g.player), ("particles", g.particles)):
+        monkeypatch.setattr(obj, "draw", spy(name, obj.draw))
+    g._draw_game()
+    assert order.index("hazards") < order.index("telegraphs") < min(order.index(n) for n in ("creature", "boss", "particles", "player"))
+
+
+def test_bug_212_no_hurt_sound_when_invulnerability_absorbs_a_landing(fight, monkeypatch):
+    g, b = fight
+    sounds = []
+    monkeypatch.setattr(g.audio, "play", lambda name, *a, **k: sounds.append(name))
+    b.start_attack("telegraph_strike", g.player.pos.copy(), [], kind="zone", radius=80.0, damage=13.0, warn=0.2)
+    g.player.invulnerable = 5.0
+    _run(g, 0.5)
+    assert "hurt" not in sounds
+    g.player.invulnerable = 0
+    b.start_attack("telegraph_strike", g.player.pos.copy(), [], kind="zone", radius=80.0, damage=13.0, warn=0.2)
+    _run(g, 0.5)
+    assert "hurt" in sounds
