@@ -21,6 +21,40 @@ REPO_ROOT = TESTS_DIR.parent
 FIXTURE_SAVE = TESTS_DIR / "fixtures" / "save_sample.json"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _session_audio():
+    """The shared AudioManager is built once, before any test patches the sound library or folders (it takes ~0.4 s)."""
+    from blob_evolution.systems import audio
+
+    audio.get_audio()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def shared_audio_state(_session_audio):
+    """TASK-062: every Game shares one AudioManager (systems/audio.get_audio). Give each test the manager as the previous
+    test found it: its fields (volumes, enabled, the never-retried failed-key sets, loaded clips, the current narration)
+    are put back after the test, and a manager first created inside a test (possibly under a patched library or
+    NARRATION_DIR) is dropped. Sounds still playing are stopped. Defined first so it tears down last, after monkeypatch.
+    """
+    import pygame
+    from blob_evolution.systems import audio
+
+    before = audio._audio
+    saved = None
+    if before is not None:
+        saved = {k: (v.copy() if isinstance(v, (dict, list, set)) else v) for k, v in vars(before).items()}
+    yield
+    if pygame.mixer.get_init():
+        pygame.mixer.stop()
+    if before is None:
+        audio._audio = None
+    else:
+        audio._audio = before
+        vars(before).clear()
+        vars(before).update(saved)
+
+
 @pytest.fixture(autouse=True)
 def isolated_save(tmp_path, monkeypatch):
     """Run each test in tmp_path with the save file redirected there.
