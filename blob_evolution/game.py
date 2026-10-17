@@ -328,7 +328,9 @@ class Game:
         self.ambient = AmbientField(act, seed ^ 0xA3B1E7)   # own rng: no global random draws
         self.hitfx.clear()
         self.hitfx.rng.seed(seed ^ 0x2C9E11)                  # BUG-188: own rngs from the encounter seed, like ambient/layers
-        self.shake_fx.rng.seed(seed ^ 0x6D41F3)
+        self.shake_fx.reset(seed ^ 0x6D41F3)                  # BUG-194: nothing of the last fight's shake carries over
+        if config.GFX_HITFX:
+            self.shake.set(0, 0)
         self.hitfx.set_ground(act)
         if config.GFX_HITFX:
             self.hitfx.prewarm_all()                          # TASK-059: every hit-fx sprite baked here, none per frame

@@ -383,6 +383,18 @@ class Shake:
         self.triggers = 0
         self._reroll()
 
+    def reset(self, seed=None):
+        """BUG-194: a new encounter starts with no shake running, no source gaps pending and its own phases."""
+        if seed is not None:
+            self.rng.seed(seed)
+        self.clk = 0.0
+        self.t = 1e9
+        self.A = self.T = 0.0
+        self.nudge = (0.0, 0.0)
+        self.last = {}
+        self.offset_x = self.offset_y = 0.0
+        self._reroll()
+
     def _reroll(self):
         self.ph = [self.rng.uniform(0, TAU) for _ in range(4)]
 

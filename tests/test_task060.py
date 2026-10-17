@@ -150,3 +150,57 @@ def test_bug_191_a_single_big_shake_still_reaches_close_to_the_cap():
         sh.update(DT)
         peak = max(peak, math.hypot(sh.offset_x, sh.offset_y))
     assert peak == pytest.approx(6.1011784571858945, abs=1e-6)
+
+
+# ---- BUG-194: the shake state is reset when an encounter loads ---------------------------------------------------------
+
+def _loaded_game(make_game, monkeypatch):
+    import random
+    from blob_evolution.systems.overworld import OverworldMap
+    from blob_evolution.utils.enums import GameState
+    g = make_game()
+    for name in ("play", "play_act_music", "play_menu_music"):
+        monkeypatch.setattr(g.audio, name, lambda *a, **k: None)
+    random.seed(1234)
+    g._start_new_run()
+    g.story = None
+    g.state = GameState.PLAYING
+    g.overworld = OverworldMap(act_index=2)
+    return g, [n for n in g.overworld.get_available_nodes() if n.node_type.name == "FIGHT"][0]
+
+
+def test_bug_194_a_shake_running_at_the_end_of_a_fight_does_not_carry_into_the_next(make_game, monkeypatch):
+    import random
+    monkeypatch.setattr(config, "GFX_HITFX", True)
+    g, node = _loaded_game(make_game, monkeypatch)
+    g._add_screen_shake(12, "boss_kill")
+    for _ in range(3):
+        g._update_shake(DT)
+    assert g.shake_fx.active and g.shake_fx.last
+    random.seed(5)
+    g._load_encounter(node)
+    assert not g.shake_fx.active and not g.shake_fx.last and g.shake_fx.clk == 0.0
+    assert (g.shake.x, g.shake.y) == (0, 0)
+    g._update_shake(DT)
+    assert g.shake_fx.int_offset() == (0, 0)
+
+
+def test_bug_194_the_shake_after_a_load_depends_only_on_the_encounter_seed(make_game, monkeypatch):
+    """Same encounter seed -> same shake phases, whatever shook before the load."""
+    import random
+    monkeypatch.setattr(config, "GFX_HITFX", True)
+    out = []
+    for pre in (0, 7):
+        g, node = _loaded_game(make_game, monkeypatch)
+        for _ in range(pre):
+            g._add_screen_shake(8)
+            g._update_shake(0.4)
+        random.seed(5)
+        g._load_encounter(node)
+        g._add_screen_shake(8)
+        xs = []
+        for _ in range(20):
+            g._update_shake(DT)
+            xs.append((round(g.shake_fx.offset_x, 6), round(g.shake_fx.offset_y, 6)))
+        out.append(xs)
+    assert out[0] == out[1]
