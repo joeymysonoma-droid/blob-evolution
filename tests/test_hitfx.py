@@ -688,7 +688,14 @@ def test_vd_defaults_damage_numbers_built_but_off_and_the_gap_is_0_34():
     del importlib
 
 
-def test_damage_numbers_when_turned_on_are_prebaked_and_allocation_free(monkeypatch):
+@pytest.fixture
+def _font():
+    """BUG-189: the damage-number glyphs need pygame.font, which another test may not have initialised yet."""
+    pygame.font.init()
+    yield
+
+
+def test_damage_numbers_when_turned_on_are_prebaked_and_allocation_free(_font, monkeypatch):
     monkeypatch.setattr(config, "GFX_DAMAGE_NUMBERS", True)
     fx = hx.HitFx()
     fx.prewarm_all()
@@ -721,3 +728,4 @@ def test_reduced_motion_player_hit_chevrons_are_static(monkeypatch):
     trigger(fx, "player_hit")
     chev = [e for e in fx.fx if e.active and e.kind == hx.K_CHEV]
     assert len(chev) == 4 and all(e.p0 == e.p1 == PLAYER_R + 22 for e in chev)
+
