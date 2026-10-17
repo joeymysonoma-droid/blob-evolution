@@ -206,3 +206,34 @@ def test_every_kind_draws_and_redraws_from_the_kit_cache():
     for _ in range(3):
         draw_telegraphs(screen, cam, shake, tgs)
     assert len(boss_shapes._kit) == cached
+
+
+# --- F3b ----------------------------------------------------------------------------------------------------------
+
+def _landed(*tgs):
+    for t in tgs:
+        t.update(DT)
+    return list(tgs)
+
+
+def test_bug_210_overlapping_landings_are_one_hit_of_the_highest_damage():
+    tgs = _landed(Telegraph("zone", (0, 0, 50), warn=0.0, damage=8), Telegraph("mark", (5, 0, 30), warn=0.0, damage=13),
+                  Telegraph("ring", (0, 0, 0, 60), warn=0.0, damage=4))
+    assert resolve_landed(tgs, Vector2(0, 0), 10) == 13
+
+
+def test_bug_210_the_game_deals_one_hit_and_a_shield_blocks_it(fight):
+    g, b = fight
+    g.player.invulnerable = 0
+    hits, real = [], g.player.take_damage
+    g.player.take_damage = lambda amount: (hits.append(amount), real(amount))[1]
+    for dmg in (8.0, 13.0, 4.0):
+        b.start_attack("telegraph_strike", g.player.pos.copy(), [], kind="zone", radius=90.0, damage=dmg, warn=0.2)
+    _run(g, 0.5)
+    assert hits == [13.0]
+    hits.clear()
+    g.player.invulnerable, g.player.has_shield, hp = 0, True, g.player.hp
+    for dmg in (8.0, 13.0):
+        b.start_attack("telegraph_strike", g.player.pos.copy(), [], kind="zone", radius=90.0, damage=dmg, warn=0.2)
+    _run(g, 0.5)
+    assert hits == [13.0] and g.player.hp == hp and not g.player.has_shield
