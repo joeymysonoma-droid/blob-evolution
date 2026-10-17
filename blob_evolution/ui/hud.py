@@ -128,7 +128,7 @@ class HUD:
         if self._yielded:
             return                                                # already counting down its 1.0 s, already re-queued
         if self.notification_timer > PRIORITY_WAIT and not self._now:   # cut short: its full time afterwards (BUG-181)
-            self._insert(k + 1, self._entry(self.notification, self._dur, full=self._dur, cut_by=text))
+            self._insert(k + 1, self._entry(self.notification, self._full, full=self._full, cut_by=text))
         self._pre_yield = self.notification_timer
         self.notification_timer = min(self.notification_timer, PRIORITY_WAIT)
         self._yielded = True

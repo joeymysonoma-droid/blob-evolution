@@ -79,3 +79,16 @@ def test_bug_180_two_banners_one_withdrawn_the_other_still_shows_then_the_notice
           45: [lambda h: h.withdraw(B)]}
     sp = _spans(hud, ev)
     assert [t for t, _f, _n in sp] == ["Archive: X", "FINAL PHASE!", "Archive: X"] and sp[2][2] in (209, 210, 211)
+
+
+# ---- BUG-181: a notice cut short a second time comes back in full ----------------------------------------------------
+
+def test_bug_181_a_notice_resumed_after_feedback_then_cut_by_a_banner_is_re_shown_in_full(hud):
+    """QA t57 S12b: Archive (3.5 s) interrupted by feedback resumes with its 3.0 s left; a banner then cuts it again.
+    Main re-showed it for 3.0 s (the remainder); the ruling is its FULL 3.5 s."""
+    ev = {0: [("Archive: Warden of Ash", 3.5, {})], 30: [("Healed 25 HP!", 1.0, {"now": True})],
+          120: [(B, 2.5, {"priority": True})]}
+    sp = _spans(hud, ev)
+    assert [t for t, _f, _n in sp] == ["Archive: Warden of Ash", "Healed 25 HP!", "Archive: Warden of Ash", B,
+                                       "Archive: Warden of Ash"]
+    assert sp[4][2] in (209, 210, 211)
