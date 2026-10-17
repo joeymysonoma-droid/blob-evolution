@@ -506,6 +506,7 @@ CRYSTAL_CLUSTER_RADIUS = 48  # 2 x the 24 px crystal scatter sigma
 CRYSTAL_REROLLS = 8
 CRYSTAL_REPLACE_TRIES = 24  # anywhere-on-the-map tries before a crystal is dropped
 CRYSTAL_FILLERS = 3  # dim buried crystals per act 2 cluster
+CRYSTAL_FILLER_TRIES = 24  # BUG-207: spots a filler tries in its cluster's 0.6-1.4 x radius ring before it is dropped
 FILLER_FILL_ALPHA = 115  # 45 % (VD; all 32 act 2 seeds >= 3.3, lowest seed 7 at 3.369)
 FILLER_EDGE_ALPHA = 90
 
@@ -615,11 +616,12 @@ def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
                         put(px, py, r)
                         break
     # Fillers go in after every bright crystal and never touch one (nor its glow disc), so they cannot brighten a crystal
-    # or be brightened by one: they add nothing to the bright-decal share. A spot that touches one is re-rolled.
+    # or be brightened by one: they add nothing to the bright-decal share. A spot that touches one is re-rolled within
+    # the same 0.6-1.4 x radius ring, up to CRYSTAL_FILLER_TRIES times (BUG-207), and only then dropped.
     for cx, cy in centres:
         for _ in range(CRYSTAL_FILLERS):
             r = rng.randint(8, 16)
-            for _ in range(1 + CRYSTAL_REROLLS):
+            for _ in range(CRYSTAL_FILLER_TRIES):
                 d, a = rng.uniform(0.6, 1.4) * CRYSTAL_CLUSTER_RADIUS, rng.uniform(0, TAU)
                 px, py = round(cx + d * math.cos(a)), round(cy + d * math.sin(a))
                 if all(math.hypot(px - x, py - y) >= 2.2 * q + 0.7 * r + 2 for x, y, q in placed):

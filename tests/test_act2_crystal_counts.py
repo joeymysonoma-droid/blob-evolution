@@ -1,10 +1,10 @@
 """BUG-207 (TASK-064): act 2 keeps exactly 56 bright crystals, and each placed cluster gets at most CRYSTAL_FILLERS
-dim buried crystals, with nearly all of them placed.
+dim buried crystals, and every one of them is placed (exactly CRYSTAL_FILLERS per cluster).
 
 Counts come from the real bake: the two sprite builders are wrapped so the test knows which sprites are bright and
 which are buried, and every stamp of one is counted.
-Measured on 806a7ce over 64 seeds: 56 bright on every seed. Fillers: 84 (28 clusters x 3) on 40 seeds; a filler whose
-spot touches a bright crystal 1 + CRYSTAL_REROLLS times is dropped, leaving 80-83 on the rest (worst: seed 39, 80).
+Measured on 806a7ce over 64 seeds: 56 bright on every seed; fillers 80-84 of 84 (a filler got 1 + CRYSTAL_REROLLS spots).
+BUG-207 (TASK-065): a filler now gets CRYSTAL_FILLER_TRIES (24) spots in its ring before it is dropped: 84 of 84 on all 64.
 """
 import pygame
 import pytest
@@ -16,7 +16,6 @@ from blob_evolution.utils.graphics import generate_map_texture
 SEEDS = (0, 7, 145, 999, *range(1, 21), 31, 77, 123, 500, 1234, 4242, 2026, 31337)
 BRIGHT = 56
 CLUSTERS = BRIGHT // terrain.CRYSTALS_PER_CLUSTER
-MAX_DROPPED = 4                       # 64-seed worst (seed 39) dropped 4 of 84
 
 
 def _counts(monkeypatch, seed: int):
@@ -52,10 +51,10 @@ def test_bug_207_act_2_has_exactly_56_bright_crystals(monkeypatch, seed):
 
 
 @pytest.mark.parametrize("seed", SEEDS)
-def test_bug_207_act_2_fillers_are_at_most_3_per_cluster_and_nearly_all_placed(monkeypatch, seed):
+def test_bug_207_act_2_places_every_filler_3_per_cluster(monkeypatch, seed):
     fillers = _counts(monkeypatch, seed)[1]
-    assert CLUSTERS * terrain.CRYSTAL_FILLERS - MAX_DROPPED <= fillers <= CLUSTERS * terrain.CRYSTAL_FILLERS, (seed, fillers)
+    assert fillers == CLUSTERS * terrain.CRYSTAL_FILLERS, (seed, fillers)
 
 
 def test_bug_207_the_counted_constants_are_the_ruled_ones():
-    assert (terrain.CRYSTALS_PER_CLUSTER, terrain.CRYSTAL_FILLERS, CLUSTERS) == (2, 3, 28)
+    assert (terrain.CRYSTALS_PER_CLUSTER, terrain.CRYSTAL_FILLERS, terrain.CRYSTAL_FILLER_TRIES, CLUSTERS) == (2, 3, 24, 28)
