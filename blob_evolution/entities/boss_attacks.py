@@ -7,6 +7,7 @@ import random
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
 from blob_evolution import config
+from blob_evolution.data.bosses import TELEGRAPH
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.utils.vector2 import Vector2
 
@@ -65,7 +66,7 @@ def move_circle_dash(b: Boss, dt: float, player_pos: Vector2, speed: float) -> N
             to_p.normalize()
             b.dash_dir = to_p
             b.dash_timer = 0.35
-            b.telegraph = 0.35
+            b.telegraph = TELEGRAPH.dash
             b.telegraph_type = "dash"
 
 
@@ -90,7 +91,7 @@ def move_blink(b: Boss, dt: float, player_pos: Vector2, speed: float) -> None:
         ang = random.uniform(0, math.tau)
         b.pos = player_pos + Vector2(math.cos(ang) * 320, math.sin(ang) * 320)
         b.clone_timer = 3.5 if b.enraged else 5.0
-        b.telegraph = 0.4
+        b.telegraph = TELEGRAPH.blink
         b.telegraph_type = "blink"
     b._steer_toward(player_pos, speed * 0.4)
 
@@ -228,7 +229,7 @@ BASIC_SHOTS: Dict[str, BasicShot] = {
 
 # --------------------------------------------------------------------------- specials
 class Special:
-    """A special attack; the boss has already set its 0.7 s telegraph when fire() runs."""
+    """A special attack; the boss has already set its TELEGRAPH.special s telegraph when fire() runs."""
 
     key = ""
     telegraph_type = ""
@@ -328,7 +329,7 @@ class FrostRing(Special):
 
     def spawn(self, b: Boss, player_pos: Vector2, projectiles: List[Projectile], dmg: float) -> None:
         """Spawn the ring."""
-        b.warning_rings.append((180.0, 0.9, (180, 220, 255)))
+        b.warning_rings.append((180.0, TELEGRAPH.frost_ring, (180, 220, 255)))
         for i in range(16):
             ang = i * math.tau / 16
             direction = Vector2(math.cos(ang), math.sin(ang))
@@ -374,7 +375,7 @@ class VoidRing(Special):
 
     def spawn(self, b: Boss, player_pos: Vector2, projectiles: List[Projectile], dmg: float) -> None:
         """Spawn the ring and the inward wave."""
-        b.warning_rings.append((220.0, 1.0, (120, 80, 180)))
+        b.warning_rings.append((220.0, TELEGRAPH.void_ring, (120, 80, 180)))
         b._radial(projectiles, 10, 150, dmg * 0.8, (90, 60, 140))
         for i in range(8):
             ang = i * math.tau / 8

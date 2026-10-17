@@ -88,8 +88,24 @@ class AnchorDef:
     card_line: str               # roster section 5 card body (not shown yet: needs the card / narration ticket)
 
 
+@dataclass(frozen=True)
+class TelegraphTimings:
+    """Seconds of warning the current kits give (F3: data-driven; the values are main's, so traces are unchanged)."""
+
+    special: float = 0.7           # boss.telegraph when a special fires (the ring around the boss)
+    dash: float = 0.35             # Ash's circle-dash warning
+    blink: float = 0.4             # Thirst's blink warning
+    ring_grow: float = 0.8         # the telegraph ring grows from 1.5 R over the last `ring_grow` s (draw only)
+    frost_ring: float = 0.9        # Frost Ring's 180 px warning ring
+    void_ring: float = 1.0         # Void Ring's 220 px warning ring
+
+
+# F3 telegraph kit: default warning per Telegraph kind (an Attack may override it with `warn=`)
+TELEGRAPH_WARN = {"zone": 1.0, "lane": 0.9, "mark": 0.8, "fan": 0.6, "ring": 0.8, "safe": 1.2}
+
 STATS = BossStats()
 CADENCE = Cadence()
+TELEGRAPH = TelegraphTimings()
 MINI = MiniDef()
 
 _P2_CD = config.BOSS_PHASE2_SPECIAL_COOLDOWN
