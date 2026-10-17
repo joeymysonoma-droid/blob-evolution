@@ -26,7 +26,10 @@ W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
 R0, R1, STEP = 23, 30, 6
 LIMIT = 0.05
 # measured worst share + 1 point; raising any of these needs Visual Designer sign-off
-HELD = {2: 0.0947 + 0.01, 3: 0.0973 + 0.01, 9: 0.1015 + 0.01}
+# Visual Designer ruling (BUG-184, Oct 17), option (a): acts 3 and 8 keep player contrast >= 3.3 (QA sg_sweep t39) on every
+# over-cap seed, so their caps become the 32-seed worst + 1 point. Act 2 (seeds < 3.3) took option (b) instead: crystals
+# capped at 3 per cluster in terrain.decals_act_2; its cap is unchanged.
+HELD = {2: 0.0947 + 0.01, 3: 0.1203 + 0.01, 8: 0.0546 + 0.01, 9: 0.1015 + 0.01}
 
 
 def _grey(c) -> float:
@@ -86,10 +89,11 @@ def test_bright_decal_share_other_seeds(seed):
 #   9: 10.15 -> 10.67 (< 11.15)
 #   2: 9.47 -> 18.17 (seeds 3, 4, 8, 9, 12, 15 over 10.47)   3: 9.73 -> 12.03 (seeds 14, 500 over 10.73)
 #   8: 3.50 -> 5.46 (seed 18 over 5)
-# Acts 2, 3 and 8 exceed the Visual Designer's targets on some seeds; raising their caps needs visual sign-off, and
-# changing their art changes the ground pixels, so they are left out of the wide test until the Visual Designer decides.
+# Acts 3 and 8: caps raised with Visual Designer sign-off (option a), back in the wide test. Act 2 after option (b)
+# (3 crystals per cluster): 18.17 -> 13.23 (seeds 31 and 5 still over 10.47), so it stays out of the wide test until the
+# Visual Designer decides on the remainder.
 SEEDS_WIDE = (0, 7, 145, 999, *range(1, 21), 31, 77, 123, 500, 1234, 4242, 2026, 31337)
-WIDE_ACTS = (0, 1, 4, 5, 6, 7, 9)
+WIDE_ACTS = (0, 1, 3, 4, 5, 6, 7, 8, 9)
 
 
 @pytest.mark.slow
