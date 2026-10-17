@@ -729,3 +729,25 @@ def test_reduced_motion_player_hit_chevrons_are_static(monkeypatch):
     chev = [e for e in fx.fx if e.active and e.kind == hx.K_CHEV]
     assert len(chev) == 4 and all(e.p0 == e.p1 == PLAYER_R + 22 for e in chev)
 
+
+# ---- QA t59 fixes ---------------------------------------------------------------------------------------------------
+
+def test_bug_188_the_same_scene_rendered_twice_with_hitfx_on_gives_identical_frames():
+    """Shake and HitFx draw from their own random.Random seeded from the encounter seed (as ambient and layers), so two
+    renders of the same run match frame for frame."""
+    a, _g1 = hitfx_scene.run_scene(5, frames=160)
+    b, _g2 = hitfx_scene.run_scene(5, frames=160)
+    assert a == b
+
+
+def test_bug_188_the_generators_are_their_own_and_leave_the_global_rng_alone():
+    g = hitfx_scene.make_scene_game(0)
+    assert g.hitfx.rng is not random._inst and g.shake_fx.rng is not random._inst
+    state = random.getstate()
+    g.shake_fx.add(8, "charger")
+    g.hitfx.player_hit(g.player)
+    for _ in range(10):
+        g.shake_fx.update(DT)
+        g.hitfx.update_all(DT)
+    assert random.getstate() == state
+

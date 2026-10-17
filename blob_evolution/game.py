@@ -133,8 +133,8 @@ class Game:
         self.shake = Vector2()
         self.shake_intensity = 0.0
         self.drawn_shake = Vector2()     # BUG-114: the shake of the last drawn frame (what the player aimed at)
-        self.shake_fx = hitfx.Shake(config.REDUCED_MOTION)   # TASK-059: smooth shake when GFX_HITFX
-        self.hitfx = hitfx.HitFx(config.REDUCED_MOTION)      # TASK-059: hit cues when GFX_HITFX
+        self.shake_fx = hitfx.Shake(config.REDUCED_MOTION, seed=0)   # TASK-059: smooth shake when GFX_HITFX
+        self.hitfx = hitfx.HitFx(config.REDUCED_MOTION, seed=0)      # TASK-059: hit cues; both reseeded per encounter
 
         self.menu_selected = 0
         self.pause_selected = 0
@@ -327,6 +327,8 @@ class Game:
         set_xp_act(act)                                       # orb tiers scale with the act's median orb value
         self.ambient = AmbientField(act, seed ^ 0xA3B1E7)   # own rng: no global random draws
         self.hitfx.clear()
+        self.hitfx.rng.seed(seed ^ 0x2C9E11)                  # BUG-188: own rngs from the encounter seed, like ambient/layers
+        self.shake_fx.rng.seed(seed ^ 0x6D41F3)
         self.hitfx.set_ground(act)
         if config.GFX_HITFX:
             self.hitfx.prewarm_all()                          # TASK-059: every hit-fx sprite baked here, none per frame
