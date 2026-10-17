@@ -1220,6 +1220,81 @@ def _pustule_sprite(radius: int, act: int) -> pygame.Surface:
     return make_sprite(size, size, draw, bg=body)
 
 
+# BUG-205 (Visual Designer, option a): where act 9's 1 px vein highlight is dense, it is dimmed at bake time.
+VEIN_HL_GREY = 88          # a highlight pixel counts when its grey is > this (the bright-decal share test's threshold)
+VEIN_HL_WINDOW = 32        # the coverage window, centred on every pixel (x - 16 .. x + 15)
+VEIN_HL_CAP = 0.11         # max share of a window's pixels that may be highlight
+VEIN_HL_DIM_ALPHA = 0.55   # highlight alpha inside every over-cap window
+VEIN_HL_FALLOFF = 8        # px of linear ramp from VEIN_HL_DIM_ALPHA back to full alpha outside them
+_HL_BLOCK = 8
+
+
+def _window_sums(hl: pygame.mask.Mask, x0: int, y0: int, w: int, h: int) -> List[List[int]]:
+    """Summed-area table (pure Python) of `hl` over the rect, with a zero row/column in front: sat[y][x]."""
+    sat = [[0] * (w + 1)]
+    for y in range(h):
+        row, run, prev = [0], 0, sat[-1]
+        for x in range(w):
+            run += hl.get_at((x0 + x, y0 + y))
+            row.append(prev[x + 1] + run)
+        sat.append(row)
+    return sat
+
+
+def _vein_highlight_over_cap(layer: pygame.Surface, color: Color) -> Tuple[pygame.mask.Mask, int]:
+    """The union of every over-cap VEIN_HL_WINDOW window on `layer`, and how many window centres are over the cap.
+
+    Exact but cheap: one box count per 8 x 8 block of centres bounds all 64 windows in it (each is inside the block's
+    39 x 39 box), so only blocks whose box could be over the cap get a summed-area table and a per-centre test.
+    """
+    w, h = layer.get_size()
+    over = pygame.mask.Mask((w, h))
+    if 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2] <= VEIN_HL_GREY:
+        return over, 0
+    hl = pygame.mask.from_surface(layer, 0)
+    half, limit = VEIN_HL_WINDOW // 2, VEIN_HL_CAP * VEIN_HL_WINDOW * VEIN_HL_WINDOW
+    span = _HL_BLOCK + VEIN_HL_WINDOW - 1
+    box, win = pygame.mask.Mask((span, span), fill=True), pygame.mask.Mask((VEIN_HL_WINDOW, VEIN_HL_WINDOW), fill=True)
+    centres = 0
+    for by in range(0, h, _HL_BLOCK):
+        for bx in range(0, w, _HL_BLOCK):
+            if hl.overlap_area(box, (bx - half, by - half)) <= limit:
+                continue
+            x0, y0 = max(0, bx - half), max(0, by - half)
+            x1, y1 = min(w, bx + _HL_BLOCK - 1 + half), min(h, by + _HL_BLOCK - 1 + half)
+            sat = _window_sums(hl, x0, y0, x1 - x0, y1 - y0)
+            for cy in range(by, min(h, by + _HL_BLOCK)):
+                for cx in range(bx, min(w, bx + _HL_BLOCK)):
+                    ax, ay = max(0, cx - half) - x0, max(0, cy - half) - y0
+                    ex, ey = min(w, cx + half) - x0, min(h, cy + half) - y0
+                    if sat[ey][ex] - sat[ay][ex] - sat[ey][ax] + sat[ay][ax] > limit:
+                        over.draw(win, (cx - half, cy - half))
+                        centres += 1
+    return over, centres
+
+
+def _cap_vein_highlights(layer: pygame.Surface, color: Color) -> int:
+    """Dim the highlight on `layer` (opaque 1 px strokes on transparent) inside every over-cap window, ramping back to
+    full alpha over VEIN_HL_FALLOFF px; returns the number of over-cap window centres."""
+    over, centres = _vein_highlight_over_cap(layer, color)
+    if not centres:
+        return 0
+    hl = pygame.mask.from_surface(layer, 0)
+    rings = [pygame.mask.Mask((2 * k + 1, 2 * k + 1), fill=True) for k in range(VEIN_HL_FALLOFF)]
+    for rect in over.get_bounding_rects():
+        rect = rect.inflate(2 * VEIN_HL_FALLOFF, 2 * VEIN_HL_FALLOFF).clip(layer.get_rect())
+        for y in range(rect.top, rect.bottom):
+            for x in range(rect.left, rect.right):
+                if not hl.get_at((x, y)):
+                    continue
+                for k in range(VEIN_HL_FALLOFF):            # k = Chebyshev distance to the over-cap area
+                    if over.overlap_area(rings[k], (x - k, y - k)):
+                        a = VEIN_HL_DIM_ALPHA + (1 - VEIN_HL_DIM_ALPHA) * k / VEIN_HL_FALLOFF
+                        layer.set_at((x, y), (*color, round(255 * a)))
+                        break
+    return centres
+
+
 def decals_act_9(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
     """The First Divide: a living wound -- veins, craters and pustules over the whole map, and the stitched seam."""
     act = 9
@@ -1241,9 +1316,12 @@ def decals_act_9(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
         _stroke(surface, all_levels[level], widths[level] + 4, shadow)
     for level in (0, 1, 2, 3):
         _stroke(surface, all_levels[level], widths[level], body)
+    highlight = _layer(width, height)                    # BUG-205: the highlight goes on its own layer, capped, then blitted
     for level in (0, 1, 2):
         off = widths[level] // 4
-        _stroke(surface, [(x0, y0 - off, x1, y1 - off) for x0, y0, x1, y1 in all_levels[level]], 1, light)
+        _stroke(highlight, [(x0, y0 - off, x1, y1 - off) for x0, y0, x1, y1 in all_levels[level]], 1, (*light, 255))
+    _cap_vein_highlights(highlight, light)
+    surface.blit(highlight, (0, 0))
     # wound craters spread over a 4 x 3 grid of the map
     craters = {r: _crater_sprite(r, act) for r in (40, 55, 70, 85, 100, 120)}
     cells = [(i, j) for i in range(4) for j in range(3)]
