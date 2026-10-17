@@ -73,7 +73,9 @@ STATS = {CT.BASIC: (30, 10, 100), CT.SHOOTER: (40, 8, 80), CT.SPLITTER: (60, 12,
 # sha256[:16] of inspect.getsource() of every stat / AI / damage method at 6a65692; any behaviour edit changes one
 LOGIC_HASHES = {
     "_base_hp": "bd924fcb0943d1fa", "_base_damage": "2159433ec6fbfcdc", "_base_speed": "5ba12aba89a79e9c",
-    "take_damage": "f8b1fbf84d6b8c59", "update": "afafe92e662b23d2", "_ai_basic": "58db22245694305f",
+    # TASK-059 re-pin (was take_damage f8b1fbf84d6b8c59, update afafe92e662b23d2): the hit flash goes through
+    # hitfx.flash() (the 0.34 s flash gap, visual only) and update() ticks flash_gap; test_hitfx.py checks gameplay is equal
+    "take_damage": "8fc0fd54c764867d", "update": "489aaa88bb8ac686", "_ai_basic": "58db22245694305f",
     "_ai_shooter": "6d67985f84ed68d0", "_ai_charger": "79ee17a1c4db226d", "_ai_shielder": "6212824a12b51301",
     "_ai_orbiter": "bc4468bbc8fb45c7", "_ai_bomber": "7130e66a241d0411", "_ai_phantom": "0ad824a01449c89f",
     "_ai_leech": "e57bd215c78be755", "can_split": "a527d5805af5e6a3", "create_splits": "2e883e3fed58fb0f",

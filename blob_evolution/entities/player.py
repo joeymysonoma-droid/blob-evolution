@@ -12,6 +12,7 @@ from blob_evolution.entities.projectile import Projectile
 from blob_evolution.systems.skills import SkillManager
 from blob_evolution.systems.artifacts import ArtifactManager
 from blob_evolution.systems.evolution import EvolutionManager
+from blob_evolution.systems import hitfx
 from blob_evolution.utils.graphics import draw_blob, draw_contact_shadow
 from blob_evolution.utils.vector2 import Vector2
 
@@ -39,6 +40,9 @@ class Player:
         self.dash_cooldown = 0.0
         self.dash_duration = 0.0
         self.invulnerable = 0.0
+        self.hit_event = False      # TASK-059 (visual only): a hit landed since the game last showed the player-hit cue
+        self.last_hit = False       # ... the last take_damage call landed (the hurt sound / shake follow this)
+        self.hurt_timer = 0.0       # ... the invulnerability a HIT granted (dash i-frames don't set it): dashed outline
         self.magnet_radius = 80.0
         self.regen_timer = 0.0
         self.kills = 0
@@ -165,6 +169,7 @@ class Player:
 
     def take_damage(self, amount: float) -> bool:
         """Apply damage. Returns True if player died."""
+        self.last_hit = False
         if self.invulnerable > 0:
             return False
         if self.has_shield:
@@ -177,10 +182,13 @@ class Player:
         actual *= (1.0 - armor)
         self.hp -= actual
         self.invulnerable = 0.5
+        self.hit_event = self.last_hit = True
+        self.hurt_timer = 0.5
         if self.hp <= 0 and self.artifacts.has("phoenix_heart") and not self.has_revived:
             self.has_revived = True
             self.hp = self.max_hp * 0.5
             self.invulnerable = 2.0
+            self.hurt_timer = 2.0
             return False
         return self.hp <= 0
 
@@ -232,6 +240,8 @@ class Player:
             self.dash_duration -= dt
         if self.invulnerable > 0:
             self.invulnerable -= dt
+        if self.hurt_timer > 0:
+            self.hurt_timer -= dt
         regen_level = self.skills.get_level("regen")
         if regen_level > 0:
             self.regen_timer += dt
@@ -251,7 +261,10 @@ class Player:
         glow = self.invulnerable > 0 or self.dash_duration > 0
         pulse = 0.0
         if self.invulnerable > 0:
-            pulse = math.sin(self.invulnerable * 20) * 0.06
+            if config.GFX_HITFX:                      # TASK-059: 2.71 Hz (was 3.18), none in reduced motion
+                pulse = hitfx.hurt_pulse(self.invulnerable, config.REDUCED_MOTION)
+            else:
+                pulse = math.sin(self.invulnerable * 20) * 0.06
         look = look_target
         if look is None and self.vel.length() > 10:
             look = (self.vel.x, self.vel.y)
@@ -262,6 +275,8 @@ class Player:
             self.skin_core, self.vel, pulse=pulse, glow=glow,
             rotation=self.rotation, look=look, eyes=True,
         )
+        if config.GFX_HITFX and self.hurt_timer > 0:  # TASK-059: non-colour hurt cue (marching dashed outline)
+            hitfx.draw_hurt_outline(surface, sx, sy, self.size, self.hurt_timer, config.REDUCED_MOTION)
 
     @property
     def radius(self) -> float:

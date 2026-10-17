@@ -51,8 +51,19 @@ def _rng_digest() -> str:
     return hashlib.sha1(repr(random.getstate()).encode()).hexdigest()[:16]
 
 
-def trace(act: int, kind: str, seed: int, frames: int = FRAMES, draw: object = True) -> List[str]:
-    """Run one scripted fight; one digest per frame (boss state, RNG, shots spawned, phase announces, draws)."""
+def trace(act: int, kind: str, seed: int, frames: int = FRAMES, draw: object = True, hitfx: bool = False) -> List[str]:
+    """Run one scripted fight; one digest per frame (boss state, RNG, shots spawned, phase announces, draws).
+    TASK-059: runs with GFX_HITFX = `hitfx` (default off: the recorded digests are today's hit_flash and pixels; the
+    hit-fx flash gap only changes the visual hit_flash field, see tests/test_hitfx.py)."""
+    saved = config.GFX_HITFX
+    config.GFX_HITFX = hitfx
+    try:
+        return _trace(act, kind, seed, frames, draw)
+    finally:
+        config.GFX_HITFX = saved
+
+
+def _trace(act: int, kind: str, seed: int, frames: int, draw: object) -> List[str]:
     random.seed(seed)
     diff = DIFFS[seed % len(DIFFS)]
     b = Boss(Vector2(1200, 1100), act, diff, miniboss=kind in MINIS, slot=SLOTS[kind], variant=MINIS.get(kind, 0))

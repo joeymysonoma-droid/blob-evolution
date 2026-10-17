@@ -15,6 +15,7 @@ from blob_evolution.data.lore import get_act_lore, get_boss_name
 from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
 from blob_evolution.entities.boss_spawns import SpawnRequest
 from blob_evolution.entities.projectile import Projectile
+from blob_evolution.systems import hitfx
 from blob_evolution.utils import boss_shapes
 from blob_evolution.utils.boss_shapes import draw_blob_cached
 from blob_evolution.utils.graphics import (draw_blob, draw_contact_shadow, draw_health_bar, get_boss_palette,
@@ -68,6 +69,8 @@ class Boss:
         self.special_cooldown = CADENCE.first_special
         self.angle = random.uniform(0, math.tau)
         self.hit_flash = 0.0
+        self.flash_gap = 0.0                            # TASK-059 (visual only): s until a new hit flash may start
+        self.flash_started = False                      # ... the last take_damage call started a flash
         self.telegraph = 0.0
         self.telegraph_type = ""
         self.pulse_time = 0.0
@@ -125,7 +128,8 @@ class Boss:
             actual *= mult
         prev_ratio = self.hp / self.max_hp if self.max_hp else 0
         self.hp -= actual
-        self.hit_flash = 0.2
+        self.flash_started = False
+        hitfx.flash(self, 0.2)
         ratio = self.hp / self.max_hp if self.max_hp else 0
         for pd in self.phase_defs:
             self._check_phase(pd, prev_ratio, ratio)
@@ -197,6 +201,8 @@ class Boss:
         self.pulse_time += dt
         if self.hit_flash > 0:
             self.hit_flash -= dt
+        if self.flash_gap > 0:
+            self.flash_gap -= dt
         if self.telegraph > 0:
             self.telegraph -= dt
         self.warning_rings = [

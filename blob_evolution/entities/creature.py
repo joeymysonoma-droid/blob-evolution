@@ -10,6 +10,7 @@ import pygame
 
 from blob_evolution import config
 from blob_evolution.entities.projectile import Projectile
+from blob_evolution.systems import hitfx
 from blob_evolution.utils import clock
 from blob_evolution.utils import creature_shapes as shapes
 from blob_evolution.utils.enums import CreatureType
@@ -61,6 +62,9 @@ class Creature:
         self.charge_dir = Vector2()
         self.charge_telegraph = 0.0
         self.hit_flash = 0.0
+        self.flash_gap = 0.0                              # TASK-059 (visual only): s until a new hit flash may start
+        self.flash_started = False                        # ... the last take_damage call started a flash
+        self.last_hit_blocked = False                     # ... the last take_damage call ran the shield block
         self.slow_factor = 1.0
         self.face_dir = Vector2(1, 0)
         self.shield_hp = 40.0 * diff["hp"] if creature_type == CreatureType.SHIELDER else 0.0
@@ -119,6 +123,7 @@ class Creature:
         """Take damage. Returns True if killed."""
         if self.phased and self.ctype == CreatureType.PHANTOM:
             return False
+        self.flash_started = self.last_hit_blocked = False
 
         actual = amount * (1.0 + ignore_defense)
 
@@ -131,12 +136,13 @@ class Creature:
                 blocked = min(self.shield_hp, actual * 0.85)
                 self.shield_hp -= blocked
                 actual -= blocked
-                self.hit_flash = 0.1
+                hitfx.flash(self, 0.1)
+                self.last_hit_blocked = True
                 if actual <= 0.5:
                     return False
 
         self.hp -= actual
-        self.hit_flash = 0.15
+        hitfx.flash(self, 0.15)
         if self.hp <= 0:
             if self.ctype == CreatureType.BOMBER:
                 self.pending_explosion = True
@@ -155,6 +161,8 @@ class Creature:
             return
         if self.hit_flash > 0:
             self.hit_flash -= dt
+        if self.flash_gap > 0:
+            self.flash_gap -= dt
 
         dist = self.pos.distance_to(player_pos)
         direction = (player_pos - self.pos).copy()
