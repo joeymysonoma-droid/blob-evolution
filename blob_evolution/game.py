@@ -59,6 +59,7 @@ from blob_evolution.ui.hud import HUD
 from blob_evolution.ui.menus import MenuRenderer
 from blob_evolution.ui.overworld_map import OverworldRenderer
 from blob_evolution.utils import boss_shapes
+from blob_evolution.utils.graphics import get_graphics_cache
 from blob_evolution.utils import clock as anim_clock
 from blob_evolution.utils.enums import CreatureType, Difficulty, GameState, NodeType
 from blob_evolution.utils.layers import DepthLayers
@@ -83,6 +84,9 @@ class Game:
         pygame.init()
         pygame.display.set_caption(config.TITLE)
         self.screen = pygame.display.set_mode((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+        # BUG-196: a new display starts with an empty shared shape cache. Shadows are converted to the display
+        # format, and an earlier Game's big boss shadows would otherwise sit in the module-level cache for good.
+        get_graphics_cache().clear()
         self.clock = pygame.time.Clock()
         self.state = GameState.MAIN_MENU
         self.difficulty = Difficulty.NORMAL
