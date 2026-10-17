@@ -60,6 +60,7 @@ from blob_evolution.ui.menus import MenuRenderer
 from blob_evolution.ui.overworld_map import OverworldRenderer
 from blob_evolution.utils import boss_shapes
 from blob_evolution.utils.graphics import get_graphics_cache
+from blob_evolution.entities.boss_telegraphs import draw_telegraphs, resolve_landed
 from blob_evolution.utils import clock as anim_clock
 from blob_evolution.utils.enums import CreatureType, Difficulty, GameState, NodeType
 from blob_evolution.utils.layers import DepthLayers
@@ -1218,6 +1219,10 @@ class Game:
         for boss in self.bosses:
             if boss.active:
                 boss.update(dt, self.player.pos, self.projectiles)
+                if boss.telegraphs:                               # F3: kit telegraphs that land this frame
+                    self._resolve_telegraphs(boss)
+                    if self.state != GameState.PLAYING:
+                        return
                 label = self._next_phase_banner(boss, dt)      # handed to the HUD inside; returned when on screen
                 if label:
                     self.audio.play("boss_phase")
@@ -1352,6 +1357,22 @@ class Game:
                         proj.active = False
                         if self.player.last_hit or not config.GFX_HITFX:
                             self._add_screen_shake(5)
+
+    def _resolve_telegraphs(self, boss) -> None:
+        """F3: the game applies a landed telegraph's damage, like an enemy shot (one hit per telegraph that touches)."""
+        if not self.player:
+            return
+        dmg = resolve_landed(boss.telegraphs, self.player.pos, self.player.radius)
+        if dmg <= 0:
+            return
+        if self.player.take_damage(dmg):
+            self.audio.play("hurt")
+            self._trigger_game_over()
+            return
+        if self.player.last_hit:
+            self.audio.play("hurt", 0.7)
+        if self.player.last_hit or not config.GFX_HITFX:
+            self._add_screen_shake(5)
 
     def _update_collisions(self) -> None:
         """Handle all collision detection."""
@@ -1918,6 +1939,9 @@ class Game:
         self.drawn_shake.set(self.shake.x, self.shake.y)
         self.map_gen.draw_background(self.screen, self.camera, self.shake)
         self.hazards.draw(self.screen, self.camera, self.shake)
+        for boss in self.bosses:                                  # F3: kit telegraphs lie on the ground, under entities
+            if boss.active and getattr(boss, "telegraphs", None):
+                draw_telegraphs(self.screen, self.camera, self.shake, boss.telegraphs)
         if self.layers:
             self.layers.blit_fog(self.screen, self.camera, self.shake)
         if self.ambient:
