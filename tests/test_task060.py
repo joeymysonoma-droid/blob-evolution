@@ -206,9 +206,9 @@ def test_bug_194_the_shake_after_a_load_depends_only_on_the_encounter_seed(make_
     assert out[0] == out[1]
 
 
-# ---- BUG-186: notice / banner mutants that survived t57/t58 (M09, M10, M11) ------------------------------------------
+# ---- BUG-183: notice / banner mutants that survived t57/t58 (M09, M10, M11) ------------------------------------------
 
-def test_bug_186_m09_a_fight_load_takes_the_waiting_banner_back_out_of_the_hud(make_game, monkeypatch):
+def test_bug_183_m09_a_fight_load_takes_the_waiting_banner_back_out_of_the_hud(make_game, monkeypatch):
     """M09 (load clears the banner book-keeping without withdrawing): the handed banner would still show in the new fight."""
     from blob_evolution.entities.boss import Boss
     from blob_evolution.utils.vector2 import Vector2
@@ -237,7 +237,7 @@ def test_bug_186_m09_a_fight_load_takes_the_waiting_banner_back_out_of_the_hud(m
     assert not any("PHASE" in t for t in seen | set(g.hud.pending_notifications))
 
 
-def test_bug_186_m10_a_second_banner_during_the_yield_does_not_re_queue_the_notice_twice(hud):
+def test_bug_183_m10_a_second_banner_during_the_yield_does_not_re_queue_the_notice_twice(hud):
     hud.show_notification("Archive: X", 3.5)
     hud.update(0.5)
     hud.show_notification(B, 2.5, priority=True)
@@ -246,7 +246,7 @@ def test_bug_186_m10_a_second_banner_during_the_yield_does_not_re_queue_the_noti
     assert hud.pending_notifications.count("Archive: X") == 1
 
 
-def test_bug_186_m10_both_banners_withdrawn_during_one_yield_give_the_notice_its_whole_time_back(hud):
+def test_bug_183_m10_both_banners_withdrawn_during_one_yield_give_the_notice_its_whole_time_back(hud):
     """Without the yield guard the second banner overwrote what the notice had left before it began to yield."""
     ev = {0: [("Archive: X", 3.5, {})], 30: [(B, 2.5, {"priority": True})], 42: [("FINAL PHASE!", 2.5, {"priority": True})],
           50: [lambda h: h.withdraw(B), lambda h: h.withdraw("FINAL PHASE!")]}
@@ -254,7 +254,7 @@ def test_bug_186_m10_both_banners_withdrawn_during_one_yield_give_the_notice_its
     assert len(sp) == 1 and sp[0][0] == "Archive: X" and sp[0][2] in (209, 210, 211)
 
 
-def test_bug_186_m11_a_notice_with_0_8_s_left_just_ends_and_is_not_shown_again(hud):
+def test_bug_183_m11_a_notice_with_0_8_s_left_just_ends_and_is_not_shown_again(hud):
     """The ruling's threshold: only a notice with MORE than 1.0 s left is re-shown afterwards."""
     sp = _spans(hud, {0: [("Level 5!", 0.8, {})], 1: [(B, 2.5, {"priority": True})]})
     assert [t for t, _f, _n in sp] == ["Level 5!", B]
