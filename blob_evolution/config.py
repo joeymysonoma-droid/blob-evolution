@@ -316,6 +316,17 @@ BOSS_ANCHOR_PICK = "alternate"          # "alternate": a layer's mini nodes take
 
 # Boss art (TASK-058 / A1, spec TASK-045): per-boss sprites, cached plate / pips / bar, no per-frame allocations.
 GFX_BOSS_ART = True                     # Producer A/B switch: False restores the pre-058 Boss.draw exactly
+
+# TASK-059 (spec TASK-044, Visual Designer): hit effects and juice
+GFX_HITFX = True                        # Producer A/B switch: False restores today's particles, flash, shake and pulse exactly
+REDUCED_MOTION = False                  # Options row; saved as "reduced_motion" (old saves load the default)
+GFX_DAMAGE_NUMBERS = False              # VD proposal, built but OFF until the Director turns it on
+HITFX_FLASH_GAP = 0.34                  # s between hit-flash STARTS per creature / boss (2.94 Hz max)
+HITFX_FLASH_GAP_REDUCED = 0.50          # ... with REDUCED_MOTION (2 Hz)
+HITFX_SOFT_CAP = 220                    # live hit-fx particles: low-priority spawns stop here
+HITFX_HARD_CAP = 320                    # ... nothing spawns above this
+HITFX_CACHE_MAX_BYTES = 6 << 20         # particle sprite cache cap (cleared if ever hit)
+SHAKE_CAP = 12                          # px per axis
 BOSS_FLASH_MIN_GAP = 0.34               # s between hit-flash starts (spec rule 3: at most 3 Hz)
 FLASH_LERP_OVERRIDE = {"rime_sentinel": 0.65}   # BUG-176 (VD): per art key share of the flash lerp to white (default 0.55)
 BOSS_FLASH_TIME = 0.2                   # s a hit flash shows (main's hit_flash length)

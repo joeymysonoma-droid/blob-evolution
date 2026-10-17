@@ -66,6 +66,7 @@ class ParticleType(Enum):
     SPARKLE = auto()
     TRAIL = auto()
     AMBIENT = auto()
+    SHARD = auto()          # TASK-059: kite pointing along its velocity (hit-fx)
 
 
 class NodeType(Enum):
