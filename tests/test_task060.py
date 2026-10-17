@@ -110,3 +110,43 @@ def test_bug_182_notices_and_a_waiting_banner_do_not_run_down_while_paused(make_
         g._update(DT)
     assert g.hud.notification == "Archive: X" and g.hud.notification_timer == t0
     assert g.hud.pending_notifications[0] == B
+
+
+# ---- BUG-191: the shake cap is on the offset's length (12 px), not per axis -------------------------------------------
+
+def _shake_fuzz(seed, frames=1200):
+    import math
+    import random
+    from blob_evolution.systems import hitfx as hx
+    rng = random.Random(seed)
+    sh = hx.Shake(seed=seed)
+    worst = worst_int = 0.0
+    for _f in range(frames):
+        if rng.random() < 0.3:
+            sh.add(rng.choice((5, 6, 8, 12, 20, 40)), rng.choice(("", "charger", "boss_hit", "kill", "boss_kill")))
+        sh.update(DT)
+        worst = max(worst, math.hypot(sh.offset_x, sh.offset_y))
+        x, y = sh.int_offset()
+        worst_int = max(worst_int, math.hypot(x, y))
+    return worst, worst_int
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_bug_191_the_shake_offset_never_exceeds_12_px_in_length(seed):
+    """QA t59 fuzz: per axis <= 11 but the length reached 15.56 px."""
+    from blob_evolution.systems import hitfx as hx
+    worst, worst_int = _shake_fuzz(seed)
+    assert worst <= hx.SHAKE_CAP + 1e-9 and worst_int <= hx.SHAKE_CAP, (worst, worst_int)
+
+
+def test_bug_191_a_single_big_shake_still_reaches_close_to_the_cap():
+    """Guard (passes on main too): the cap limits, it does not shrink; a lone 12 shake peaks at 6.10 px as on main."""
+    import math
+    from blob_evolution.systems import hitfx as hx
+    sh = hx.Shake(seed=3)
+    sh.add(12, "boss_kill")
+    peak = 0.0
+    for _f in range(60):
+        sh.update(DT)
+        peak = max(peak, math.hypot(sh.offset_x, sh.offset_y))
+    assert peak == pytest.approx(6.1011784571858945, abs=1e-6)

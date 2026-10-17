@@ -447,13 +447,21 @@ class Shake:
         c = self.clk
         self.offset_x = e * (0.65 * math.sin(TAU * fx1 * c + p[0]) + 0.35 * math.sin(TAU * fx2 * c + p[1]))
         self.offset_y = e * (0.65 * math.sin(TAU * fy1 * c + p[2]) + 0.35 * math.sin(TAU * fy2 * c + p[3]))
+        n = math.hypot(self.offset_x, self.offset_y)
+        if n > SHAKE_CAP:                              # BUG-191: the cap is on the offset's length, not per axis
+            k = SHAKE_CAP / n
+            self.offset_x *= k
+            self.offset_y *= k
 
     @property
     def active(self) -> bool:
         return self.t < self.T and self.A > 0
 
     def int_offset(self):
-        return int(round(self.offset_x)), int(round(self.offset_y))
+        x, y = int(round(self.offset_x)), int(round(self.offset_y))
+        if x * x + y * y > SHAKE_CAP * SHAKE_CAP:      # BUG-191: rounding must not push the length past the cap
+            x, y = int(self.offset_x), int(self.offset_y)
+        return x, y
 
 
 class FlashState:
