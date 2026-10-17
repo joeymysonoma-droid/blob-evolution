@@ -497,7 +497,9 @@ def _dais_sprite(act: int) -> pygame.Surface:
 GRID_JITTER = 18  # px; each flagstone grid line wanders +/- this far from its 160 px slot
 
 
-CRYSTALS_PER_CLUSTER = 3  # act 2 bright crystals per cluster (BUG-184)
+CRYSTALS_PER_CLUSTER = 2  # act 2 bright crystals per cluster (BUG-184; 3 left seeds 5 and 19 under 3.3)
+CRYSTAL_CLUSTER_RADIUS = 48  # 2 x the 24 px crystal scatter sigma
+CRYSTAL_REROLLS = 8
 
 
 def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
@@ -543,14 +545,30 @@ def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
     for y in ys[:rows + 1]:
         pygame.draw.rect(surface, edge, (0, y - 1, width, 2))
     crystals = {r: _crystal_sprite(r, act) for r in range(8, 17)}
-    # BUG-184 (Visual Designer, option b): same number of crystals as 14 clusters of 3-5, but no cluster holds more than
-    # CRYSTALS_PER_CLUSTER (~70 % of the old 4-5), so the surplus becomes extra small clusters instead of bright piles.
+    # BUG-184 (Visual Designer, option b, Oct 17): the crystals of 14 clusters of 3-5, but at most CRYSTALS_PER_CLUSTER
+    # per cluster, so the surplus becomes extra clusters. Cluster centres stay >= 1.5 x the cluster radius apart and
+    # crystal centres >= 1.1 x the crystal diameter apart (all clusters); a placement that does not fit is re-rolled up
+    # to CRYSTAL_REROLLS times, then that crystal (or that cluster's crystals) is dropped.
     total = sum(rng.randint(3, 5) for _ in range(14))
-    sites = scatter(-(-total // CRYSTALS_PER_CLUSTER), 90)
-    for k, (cx, cy) in enumerate(sites):
-        for _ in range(min(CRYSTALS_PER_CLUSTER, total - k * CRYSTALS_PER_CLUSTER)):
-            stamp(surface, crystals[rng.randint(8, 16)], (round(cx + rng.gauss(0, 24)), round(cy + rng.gauss(0, 24))),
-                  angle=rng.uniform(0, 60))
+    centres: list = []
+    placed: list = []
+    while total > 0:
+        n, total = min(CRYSTALS_PER_CLUSTER, total), total - CRYSTALS_PER_CLUSTER
+        for _ in range(1 + CRYSTAL_REROLLS):
+            cx, cy = scatter(1, 90)[0]
+            if all(math.hypot(cx - x, cy - y) >= 1.5 * CRYSTAL_CLUSTER_RADIUS for x, y in centres):
+                break
+        else:
+            continue
+        centres.append((cx, cy))
+        for _ in range(n):
+            r = rng.randint(8, 16)
+            for _ in range(1 + CRYSTAL_REROLLS):
+                px, py = round(cx + rng.gauss(0, 24)), round(cy + rng.gauss(0, 24))
+                if all(math.hypot(px - x, py - y) >= 1.1 * (r + q) for x, y, q in placed):
+                    placed.append((px, py, r))
+                    stamp(surface, crystals[r], (px, py), angle=rng.uniform(0, 60))
+                    break
     stamp(surface, _dais_sprite(act), (width // 2, height // 2))
 
 
