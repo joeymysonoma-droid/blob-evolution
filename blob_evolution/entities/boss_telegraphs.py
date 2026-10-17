@@ -162,8 +162,10 @@ ATTACKS: Dict[str, type] = {TelegraphStrike.key: TelegraphStrike}
 
 
 def resolve_landed(telegraphs: Sequence[Telegraph], pos: Vector2, radius: float) -> float:
-    """Total damage of the telegraphs that land this frame and touch the player (the game applies it)."""
-    return sum(t.damage for t in telegraphs if t.landed and t.damage > 0 and t.hits(pos, radius))
+    """Damage of the ONE hit the telegraphs landing this frame deal to the player (BUG-210): overlapping telegraphs do
+    not stack, the highest damage among those that touch counts (0 = no hit). The game applies it as a single hit, so a
+    shield blocks it once."""
+    return max((t.damage for t in telegraphs if t.landed and t.damage > 0 and t.hits(pos, radius)), default=0.0)
 
 
 def draw_telegraphs(screen: Any, camera: Any, shake: Any, telegraphs: Sequence[Telegraph]) -> None:
