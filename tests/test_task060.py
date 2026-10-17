@@ -259,3 +259,35 @@ def test_bug_186_m11_a_notice_with_0_8_s_left_just_ends_and_is_not_shown_again(h
     sp = _spans(hud, {0: [("Level 5!", 0.8, {})], 1: [(B, 2.5, {"priority": True})]})
     assert [t for t, _f, _n in sp] == ["Level 5!", B]
 
+
+# ---- BUG-192: the two hitfx mutants that survived t59/t60 ------------------------------------------------------------
+
+def test_bug_192_m1_a_shake_above_the_cap_is_treated_as_the_cap():
+    """m1 (shake cap removed): add(40) took A = 40 and a 0.4 s longer decay; the cap clamps the intensity itself."""
+    from blob_evolution.systems import hitfx as hx
+    big, cap = hx.Shake(seed=1), hx.Shake(seed=1)
+    big.add(40)
+    cap.add(hx.SHAKE_CAP)
+    assert big.A == hx.SHAKE_CAP and big.T == cap.T
+
+
+def test_bug_192_m9_no_hurt_sound_from_boss_contact_while_invulnerable(make_game, monkeypatch):
+    """m9 (boss-contact hurt sound unconditional): touching a boss while invulnerable played 'hurt' every 0.6 s."""
+    import random
+    from blob_evolution.entities.boss import Boss
+    g, node = _loaded_game(make_game, monkeypatch)
+    sounds = []
+    monkeypatch.setattr(g.audio, "play", lambda name, *a, **k: sounds.append(name))
+    random.seed(9)
+    g._load_encounter(node)
+    g.creatures, g.projectiles, g.xp_orbs = [], [], []
+    g.player.max_hp = g.player.hp = 100.0
+    g.bosses = [Boss(g.player.pos.copy(), 3, None)]
+    g.player.invulnerable = 5.0
+    g._boss_touch_cooldown = 0.0
+    for _ in range(40):
+        g.bosses[0].pos.set(g.player.pos.x, g.player.pos.y)
+        g._update_collisions()
+        g._boss_touch_cooldown = 0.0
+    assert sounds.count("hurt") == 0 and g.player.hp == 100.0
+
