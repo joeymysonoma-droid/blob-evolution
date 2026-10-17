@@ -497,6 +497,9 @@ def _dais_sprite(act: int) -> pygame.Surface:
 GRID_JITTER = 18  # px; each flagstone grid line wanders +/- this far from its 160 px slot
 
 
+CRYSTALS_PER_CLUSTER = 3  # act 2 bright crystals per cluster (BUG-184)
+
+
 def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
     """The Memory Vaults: flagstone grid, rune and cracked tiles, crystal clusters and the 'memory dais'."""
     act = 2
@@ -540,8 +543,12 @@ def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
     for y in ys[:rows + 1]:
         pygame.draw.rect(surface, edge, (0, y - 1, width, 2))
     crystals = {r: _crystal_sprite(r, act) for r in range(8, 17)}
-    for cx, cy in scatter(14, 90):
-        for _ in range(rng.randint(3, 5)):
+    # BUG-184 (Visual Designer, option b): same number of crystals as 14 clusters of 3-5, but no cluster holds more than
+    # CRYSTALS_PER_CLUSTER (~70 % of the old 4-5), so the surplus becomes extra small clusters instead of bright piles.
+    total = sum(rng.randint(3, 5) for _ in range(14))
+    sites = scatter(-(-total // CRYSTALS_PER_CLUSTER), 90)
+    for k, (cx, cy) in enumerate(sites):
+        for _ in range(min(CRYSTALS_PER_CLUSTER, total - k * CRYSTALS_PER_CLUSTER)):
             stamp(surface, crystals[rng.randint(8, 16)], (round(cx + rng.gauss(0, 24)), round(cy + rng.gauss(0, 24))),
                   angle=rng.uniform(0, 60))
     stamp(surface, _dais_sprite(act), (width // 2, height // 2))

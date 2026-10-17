@@ -351,7 +351,7 @@ def test_the_act_4_lake_stays_in_the_middle_band_and_the_act_2_dais_is_at_the_ce
 ACTS_0_4_PINNED = {
     0: ("4a24928a7812698e", "3633e2338e8b0ed4"),
     1: ("0876fe1889b74a4b", "6819ae4040346e30"),
-    2: ("c3b4a43e961ea082", "0fde6e336c1aa062"),     # re-pinned by the 038 follow-up (dimmer crystals / rune dots / glow)
+    2: ("2def9ae73b4b076c", "ecca9dbe362a1d97"),     # BUG-184 option (b): re-pinned (3 crystals per cluster, same count)
     3: ("00a6c0bd10a543d6", "e1954e966d9b1e7c"),
     4: ("4ab7d877fc9f2bc7", "fcda2a7ad4125437"),     # BUG-119: re-pinned (dimmer frost ferns, crack highlight 110, drift fill 56)
 }
@@ -363,7 +363,7 @@ ACTS_0_4_PINNED = {
 ACTS_0_4_PINNED_GENERIC = {
     0: ("0c11e40a71b9d526", "6913b43c22536ca5"),
     1: ("4c5940a07e15512b", "c1c793aafd402973"),
-    2: ("ce2acd5b2c0fb1bf", "cee61ec92976ad7b"),
+    2: ("8af6e09db2bf5f7a", "b014d38535e0028f"),     # BUG-184 re-pin, as above
     3: ("2e3cb86c153aa32e", "f1c39bdddc647fdf"),
     4: ("fa578000d8850d32", "1d93800a6f1f915a"),     # BUG-119 re-pin, as above
 }
