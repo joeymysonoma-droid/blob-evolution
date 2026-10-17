@@ -338,6 +338,10 @@ def decals_act_0(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
 
 # --- Act 1, The Sinking Garden: bog pools, lily pads, reeds, a dry stepping-stone causeway -------------------------
 
+PAD_INK = (66, 84, 40)          # BUG-208 (VD ruling): was (58, 104, 50); duller, darker pads keep act 1 low-HP player contrast >= 3.3
+PAD_DOT_INK = (104, 112, 58)     # BUG-208: was (96, 150, 70)
+
+
 def _pool_sprite(w: int, h: int, act: int) -> pygame.Surface:
     fill, rim, ripple = _ink(act, (22, 34, 24)), _ink(act, (74, 96, 40)), _ink(act, (96, 122, 58))
 
@@ -354,7 +358,7 @@ def _pool_sprite(w: int, h: int, act: int) -> pygame.Surface:
 
 def _pad_sprite(radius: int, act: int) -> pygame.Surface:
     """Lily pad: disc with a 40 degree wedge cut out (left transparent, so the pool shows through) and a centre dot."""
-    pad, dot = _ink(act, (58, 104, 50)), _ink(act, (96, 150, 70))
+    pad, dot = _ink(act, PAD_INK), _ink(act, PAD_DOT_INK)
     size = radius * 2 + 4
 
     def draw(big: pygame.Surface) -> None:
