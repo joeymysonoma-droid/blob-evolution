@@ -652,6 +652,7 @@ def _hit(game, readability: bool, monkeypatch, proj_offset=(13.0, 9.0), size=20.
 
 
 def test_hit_spark_is_on_the_creature_edge_along_the_line_to_the_shot(game, monkeypatch):
+    monkeypatch.setattr(config, "GFX_HITFX", False)          # the pre-059 spark path (059: tests/test_hitfx.py)
     _enter(game, 0)
     sparks, _ = _hit(game, True, monkeypatch)
     assert len(sparks) == 1
@@ -662,6 +663,7 @@ def test_hit_spark_is_on_the_creature_edge_along_the_line_to_the_shot(game, monk
 
 
 def test_hit_spark_keeps_the_centre_when_the_shot_is_on_top_of_the_creature(game, monkeypatch):
+    monkeypatch.setattr(config, "GFX_HITFX", False)          # the pre-059 spark path (059: tests/test_hitfx.py)
     _enter(game, 0)
     sparks, _ = _hit(game, True, monkeypatch, proj_offset=(0.5, 0.5))
     assert (sparks[0].x, sparks[0].y) == (1000, 1000)
@@ -669,6 +671,7 @@ def test_hit_spark_keeps_the_centre_when_the_shot_is_on_top_of_the_creature(game
 
 @pytest.mark.parametrize("hp_kills", (25.0, 4.0))
 def test_hit_spark_change_does_not_alter_damage_or_kills(game, monkeypatch, hp_kills):
+    monkeypatch.setattr(config, "GFX_HITFX", False)          # the pre-059 spark path (059: tests/test_hitfx.py)
     _enter(game, 0)
     size = 20.0
     results = []

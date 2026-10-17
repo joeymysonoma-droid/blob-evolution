@@ -17,7 +17,7 @@ class Particle:
 
     __slots__ = (
         "pos", "vel", "color", "size", "lifetime", "max_lifetime",
-        "ptype", "active", "gravity", "bounce",
+        "ptype", "active", "gravity", "bounce", "drag",
     )
 
     def __init__(self) -> None:
@@ -31,6 +31,7 @@ class Particle:
         self.active: bool = False
         self.gravity: bool = True
         self.bounce: bool = False
+        self.drag: float = 0.98             # TASK-059: per-frame factor at 60 fps (hit-fx pool applies drag ** (dt*60))
 
     def spawn(
         self,
@@ -151,7 +152,11 @@ class ParticleSystem:
                 p.update(dt)
 
     def draw(self, surface: pygame.Surface, camera: Vector2, shake: Vector2) -> None:
-        """Draw all active particles."""
+        """Draw all active particles (TASK-059: cached sprites in one fblits when GFX_HITFX is on)."""
+        if config.GFX_HITFX:
+            from blob_evolution.systems import hitfx
+            hitfx.draw_particles(self, surface, camera, shake)
+            return
         for p in self.particles:
             if p.active:
                 p.draw(surface, camera, shake)
