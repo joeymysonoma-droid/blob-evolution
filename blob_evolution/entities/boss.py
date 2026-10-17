@@ -14,6 +14,7 @@ from blob_evolution.data.bosses import (CADENCE, TELEGRAPH, MINI, STATS, AnchorD
 from blob_evolution.data.lore import get_act_lore, get_boss_name
 from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
 from blob_evolution.entities.boss_spawns import SpawnRequest
+from blob_evolution.entities.boss_telegraphs import ATTACKS, Attack, BossContext, Telegraph
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.systems import hitfx
 from blob_evolution.utils import boss_shapes
@@ -110,6 +111,12 @@ class Boss:
         self._plate_name = ""
         # Visual telegraph rings for special arenas
         self.warning_rings: List[Tuple[float, float, Color]] = []  # radius, life, color
+        # F3 attack kit: running kit attacks and their telegraphs (the game resolves landed ones); empty for main's kits.
+        # The kit has its own generator, seeded from the boss, so starting kit attacks never moves the global RNG.
+        self.attacks: List[Attack] = []
+        self.telegraphs: List[Telegraph] = []
+        self.kit_rng = random.Random(0xF3A0 + 97 * act_index + 13 * slot + (7 if miniboss else 0))
+        self.kit_time = 0.0
 
     def take_damage(self, amount: float, ignore_defense: float = 0.0, hit_from: Optional[Vector2] = None) -> bool:
         """Take damage (landing at `hit_from` if given). Returns True if killed; starts phases on threshold hits."""
@@ -209,6 +216,9 @@ class Boss:
             (r, life - dt, col) for r, life, col in self.warning_rings if life - dt > 0
         ]
 
+        if self.attacks or self.telegraphs:
+            self._update_kit(dt, player_pos, projectiles)
+
         self._update_movement(dt, player_pos)
         self.pos.add(self.vel * dt)
         self.pos.clamp_to_rect(config.WORLD_WIDTH, config.WORLD_HEIGHT, self.size)
@@ -234,6 +244,25 @@ class Boss:
             if self.is_miniboss:
                 cd *= cad.special_mini_mult
             self.special_cooldown = cd
+
+    def start_attack(self, key: str, player_pos: Vector2, projectiles: List[Projectile], **params) -> Attack:
+        """F3: start kit attack `key` (entities/boss_telegraphs.ATTACKS) now; it emits its telegraphs at once."""
+        attack = ATTACKS[key](self, **params)
+        attack.start(self._kit_ctx(player_pos, projectiles))
+        self.attacks.append(attack)
+        return attack
+
+    def _kit_ctx(self, player_pos: Vector2, projectiles: List[Projectile]) -> BossContext:
+        return BossContext(player_pos, projectiles, self.telegraphs, self.kit_rng, self.kit_time)
+
+    def _update_kit(self, dt: float, player_pos: Vector2, projectiles: List[Projectile]) -> None:
+        """Count telegraphs down (a landed one stays for this frame so the game can resolve it), then run the attacks."""
+        self.kit_time += dt
+        for t in self.telegraphs:
+            t.update(dt)
+        self.telegraphs[:] = [t for t in self.telegraphs if not t.done]
+        ctx = self._kit_ctx(player_pos, projectiles)
+        self.attacks = [a for a in self.attacks if not a.update(dt, ctx)]
 
     def _update_movement(self, dt: float, player_pos: Vector2) -> None:
         """Keep dashing while a dash runs, else move with this boss's mover."""
