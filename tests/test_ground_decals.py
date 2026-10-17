@@ -350,7 +350,7 @@ def test_the_act_4_lake_stays_in_the_middle_band_and_the_act_2_dais_is_at_the_ce
 # act 2 was re-pinned by the 038 follow-up commit
 ACTS_0_4_PINNED = {
     0: ("4a24928a7812698e", "3633e2338e8b0ed4"),
-    1: ("ac373cef2938d08b", "628c83e836df2deb"),     # BUG-208: re-pinned (lily pad ink (66, 84, 40), dot (104, 112, 58))
+    1: ("e75b0a8299a6ab45", "ce58f6ffd0ee7c3f"),     # BUG-208 + TASK-066: re-pinned (pads (66, 84, 40), dot and 1 px rim (104, 112, 58))
     2: ("8814bf14e10d6e33", "af01ac5801cdc698"),     # BUG-184 option (b): re-pinned (2 per cluster, spaced, re-placed, buried fillers)
     3: ("00a6c0bd10a543d6", "e1954e966d9b1e7c"),
     4: ("4ab7d877fc9f2bc7", "fcda2a7ad4125437"),     # BUG-119: re-pinned (dimmer frost ferns, crack highlight 110, drift fill 56)
@@ -362,7 +362,7 @@ ACTS_0_4_PINNED = {
 # commits SSE2 reproduced ACTS_0_4_PINNED exactly, so both tables pin the same 038-tip textures.
 ACTS_0_4_PINNED_GENERIC = {
     0: ("0c11e40a71b9d526", "6913b43c22536ca5"),
-    1: ("eb1887804d8bde84", "cf10508c3bc78097"),     # BUG-208 re-pin, as above
+    1: ("08a70d5065d882a5", "9ed837fa49011f52"),     # BUG-208 + TASK-066 re-pin, as above
     2: ("890abab49cac3ee5", "7c305b909887b66f"),     # BUG-184 re-pin, as above
     3: ("2e3cb86c153aa32e", "f1c39bdddc647fdf"),
     4: ("fa578000d8850d32", "1d93800a6f1f915a"),     # BUG-119 re-pin, as above
