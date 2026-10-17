@@ -502,7 +502,7 @@ CRYSTAL_CLUSTER_RADIUS = 48  # 2 x the 24 px crystal scatter sigma
 CRYSTAL_REROLLS = 8
 CRYSTAL_REPLACE_TRIES = 24  # anywhere-on-the-map tries before a crystal is dropped
 CRYSTAL_FILLERS = 3  # dim buried crystals per act 2 cluster
-FILLER_FILL_ALPHA = 89  # 35 % (45 % left seed 6 at 3.299)
+FILLER_FILL_ALPHA = 115  # 45 % (VD; all 32 act 2 seeds >= 3.3, lowest seed 7 at 3.369)
 FILLER_EDGE_ALPHA = 90
 
 
