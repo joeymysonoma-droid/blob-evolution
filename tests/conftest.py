@@ -56,6 +56,21 @@ def shared_audio_state(_session_audio):
 
 
 @pytest.fixture(autouse=True)
+def shared_shot_sprites():
+    """Restore the module-level shot-sprite cache after every test.
+
+    It is capped (projectile.SPRITE_CACHE_MAX) and refuses inserts once full, so a test that floods it with colours
+    (the cap test) made later "no allocation after warm-up" tests allocate on every draw (shuf3 order). The sprites
+    themselves are kept, so this is a dict copy, not a rebuild.
+    """
+    from blob_evolution.entities import projectile
+    saved = dict(projectile._SPRITES)
+    yield
+    projectile._SPRITES.clear()
+    projectile._SPRITES.update(saved)
+
+
+@pytest.fixture(autouse=True)
 def isolated_save(tmp_path, monkeypatch):
     """Run each test in tmp_path with the save file redirected there.
 
