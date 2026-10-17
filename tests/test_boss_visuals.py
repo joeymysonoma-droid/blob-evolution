@@ -580,6 +580,8 @@ def _step_pair(a: Boss, b: Boss, f: int, cam=CAM):
         x.pulse_time += DT
         if x.hit_flash > 0:
             x.hit_flash -= DT
+        if x.flash_gap > 0:                               # TASK-059: the hit-fx flash gap ticks in update() too
+            x.flash_gap -= DT
         s = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
         s.fill(GRAY)
         x.draw(s, cam, NO_SHAKE)
