@@ -557,13 +557,15 @@ def test_options_has_a_narration_row_before_back(options) -> None:
     _key(g, pygame.K_s)
     assert g.options_selected == 5
     _key(g, pygame.K_s)
-    assert g.options_selected == 0, "six rows now"
+    assert g.options_selected == 6, "TASK-059: Reduced Motion is row 5, Back row 6"
+    _key(g, pygame.K_s)
+    assert g.options_selected == 0, "seven rows now"
     _key(g, pygame.K_w)
-    assert g.options_selected == 5
+    assert g.options_selected == 6
 
 
 def test_back_still_returns_to_the_main_menu(options) -> None:
-    options.options_selected = 5
+    options.options_selected = 6                          # TASK-059: Back moved to row 6
     _key(options, pygame.K_RETURN)
     assert options.state == GameState.MAIN_MENU
 
