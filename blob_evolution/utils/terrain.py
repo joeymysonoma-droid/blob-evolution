@@ -500,6 +500,27 @@ GRID_JITTER = 18  # px; each flagstone grid line wanders +/- this far from its 1
 CRYSTALS_PER_CLUSTER = 2  # act 2 bright crystals per cluster (BUG-184; 3 left seeds 5 and 19 under 3.3)
 CRYSTAL_CLUSTER_RADIUS = 48  # 2 x the 24 px crystal scatter sigma
 CRYSTAL_REROLLS = 8
+CRYSTAL_REPLACE_TRIES = 24  # anywhere-on-the-map tries before a crystal is dropped
+CRYSTAL_FILLERS = 3  # dim buried crystals per act 2 cluster
+FILLER_FILL_ALPHA = 89  # 35 % (45 % left seed 6 at 3.299)
+FILLER_EDGE_ALPHA = 90
+
+
+def _buried_crystal_sprite(radius: int, act: int) -> pygame.Surface:
+    """A buried act 2 crystal: the crystal hexagon at 0.7x, translucent facets, no glow, a faint 1 px edge."""
+    tones = [_ink(act, c) for c in ((46, 86, 160), (60, 110, 190), (84, 140, 220))]
+    outline = _ink(act, (150, 200, 255))
+    rr = radius * 0.7
+    size = int(rr * 2) + 4
+
+    def draw(big: pygame.Surface) -> None:
+        c = size * SS / 2
+        verts = [(c + math.cos(k * TAU / 6) * rr * SS, c + math.sin(k * TAU / 6) * rr * SS) for k in range(6)]
+        for k in range(6):
+            pygame.draw.polygon(big, (*tones[k % 3], FILLER_FILL_ALPHA), [(c, c), verts[k], verts[(k + 1) % 6]])
+        pygame.draw.polygon(big, (*outline, FILLER_EDGE_ALPHA), verts, SS)
+
+    return make_sprite(size, size, draw, bg=tones[1])
 
 
 def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
@@ -545,29 +566,60 @@ def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
     for y in ys[:rows + 1]:
         pygame.draw.rect(surface, edge, (0, y - 1, width, 2))
     crystals = {r: _crystal_sprite(r, act) for r in range(8, 17)}
-    # BUG-184 (Visual Designer, option b, Oct 17): the crystals of 14 clusters of 3-5, but at most CRYSTALS_PER_CLUSTER
-    # per cluster, so the surplus becomes extra clusters. Cluster centres stay >= 1.5 x the cluster radius apart and
-    # crystal centres >= 1.1 x the crystal diameter apart (all clusters); a placement that does not fit is re-rolled up
-    # to CRYSTAL_REROLLS times, then that crystal (or that cluster's crystals) is dropped.
-    total = sum(rng.randint(3, 5) for _ in range(14))
+    # BUG-184 (Visual Designer, option b, Oct 17): the crystals of 14 clusters of 3-5, at most CRYSTALS_PER_CLUSTER per
+    # cluster, the surplus becoming extra clusters. Cluster centres stay >= 1.5 x the cluster radius apart and crystal
+    # centres >= 1.1 x the crystal diameter apart (all clusters). A centre is re-rolled up to CRYSTAL_REROLLS times; a
+    # crystal that does not fit near its centre (or whose cluster found no centre) is re-placed anywhere on the map under
+    # the same crystal spacing, up to CRYSTAL_REPLACE_TRIES times, and only then dropped. Each placed cluster also gets
+    # CRYSTAL_FILLERS dim "buried" crystals (below the bright-decal threshold) so act 2 still reads as crystal fields.
+    # A fixed 56 crystals (the mean of the old 14 clusters of 3-5): with the bake's RNG stream moved, a fresh 3-5 draw
+    # gave 86-88 % of 5a88b66's count on some seeds, and 4-5 put seed 6 at 3.299.
+    total = 14 * 4
     centres: list = []
     placed: list = []
+    fillers = {r: _buried_crystal_sprite(r, act) for r in range(8, 17)}
+    margin = 40  # re-placed crystals may go anywhere, just clear of the world edge
+
+    def fits(px: float, py: float, r: int) -> bool:
+        return all(math.hypot(px - x, py - y) >= 1.1 * (r + q) for x, y, q in placed)
+
+    def put(px: float, py: float, r: int) -> None:
+        placed.append((px, py, r))
+        stamp(surface, crystals[r], (px, py), angle=rng.uniform(0, 60))
+
     while total > 0:
         n, total = min(CRYSTALS_PER_CLUSTER, total), total - CRYSTALS_PER_CLUSTER
+        centre = None
         for _ in range(1 + CRYSTAL_REROLLS):
             cx, cy = scatter(1, 90)[0]
             if all(math.hypot(cx - x, cy - y) >= 1.5 * CRYSTAL_CLUSTER_RADIUS for x, y in centres):
+                centre = (cx, cy)
                 break
-        else:
-            continue
-        centres.append((cx, cy))
+        if centre is not None:
+            centres.append(centre)
         for _ in range(n):
             r = rng.randint(8, 16)
+            for _ in range(1 + CRYSTAL_REROLLS if centre else 0):
+                px, py = round(centre[0] + rng.gauss(0, 24)), round(centre[1] + rng.gauss(0, 24))
+                if fits(px, py, r):
+                    put(px, py, r)
+                    break
+            else:
+                for _ in range(CRYSTAL_REPLACE_TRIES):
+                    px, py = round(rng.uniform(margin, width - margin)), round(rng.uniform(margin, height - margin))
+                    if fits(px, py, r):
+                        put(px, py, r)
+                        break
+    # Fillers go in after every bright crystal and never touch one (nor its glow disc), so they cannot brighten a crystal
+    # or be brightened by one: they add nothing to the bright-decal share. A spot that touches one is re-rolled.
+    for cx, cy in centres:
+        for _ in range(CRYSTAL_FILLERS):
+            r = rng.randint(8, 16)
             for _ in range(1 + CRYSTAL_REROLLS):
-                px, py = round(cx + rng.gauss(0, 24)), round(cy + rng.gauss(0, 24))
-                if all(math.hypot(px - x, py - y) >= 1.1 * (r + q) for x, y, q in placed):
-                    placed.append((px, py, r))
-                    stamp(surface, crystals[r], (px, py), angle=rng.uniform(0, 60))
+                d, a = rng.uniform(0.6, 1.4) * CRYSTAL_CLUSTER_RADIUS, rng.uniform(0, TAU)
+                px, py = round(cx + d * math.cos(a)), round(cy + d * math.sin(a))
+                if all(math.hypot(px - x, py - y) >= 2.2 * q + 0.7 * r + 2 for x, y, q in placed):
+                    stamp(surface, fillers[r], (px, py), angle=rng.uniform(0, 60))
                     break
     stamp(surface, _dais_sprite(act), (width // 2, height // 2))
 
