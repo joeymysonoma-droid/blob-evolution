@@ -9,7 +9,7 @@ from typing import Callable, List, Optional, Tuple
 import pygame
 
 from blob_evolution import config
-from blob_evolution.data.bosses import (CADENCE, MINI, STATS, AnchorDef, BossDef, PhaseDef, anchor_def, mini_phases,
+from blob_evolution.data.bosses import (CADENCE, TELEGRAPH, MINI, STATS, AnchorDef, BossDef, PhaseDef, anchor_def, mini_phases,
                                          warden_def)
 from blob_evolution.data.lore import get_act_lore, get_boss_name
 from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
@@ -264,8 +264,8 @@ class Boss:
         self.basic_shot.fire(self, to_player, projectiles)
 
     def _special_attack(self, player_pos: Vector2, projectiles: List[Projectile]) -> None:
-        """Start the 0.7 s telegraph and fire this boss's special."""
-        self.telegraph = 0.7
+        """Start the telegraph (TELEGRAPH.special s) and fire this boss's special."""
+        self.telegraph = TELEGRAPH.special
         self.special.fire(self, player_pos, projectiles)
         self.specials_fired += 1
 
@@ -350,7 +350,7 @@ class Boss:
         if self.act_index == 7 and self.pull_pulse > 0.3:              # BUG-165: the L8 pull circle reaches 2.5 R
             m = max(m, self.size * (1.5 + self.pull_pulse) + 2)
         if self.telegraph > 0:                                         # BUG-165 (Producer): so does the telegraph ring
-            m = max(m, self.size * (1.5 + (0.8 - min(0.8, self.telegraph))) + 2)
+            m = max(m, self.size * (1.5 + (TELEGRAPH.ring_grow - min(TELEGRAPH.ring_grow, self.telegraph))) + 2)
         for radius, _life, _col in self.warning_rings:                 # and every warning ring
             m = max(m, radius + 2)
         if sx < -m or sx > w + m or sy < -m or sy > h + m:
@@ -385,7 +385,7 @@ class Boss:
         if pips is not None:
             surface.blit(pips, (sx - pips.get_width() // 2, pips_y))
         if self.telegraph > 0:
-            ring_r = int(self.size * (1.5 + (0.8 - min(0.8, self.telegraph))))
+            ring_r = int(self.size * (1.5 + (TELEGRAPH.ring_grow - min(TELEGRAPH.ring_grow, self.telegraph))))
             pygame.draw.circle(surface, (255, 200, 100), (sx, sy), ring_r, 2)
 
     def draw(self, surface: pygame.Surface, camera: Vector2, shake: Vector2) -> None:
@@ -447,7 +447,7 @@ class Boss:
             surface.blit(text, (sx - text.get_width() // 2, bar_y - 34))
 
         if self.telegraph > 0:
-            ring_r = int(self.size * (1.5 + (0.8 - min(0.8, self.telegraph))))
+            ring_r = int(self.size * (1.5 + (TELEGRAPH.ring_grow - min(TELEGRAPH.ring_grow, self.telegraph))))
             pygame.draw.circle(surface, (255, 200, 100), (sx, sy), ring_r, 2)
 
     @property
