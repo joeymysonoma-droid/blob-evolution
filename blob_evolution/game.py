@@ -161,7 +161,8 @@ class Game:
         self.economy.total_earned = eco.integer("total_earned", 0)
         top = savefile.SaveSection(data)
         if "audio_enabled" in data:
-            self.audio.set_enabled(top.boolean("audio_enabled", self.audio.enabled))
+            # BUG-197: a bad value means the default (on), not whatever the shared AudioManager was left at
+            self.audio.set_enabled(top.boolean("audio_enabled", True))
             if self.audio.enabled:
                 self.audio.play_menu_music()
         self._narration_in_save = "narration_volume" in data  # a saved value is written back even at the default
