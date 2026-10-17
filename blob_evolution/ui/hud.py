@@ -134,11 +134,22 @@ class HUD:
         self._yielded = True
 
     def withdraw(self, text: str) -> None:
-        """Drop waiting notices with this text (a phase banner whose boss is gone, or a fight that was left)."""
+        """Drop waiting notices with this text (a phase banner whose boss is gone, or a fight that was left). BUG-180: the
+        notice that banner cut short is not re-shown; if it is still on screen yielding, it keeps the time it had."""
+        if not any(e.text == text for e in self._queue):
+            return
         kept = [e for e in self._queue if e.text != text]
-        if len(kept) != len(self._queue):
-            self._queue.clear()
-            self._queue.extend(kept)
+        banners = [e.text for e in kept if e.prio]
+        if banners:                                               # another banner still waits: the cut notice waits for it
+            kept = [e._replace(cut_by=banners[0]) if e.cut_by == text else e for e in kept]
+        else:
+            kept = [e for e in kept if e.cut_by != text]
+            if self._yielded and self.notification_timer > 0:     # still on screen: give back what the yield took
+                spent = min(self._pre_yield, PRIORITY_WAIT) - self.notification_timer
+                self.notification_timer = self._pre_yield - spent
+                self._yielded = False
+        self._queue.clear()
+        self._queue.extend(kept)
 
     def _next(self) -> int:
         self._seq += 1

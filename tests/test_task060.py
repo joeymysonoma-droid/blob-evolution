@@ -62,3 +62,20 @@ def test_bug_179_plain_gameplay_overflow_still_drops_the_oldest(hud):
     for k in range(config.HUD_NOTICE_QUEUE + 3):
         hud.show_notification(f"w{k}", 1.0)
     assert hud.pending_notifications == [f"w{k}" for k in range(3, config.HUD_NOTICE_QUEUE + 3)]
+
+
+# ---- BUG-180: a withdrawn banner does not leave the notice it cut short re-queued -------------------------------------
+
+def test_bug_180_a_withdrawn_banner_leaves_the_cut_notice_shown_once_with_its_own_time(hud):
+    """QA t57 S7/G03: the boss died while its banner waited; 'Archive' was then shown 1.5 s + 3.5 s again (5.0 s, no banner
+    in between). Now it is shown once, for its own 3.5 s, and nothing it cut short is re-queued."""
+    ev = {0: [("Archive: X", 3.5, {})], 30: [(B, 2.5, {"priority": True})], 45: [lambda h: h.withdraw(B)]}
+    sp = _spans(hud, ev)
+    assert len(sp) == 1 and sp[0][:2] == ("Archive: X", 0) and sp[0][2] in (209, 210, 211)
+
+
+def test_bug_180_two_banners_one_withdrawn_the_other_still_shows_then_the_notice_in_full(hud):
+    ev = {0: [("Archive: X", 3.5, {})], 30: [(B, 2.5, {"priority": True})], 40: [("FINAL PHASE!", 2.5, {"priority": True})],
+          45: [lambda h: h.withdraw(B)]}
+    sp = _spans(hud, ev)
+    assert [t for t, _f, _n in sp] == ["Archive: X", "FINAL PHASE!", "Archive: X"] and sp[2][2] in (209, 210, 211)
