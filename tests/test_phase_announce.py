@@ -348,3 +348,14 @@ def test_bug_177_hud_alone_s09(monkeypatch):
     spans = _spans(seen)
     assert [(t, f) for t, f, _n in spans] == [("Archive: Warden of Ash", 0), ("Warden of Ash — PHASE 2!", 90),
                                               ("Healed 25 HP!", 241), ("Archive: Warden of Ash", 361)]
+
+
+def test_bug_178_feedback_does_not_interrupt_a_banner_on_screen(game):
+    """QA t57 S10: 'Healed 25 HP!' 0.5 s into PHASE 2 used to cut the banner and resume it later. Now the banner keeps
+    its whole 2.5 s and the feedback shows right after it."""
+    b = Boss(Vector2(1300, 1000), 3, None)
+    game.bosses = [b]
+    at = {0: lambda: b.take_damage(b.max_hp * 0.55), 30: lambda: game.hud.show_notification("Healed 25 HP!", 2.0, now=True)}
+    spans = _spans(_screen(game, 400, at))
+    assert [t for t, _f, _n in spans] == ["Warden of Ash — PHASE 2!", "Healed 25 HP!"]
+    assert spans[0][1] == 0 and spans[0][2] in (149, 150, 151) and spans[1][2] in (119, 120, 121)
