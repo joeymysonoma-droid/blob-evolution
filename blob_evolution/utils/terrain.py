@@ -340,6 +340,7 @@ def decals_act_0(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
 
 PAD_INK = (66, 84, 40)          # BUG-208 (VD ruling): was (58, 104, 50); duller, darker pads keep act 1 low-HP player contrast >= 3.3
 PAD_DOT_INK = (104, 112, 58)     # BUG-208: was (96, 150, 70)
+PAD_RIM_INK = (104, 112, 58)     # TASK-066 (VD): 1 px rim so the duller pads still read against dark water
 
 
 def _pool_sprite(w: int, h: int, act: int) -> pygame.Surface:
@@ -357,13 +358,15 @@ def _pool_sprite(w: int, h: int, act: int) -> pygame.Surface:
 
 
 def _pad_sprite(radius: int, act: int) -> pygame.Surface:
-    """Lily pad: disc with a 40 degree wedge cut out (left transparent, so the pool shows through) and a centre dot."""
-    pad, dot = _ink(act, PAD_INK), _ink(act, PAD_DOT_INK)
+    """Lily pad: disc with a 1 px rim and a 40 degree wedge cut out (left transparent, so the pool shows through) and a
+    centre dot."""
+    pad, dot, rim = _ink(act, PAD_INK), _ink(act, PAD_DOT_INK), _ink(act, PAD_RIM_INK)
     size = radius * 2 + 4
 
     def draw(big: pygame.Surface) -> None:
         c = size * SS / 2
         pygame.draw.circle(big, (*pad, 255), (c, c), radius * SS)
+        pygame.draw.circle(big, (*rim, 255), (c, c), radius * SS, SS)
         wedge = [(c, c)] + [(c + math.cos(math.radians(a)) * (radius + 2) * SS, c + math.sin(math.radians(a)) * (radius + 2) * SS)
                             for a in (-20, -7, 7, 20)]
         pygame.draw.polygon(big, (*pad, 0), wedge)
