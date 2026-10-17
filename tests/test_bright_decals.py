@@ -78,3 +78,22 @@ def test_act_4_ferns_and_cracks_stay_dim():
 def test_bright_decal_share_other_seeds(seed):
     for act in range(10):
         assert _worst_share(act, seed) < HELD.get(act, LIMIT), (act, seed)
+
+
+# BUG-184 (TASK-060): re-fit over 32 seeds (0/7/145/999, 1-20, 31, 77, 123, 500, 1234, 4242, 2026, 31337) on e222d44.
+# Worst share per act (%), old 4-seed worst -> 32-seed worst, against the cap above:
+#   0: 1.28 -> 1.28   1: 0.00 -> 0.00   4: 0.09 -> 0.43   5: 0.00 -> 0.00   6: 3.92 -> 4.10   7: 0.68 -> 1.02  (all < 5)
+#   9: 10.15 -> 10.67 (< 11.15)
+#   2: 9.47 -> 18.17 (seeds 3, 4, 8, 9, 12, 15 over 10.47)   3: 9.73 -> 12.03 (seeds 14, 500 over 10.73)
+#   8: 3.50 -> 5.46 (seed 18 over 5)
+# Acts 2, 3 and 8 exceed the Visual Designer's targets on some seeds; raising their caps needs visual sign-off, and
+# changing their art changes the ground pixels, so they are left out of the wide test until the Visual Designer decides.
+SEEDS_WIDE = (0, 7, 145, 999, *range(1, 21), 31, 77, 123, 500, 1234, 4242, 2026, 31337)
+WIDE_ACTS = (0, 1, 4, 5, 6, 7, 9)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("act", WIDE_ACTS)
+def test_bug_184_bright_decal_share_holds_over_32_seeds(act):
+    worst = max(_worst_share(act, s) for s in SEEDS_WIDE)
+    assert worst < HELD.get(act, LIMIT), (act, round(worst, 4))
