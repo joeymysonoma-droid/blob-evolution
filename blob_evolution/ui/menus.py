@@ -214,7 +214,7 @@ class MenuRenderer:
 
     def draw_options(self, surface: pygame.Surface, selected: int, difficulty: Difficulty,
                      show_fps: bool, show_minimap: bool, sound_on: bool = True,
-                     narration_volume: float = 0.8) -> None:
+                     narration_volume: float = 0.8, reduced_motion: bool = False) -> None:
         """Draw options menu."""
         self._begin_items()
         style.draw_ambient_bg(surface, seed_offset=2.0)
@@ -229,6 +229,7 @@ class MenuRenderer:
             f"Show Minimap: {'ON' if show_minimap else 'OFF'}",
             f"Sound: {'ON' if sound_on else 'OFF'}",
             f"Narration: {f'{round(narration_volume * 100)}%' if narration_volume > 0 else 'OFF'}",
+            f"Reduced Motion: {'ON' if reduced_motion else 'OFF'}",   # TASK-059
             "Back",
         ]
         for i, item in enumerate(items):

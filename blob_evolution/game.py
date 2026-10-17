@@ -39,6 +39,7 @@ from blob_evolution.entities.player import Player
 from blob_evolution.entities.projectile import Projectile
 from blob_evolution.maps.generator import MapGenerator
 from blob_evolution.systems import savefile
+from blob_evolution.systems import hitfx
 from blob_evolution.systems.ambient import AmbientField
 from blob_evolution.systems.artifacts import ARTIFACT_DEFINITIONS, ArtifactManager
 from blob_evolution.systems.audio import (
@@ -132,6 +133,8 @@ class Game:
         self.shake = Vector2()
         self.shake_intensity = 0.0
         self.drawn_shake = Vector2()     # BUG-114: the shake of the last drawn frame (what the player aimed at)
+        self.shake_fx = hitfx.Shake(config.REDUCED_MOTION)   # TASK-059: smooth shake when GFX_HITFX
+        self.hitfx = hitfx.HitFx(config.REDUCED_MOTION)      # TASK-059: hit cues when GFX_HITFX
 
         self.menu_selected = 0
         self.pause_selected = 0
@@ -163,6 +166,8 @@ class Game:
                 self.audio.play_menu_music()
         self._narration_in_save = "narration_volume" in data  # a saved value is written back even at the default
         self.audio.set_narration_volume(top.number("narration_volume", NARRATION_VOLUME_DEFAULT))
+        self._reduced_in_save = "reduced_motion" in data      # TASK-059: like narration_volume, written once set
+        self._set_reduced_motion(top.boolean("reduced_motion", False))   # old saves have no key -> the default
         if not (readable and ng_ok and perm_ok and eco.valid and top.valid):
             if readable:
                 savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
@@ -185,6 +190,8 @@ class Game:
         }
         if self._narration_in_save or self.audio.narration_volume != NARRATION_VOLUME_DEFAULT:
             data["narration_volume"] = self.audio.narration_volume
+        if self._reduced_in_save or config.REDUCED_MOTION:
+            data["reduced_motion"] = bool(config.REDUCED_MOTION)
         savefile.write_save(config.SAVE_FILE, data)
 
     def _diff_mult(self) -> dict:
@@ -319,6 +326,10 @@ class Game:
         self.map_gen.load_map(act, seed)
         set_xp_act(act)                                       # orb tiers scale with the act's median orb value
         self.ambient = AmbientField(act, seed ^ 0xA3B1E7)   # own rng: no global random draws
+        self.hitfx.clear()
+        self.hitfx.set_ground(act)
+        if config.GFX_HITFX:
+            self.hitfx.prewarm_all()                          # TASK-059: every hit-fx sprite baked here, none per frame
         self.layers = DepthLayers(act, seed ^ 0x5F0C1D) if config.GFX_LAYERS else None   # own rng as well
         params = self.overworld.get_encounter_params(node)
         self.current_node_params = params
@@ -369,12 +380,24 @@ class Game:
             self.hud.show_notification(f"Entering: {label}", 2.0)
             self.state = GameState.PLAYING
 
-    def _add_screen_shake(self, intensity: float) -> None:
-        """Trigger screen shake."""
+    def _add_screen_shake(self, intensity: float, source: str = "") -> None:
+        """Trigger screen shake (TASK-059: the smooth, capped, per-source gapped shake when GFX_HITFX)."""
+        if config.GFX_HITFX:
+            self.shake_fx.add(intensity, source)
+            return
         self.shake_intensity = max(self.shake_intensity, intensity)
+
+    def _set_reduced_motion(self, on: bool) -> None:
+        config.REDUCED_MOTION = bool(on)
+        self.shake_fx.reduced = config.REDUCED_MOTION
+        self.hitfx.set_reduced(config.REDUCED_MOTION)
 
     def _update_shake(self, dt: float) -> None:
         """Update screen shake."""
+        if config.GFX_HITFX:
+            self.shake_fx.update(dt)
+            self.shake.set(*self.shake_fx.int_offset())
+            return
         if self.shake_intensity > 0.1:
             self.shake.x = random.uniform(-self.shake_intensity, self.shake_intensity)
             self.shake.y = random.uniform(-self.shake_intensity, self.shake_intensity)
@@ -601,7 +624,7 @@ class Game:
 
     def _confirm_options_menu(self) -> None:
         """Execute options menu selection."""
-        if self.options_selected == 5:
+        if self.options_selected == 6:
             self.audio.play("ui_confirm")
             self.state = GameState.MAIN_MENU
 
@@ -742,6 +765,10 @@ class Game:
             evo = self.player.evolution.check_evolution(self.player.skills)
             if evo:
                 self.hud.show_notification(evo, 3.0, now=True)
+            if config.GFX_HITFX:
+                self.hitfx.skill_up(self.player)
+                if evo:
+                    self.hitfx.evolution(self.player)
 
     def _handle_shop_key(self, key: int) -> None:
         """Shop input."""
@@ -1038,10 +1065,10 @@ class Game:
     def _handle_options_key(self, key: int) -> None:
         """Options menu input."""
         if self._is_menu_up(key):
-            self.options_selected = (self.options_selected - 1) % 6
+            self.options_selected = (self.options_selected - 1) % 7
             self.audio.play("ui_select", 0.6)
         elif self._is_menu_down(key):
-            self.options_selected = (self.options_selected + 1) % 6
+            self.options_selected = (self.options_selected + 1) % 7
             self.audio.play("ui_select", 0.6)
         elif self._is_menu_left(key) or self._is_menu_right(key):
             if self.options_selected == 0:
@@ -1065,6 +1092,9 @@ class Game:
             elif self.options_selected == 4:
                 step = NARRATION_VOLUME_STEP if self._is_menu_right(key) else -NARRATION_VOLUME_STEP
                 self.audio.set_narration_volume(self.audio.narration_volume + step)
+                self.audio.play("ui_select")
+            elif self.options_selected == 5:                   # TASK-059: Reduced Motion
+                self._set_reduced_motion(not config.REDUCED_MOTION)
                 self.audio.play("ui_select")
         elif self._is_menu_select(key):
             self._confirm_options_menu()
@@ -1188,8 +1218,14 @@ class Game:
         self._update_projectiles(dt)
         self._update_collisions()
         self._update_xp_orbs(dt)
+        if self.player.hit_event:                          # TASK-059: one player-hit cue per landed hit
+            self.player.hit_event = False
+            if config.GFX_HITFX:
+                self.hitfx.player_hit(self.player)
         self.hazards.update(dt)
         self.particles.update(dt)
+        if config.GFX_HITFX:
+            self.hitfx.update_all(dt)
 
         if self.player.vel.length() > 50:
             self.particles.emit_trail(self.player.pos, self.player.vel, config.COLOR_PLAYER)
@@ -1263,7 +1299,10 @@ class Game:
             was_active_kill = creature.hp <= 0
             creature.active = False
             self.audio.play("explode")
-            self.particles.emit_explosion(creature.pos, (255, 120, 40), 28)
+            if config.GFX_HITFX:
+                self.hitfx.bomber_blast(creature.pos, creature.explosion_radius)
+            else:
+                self.particles.emit_explosion(creature.pos, (255, 120, 40), 28)
             self._add_screen_shake(8)
             radius = creature.explosion_radius
             damage = creature.explosion_damage
@@ -1298,10 +1337,11 @@ class Game:
                         if self.player.take_damage(proj.damage):
                             self.audio.play("hurt")
                             self._trigger_game_over()
-                        else:
+                        elif self.player.last_hit:         # TASK-059: not on shots absorbed while invulnerable
                             self.audio.play("hurt", 0.7)
                         proj.active = False
-                        self._add_screen_shake(5)
+                        if self.player.last_hit or not config.GFX_HITFX:
+                            self._add_screen_shake(5)
 
     def _update_collisions(self) -> None:
         """Handle all collision detection."""
@@ -1329,7 +1369,10 @@ class Game:
                         d = proj.pos - creature.pos
                         if d.length() > 1:
                             hit_pt = creature.pos + d.normalize() * creature.radius
-                    self.particles.emit_sparkle(hit_pt, (255, 200, 100))
+                    if config.GFX_HITFX:
+                        self.hitfx.on_creature_hit(creature, proj.pos, hit_damage)
+                    else:
+                        self.particles.emit_sparkle(hit_pt, (255, 200, 100))
                     self.audio.play("hit", 0.45)
                     if killed:
                         self._on_creature_killed(creature)
@@ -1341,7 +1384,9 @@ class Game:
                 if boss.active and proj.collides_with(boss.pos, boss.radius):
                     killed = boss.take_damage(hit_damage, ignore_def, hit_from=proj.pos)
                     self.audio.play("boss_hit", 0.55)
-                    self._add_screen_shake(3)
+                    if config.GFX_HITFX:
+                        self.hitfx.on_boss_hit(boss, proj.pos)
+                    self._add_screen_shake(3, "boss_hit")
                     if killed:
                         self._on_boss_killed(boss)
                     if not proj.piercing:
@@ -1358,7 +1403,10 @@ class Game:
                     continue
                 if self.player.size > creature.size * 1.1:
                     self.player.absorb_creature(creature.size, creature.hp)
-                    self.particles.emit_explosion(creature.pos, (200, 80, 80))
+                    if config.GFX_HITFX:
+                        self.hitfx.absorb(creature.pos, creature.size, self.player.pos)
+                    else:
+                        self.particles.emit_explosion(creature.pos, (200, 80, 80))
                     self.audio.play("absorb")
                     if creature.ctype == CreatureType.BOMBER:
                         creature.pending_explosion = True
@@ -1383,9 +1431,11 @@ class Game:
                     self.audio.play("hurt")
                     self._trigger_game_over()
                     return
-                self.audio.play("hurt", 0.6)
+                if self.player.last_hit:                   # TASK-059: the hurt sound follows a landed hit only
+                    self.audio.play("hurt", 0.6)
                 self._boss_touch_cooldown = 0.6
-                self._add_screen_shake(6)
+                if self.player.last_hit or not config.GFX_HITFX:
+                    self._add_screen_shake(6)
 
         # Charger collision
         for creature in self.creatures:
@@ -1395,8 +1445,10 @@ class Game:
                         self.audio.play("hurt")
                         self._trigger_game_over()
                         return
-                    self.audio.play("hurt", 0.8)
-                    self._add_screen_shake(8)
+                    if self.player.last_hit:               # TASK-059: not every frame of an overlap while invulnerable
+                        self.audio.play("hurt", 0.8)
+                    if self.player.last_hit or not config.GFX_HITFX:
+                        self._add_screen_shake(8)
 
     def _on_creature_killed(self, creature: Creature) -> None:
         """Handle creature death."""
@@ -1422,12 +1474,17 @@ class Game:
             self.hud.show_notification(msg, 2.0)
             if "Level" in msg or "level" in msg.lower():
                 self.audio.play("levelup")
+        if config.GFX_HITFX and messages:
+            self.hitfx.on_messages(self.player, messages)
         self.audio.play("kill", 0.7)
         self.xp_orbs.append(XPOrb(creature.pos.copy(), xp))
         essence_gain = int(creature.xp_value * 0.05)
         self.economy.add_essence(essence_gain, self._essence_multiplier())
-        self.particles.emit_explosion(creature.pos, (255, 150, 50))
-        self._add_screen_shake(2)
+        if config.GFX_HITFX:
+            self.hitfx.creature_kill(creature.pos, creature.size)
+        else:
+            self.particles.emit_explosion(creature.pos, (255, 150, 50))
+        self._add_screen_shake(2, "kill")
 
         ls = self.player.get_lifesteal()
         if ls > 0:
@@ -1481,10 +1538,15 @@ class Game:
         messages = self.player.add_xp(xp)
         for msg in messages:
             self.hud.show_notification(msg, 2.0)
+        if config.GFX_HITFX and messages:
+            self.hitfx.on_messages(self.player, messages)
         self.xp_orbs.append(XPOrb(boss.pos.copy(), xp))
         essence_gain = int(boss.xp_value * 0.12)
         self.economy.add_essence(essence_gain, self._essence_multiplier())
-        self.particles.emit_explosion(boss.pos, (255, 80, 80), 40)
+        if config.GFX_HITFX:
+            self.hitfx.boss_kill(boss.pos, boss.size)
+        else:
+            self.particles.emit_explosion(boss.pos, (255, 80, 80), 40)
         self.audio.play("kill")
         self.audio.play("explode", 0.8)
         self._add_screen_shake(12)
@@ -1525,7 +1587,12 @@ class Game:
                             self.audio.play("levelup")
                     self.audio.play("pickup", 0.5)
                     orb.active = False
-                    self.particles.emit_sparkle(orb.pos, config.COLOR_XP)
+                    if config.GFX_HITFX:
+                        self.hitfx.xp_pickup(orb.pos)
+                        if messages:
+                            self.hitfx.on_messages(self.player, messages)
+                    else:
+                        self.particles.emit_sparkle(orb.pos, config.COLOR_XP)
 
     def _complete_level(self) -> None:
         """Handle combat encounter completion."""
@@ -1654,7 +1721,7 @@ class Game:
         elif self.state == GameState.OPTIONS:
             self.menu.draw_options(self.screen, self.options_selected, self.difficulty,
                                    self.hud.show_fps, self.hud.show_minimap, self.audio.enabled,
-                                   self.audio.narration_volume)
+                                   self.audio.narration_volume, config.REDUCED_MOTION)
         elif self.state == GameState.HELP:
             self.menu.draw_help(self.screen)
 
@@ -1863,6 +1930,8 @@ class Game:
                 proj.draw(self.screen, self.camera, self.shake)
 
         self.particles.draw(self.screen, self.camera, self.shake)
+        if config.GFX_HITFX:
+            self.hitfx.draw_all(self.screen, self.camera, self.shake)
         if self.ambient:
             self.ambient.draw_front(self.screen, self.camera, self.shake)
 
