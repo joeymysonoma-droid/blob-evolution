@@ -34,7 +34,7 @@ class Telegraph:
       lane (x0, y0, x1, y1, width)                a thick segment
       fan  (cx, cy, angle, spread, length)        a sector
       ring (cx, cy, r_in, r_out)                  an annulus
-      safe (x, y, w, h)                           everything OUTSIDE the rect is hit
+      safe (x, y, w, h)                           everything not strictly inside the rect is hit
     """
 
     kind: str
@@ -93,8 +93,9 @@ class Telegraph:
                 return True
             off = (math.atan2(y - cy, x - cx) - ang + math.pi) % math.tau - math.pi
             return abs(off) <= spread / 2 + math.asin(min(1.0, radius / d))
-        rx, ry, rw, rh = g          # safe: hit unless the whole circle is inside the rect
-        return not (rx + radius <= x <= rx + rw - radius and ry + radius <= y <= ry + rh - radius)
+        rx, ry, rw, rh = g          # safe: hit unless the circle is strictly inside the rect; touching the rect's
+        # edge counts as inside the danger, as a circle touching a zone's edge does (BUG-211)
+        return not (rx + radius < x < rx + rw - radius and ry + radius < y < ry + rh - radius)
 
 
 @dataclass
