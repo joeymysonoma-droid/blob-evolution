@@ -31,7 +31,9 @@ LIMIT = 0.05
 # capped per cluster in terrain.decals_act_2. Act 2 ruling (Oct 17): cluster centres >= 1.5 x cluster radius apart,
 # crystals >= 1.1 x diameter apart; 3 per cluster left seeds 5 and 19 under 3.3, so 2 per cluster. All 32 seeds >= 3.3;
 # its cap is the 32-seed worst (seed 19) + 1 point.
-HELD = {2: 0.0657 + 0.01, 3: 0.1203 + 0.01, 8: 0.0546 + 0.01, 9: 0.1015 + 0.01}
+# BUG-206 (TASK-064): act 2's cap tightened to 6.55 %: its 32-seed worst on 806a7ce is 5.55 % (seed 19 is 4.18 %; the
+# 6.57 % it was fitted to came from 2cebbe9, before TASK-063's fillers).
+HELD = {2: 0.0655, 3: 0.1203 + 0.01, 8: 0.0546 + 0.01, 9: 0.1015 + 0.01}
 
 
 def _grey(c) -> float:
