@@ -64,14 +64,28 @@ def test_bug_207_the_counted_constants_are_the_ruled_ones():
     assert (terrain.CRYSTALS_PER_CLUSTER, terrain.CRYSTAL_FILLERS, terrain.CRYSTAL_FILLER_TRIES, CLUSTERS) == (2, 3, 24, 28)
 
 
+# Seeds where a cluster found no centre after CRYSTAL_REROLLS re-rolls (its 2 bright crystals are re-placed anywhere,
+# BUG-184), so that cluster has no filler ring: 27 rings x 3 = 81 fillers, all placed. 1 seed in 2150 (0-2047, 3000-3099).
+SHORT_CLUSTER_SEEDS = {888: 27}
+
+
 @pytest.mark.slow
-def test_bug_225_every_filler_is_placed_on_1024_seeds(monkeypatch):
-    short = []
+def test_bug_225_every_filler_is_placed_on_1024_seeds():
+    bad = []
     for seed in range(1024):
-        n = _counts(monkeypatch, seed)
-        if n != (BRIGHT, CLUSTERS * terrain.CRYSTAL_FILLERS):
-            short.append((seed, n))
-    assert not short
+        with pytest.MonkeyPatch.context() as mp:           # a fresh patch per seed: wrappers must not stack
+            calls, real = [], terrain._filler_spot
+
+            def spy(rng, cx, cy, r, placed, real=real, calls=calls):
+                calls.append(real(rng, cx, cy, r, placed))
+                return calls[-1]
+
+            mp.setattr(terrain, "_filler_spot", spy)
+            n = _counts(mp, seed)
+        rings = SHORT_CLUSTER_SEEDS.get(seed, CLUSTERS)
+        if n != (BRIGHT, rings * terrain.CRYSTAL_FILLERS) or None in calls or len(calls) != rings * terrain.CRYSTAL_FILLERS:
+            bad.append((seed, n, len(calls), calls.count(None)))
+    assert not bad
 
 
 # BUG-226: every placed filler is inside its own cluster's 0.6-1.4 x radius ring and clears every bright crystal by the
