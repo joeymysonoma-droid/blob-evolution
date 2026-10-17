@@ -16,6 +16,7 @@ from blob_evolution import config
 from blob_evolution.data.bosses import TELEGRAPH_WARN
 from blob_evolution.utils.vector2 import Vector2
 
+KIT_RNG_SALT = 0x4B17A5      # BUG-213: a boss kit rng is seeded (encounter seed ^ KIT_RNG_SALT) + 7919 * boss index
 KINDS = ("zone", "lane", "mark", "fan", "ring", "safe")
 _LAYER_ELEMENTS = ("growth", "toxic", "echo", "fire", "frost", "mirage", "dream", "void", "lightning", "anchor")
 
