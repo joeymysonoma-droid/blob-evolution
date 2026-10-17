@@ -183,3 +183,33 @@ def test_bug_134_outline_colours_reach_4_7_on_every_light_ground():
     assert config.HAZARD_STYLE["ice"]["edge_inner"] == (90, 108, 120)
     for kind in ("toxic", "ice"):
         assert min(cr(config.HAZARD_STYLE[kind]["edge"], ramp[2]) for ramp in config.GROUND_RAMPS) >= 4.7, kind
+
+
+def test_bug_186_hazards_are_drawn_under_every_entity_particle_and_the_player(make_game, monkeypatch):
+    """QA mutant D2 (hazards.draw moved after the particles, i.e. above entities) was caught only by test_layers in the
+    full suite. Hazard zones are ground: the real draw order puts them before orbs, creatures, bosses, shots, particles and
+    the player."""
+    from blob_evolution.systems.overworld import OverworldMap
+    from blob_evolution.utils.enums import GameState
+    g = make_game()
+    for name in ("play", "play_act_music", "play_menu_music"):
+        monkeypatch.setattr(g.audio, name, lambda *a, **k: None)
+    random.seed(1234)
+    g._start_new_run()
+    g.story = None
+    g.overworld = OverworldMap(act_index=3, seed=7)
+    g._load_encounter(next(n for n in g.overworld.get_available_nodes() if n.node_type.name == "FIGHT"))
+    g.state = GameState.PLAYING
+    order = []
+
+    def spy(name, real):
+        return lambda *a, **k: (order.append(name), real(*a, **k))[1]
+    monkeypatch.setattr(g.hazards, "draw", spy("hazards", g.hazards.draw))
+    monkeypatch.setattr(g.particles, "draw", spy("particles", g.particles.draw))
+    monkeypatch.setattr(g.player, "draw", spy("player", g.player.draw))
+    for c in g.creatures[:3]:
+        monkeypatch.setattr(c, "draw", spy("creature", c.draw))
+    assert g.hazards.zones and g.creatures
+    g._draw_game()
+    first = order.index("hazards")
+    assert order.count("hazards") == 1 and all(order.index(n) > first for n in ("creature", "particles", "player")), order
