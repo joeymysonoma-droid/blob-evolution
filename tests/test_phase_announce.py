@@ -277,3 +277,74 @@ def test_bug_169_a_crossing_waiting_behind_a_banner_keeps_the_announced_plate(ga
         plates[f] = (b.phase, b.shown_phase(), b.shown_name())
     assert plates[31][0] == 3 and plates[31][1:] == (2, "Warden of Echoes")
     assert plates[99][1:] == (3, "Warden of Stillness")
+
+
+# ---- BUG-177: feedback during the 1.0 s yield; QA-approved ruling tests ----------------------------------------------
+
+def test_bug_177_a_banner_cutting_a_notice_mid_way_requeues_it_in_full(game):
+    """'Archive' (3.5 s) is cut at 0.5 s by PHASE 2: it keeps 1.0 s, the banner shows, then 'Archive' shows again for its
+    whole 3.5 s (not the 2.0 s it had left)."""
+    b = Boss(Vector2(1300, 1000), 3, None)
+    game.bosses = [b]
+    at = {0: lambda: game.hud.show_notification("Archive: Warden of Ash", 3.5), 30: lambda: b.take_damage(b.max_hp * 0.55)}
+    spans = _spans(_screen(game, 600, at))
+    assert [t for t, _f, _n in spans] == ["Archive: Warden of Ash", "Warden of Ash — PHASE 2!", "Archive: Warden of Ash"]
+    assert spans[0][2] in (89, 90, 91) and spans[2][2] in (209, 210, 211)
+
+
+def test_bug_177_cut_short_feedback_is_not_shown_again(game):
+    """Feedback (now=True) cut short by a banner keeps at most 1.0 s and is not re-queued: it answered a key press."""
+    b = Boss(Vector2(1300, 1000), 3, None)
+    game.bosses = [b]
+    at = {0: lambda: game.hud.show_notification("Healed 25 HP!", 2.0, now=True), 12: lambda: b.take_damage(b.max_hp * 0.55)}
+    spans = _spans(_screen(game, 400, at))
+    assert [t for t, _f, _n in spans] == ["Healed 25 HP!", "Warden of Ash — PHASE 2!"]
+    assert spans[0][2] in (71, 72, 73)
+
+
+def test_bug_177_the_banner_goes_to_the_front_of_the_queue(game):
+    """Gameplay notices already waiting stay behind the banner, in their order."""
+    b = Boss(Vector2(1300, 1000), 3, None)
+    game.bosses = [b]
+    h = game.hud
+    for text, d in (("Archive: Warden of Ash", 3.5), ("Boss Artifact: Swift", 3.0), ("Level 9!", 2.0)):
+        h.show_notification(text, d)
+    b.take_damage(b.max_hp * 0.55)
+    _run(game, 1)
+    assert h.pending_notifications[0] == "Warden of Ash — PHASE 2!"
+    assert h.pending_notifications[1:] == ["Archive: Warden of Ash", "Boss Artifact: Swift", "Level 9!"]
+
+
+def test_bug_177_feedback_during_the_yield_waits_behind_the_banner(game):
+    """QA t57 G08 / S09: 'Healed 25 HP!' (now=True) 0.25 s into the 1.0 s yield jumped the banner, so PHASE 2 showed ~2 s
+    late (f211) and 'Archive' was shown 3 times. Now: Archive keeps its 1.0 s, the banner shows on time, then the
+    feedback, then Archive once more in full."""
+    b = Boss(Vector2(1300, 1000), 3, None)
+    game.bosses = [b]
+    at = {0: lambda: game.hud.show_notification("Archive: Test remembered", 3.5),
+          30: lambda: b.take_damage(b.max_hp * 0.55),
+          45: lambda: game.hud.show_notification("Healed 25 HP!", 2.0, now=True)}
+    seen = _screen(game, 700, at)
+    spans = _spans(seen)
+    assert [t for t, _f, _n in spans] == ["Archive: Test remembered", "Warden of Ash — PHASE 2!", "Healed 25 HP!",
+                                          "Archive: Test remembered"]
+    assert spans[1][1] in (89, 90, 91)                                 # on time: 1.0 s after the crossing
+    assert spans[2][2] in (119, 120, 121) and spans[3][2] in (209, 210, 211)
+    assert seen[spans[1][1]][1] == 1                                    # the phase sound plays with the banner
+
+
+def test_bug_177_hud_alone_s09(monkeypatch):
+    """QA t57 hudsc S09 at HUD level."""
+    from blob_evolution.ui.hud import HUD
+    h = HUD()
+    events = {0: [("Archive: Warden of Ash", 3.5, {})], 30: [("Warden of Ash — PHASE 2!", 2.5, {"priority": True})],
+              60: [("Healed 25 HP!", 2.0, {"now": True})]}
+    seen = []
+    for f in range(700):
+        for t, d, kw in events.get(f, []):
+            h.show_notification(t, d, **kw)
+        seen.append((h.notification if h.notification_timer > 0 else None, 0))
+        h.update(DT)
+    spans = _spans(seen)
+    assert [(t, f) for t, f, _n in spans] == [("Archive: Warden of Ash", 0), ("Warden of Ash — PHASE 2!", 90),
+                                              ("Healed 25 HP!", 241), ("Archive: Warden of Ash", 361)]

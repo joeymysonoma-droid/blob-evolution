@@ -65,7 +65,8 @@ class HUD:
 
         now=True is menu / shop feedback (the answer to a key press): it jumps the queue and shows at once, and the
         gameplay notice it interrupts goes back to the front of the queue with the time it had left. Feedback that arrives
-        while other feedback is showing waits behind it, still ahead of every gameplay notice.
+        while other feedback is showing waits behind it, still ahead of every gameplay notice. Feedback that arrives while
+        the notice on screen is yielding to a waiting banner (BUG-177) waits behind the banner instead of jumping it.
 
         priority=True is a phase banner (BUG-167 ruling): it replaces a banner on screen at once (the game times that,
         BUG-166); any other notice on screen keeps at most PRIORITY_WAIT (1.0 s) and the banner shows next, ahead of
@@ -87,10 +88,10 @@ class HUD:
                     return
             if not now:
                 self._queue.append((text, duration, False, False))
-            elif not self._now:                                   # interrupt a gameplay notice; it resumes next
+            elif not self._now and not self._yielded:             # interrupt a gameplay notice; it resumes next
                 self._push_front((self.notification, self.notification_timer, False, self._prio))
                 self._show(text, duration, True)
-            else:                                                 # behind the feedback already waiting, before gameplay
+            else:   # behind waiting banners (BUG-177) and the feedback already waiting, before gameplay
                 k = next((k for k, e in enumerate(self._queue) if not e[2] and not e[3]), len(self._queue))
                 self._insert(k, (text, duration, True, False))
 
