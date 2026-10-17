@@ -335,7 +335,9 @@ def test_bug_177_feedback_during_the_yield_waits_behind_the_banner(game):
 
 def test_bug_177_hud_alone_s09(monkeypatch):
     """QA t57 hudsc S09 at HUD level."""
+    import pygame
     from blob_evolution.ui.hud import HUD
+    pygame.font.init()                                    # BUG-187: HUD() needs pygame.font when this test runs alone
     h = HUD()
     events = {0: [("Archive: Warden of Ash", 3.5, {})], 30: [("Warden of Ash — PHASE 2!", 2.5, {"priority": True})],
               60: [("Healed 25 HP!", 2.0, {"now": True})]}
