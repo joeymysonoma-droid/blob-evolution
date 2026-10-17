@@ -751,3 +751,27 @@ def test_bug_188_the_generators_are_their_own_and_leave_the_global_rng_alone():
         g.hitfx.update_all(DT)
     assert random.getstate() == state
 
+
+def _contact(fight, ctype, scale, charging, frames=30):
+    g = fight
+    c = Creature(g.player.pos.copy(), ctype, g.player.size * scale)
+    c.speed = 0.0
+    c.charging = charging
+    g.creatures = [c]
+    g.player.invulnerable = 0.0
+    for _f in range(frames):
+        c.pos.set(g.player.pos.x, g.player.pos.y)
+        c.charging = charging
+        g._update_collisions()
+        g.player.update(DT)
+    return sum(1 for n, _v in g.sounds if n == "hurt")
+
+
+def test_bug_190_a_charger_over_1_1x_the_player_plays_one_hurt_sound_for_its_landed_hit(fight):
+    """Main played a hurt sound for a big charging charger (its hit lands through the big-contact path); now once per
+    landed hit, not on every overlapping frame."""
+    assert _contact(fight, CreatureType.CHARGER, 1.5, True) == 1
+
+
+def test_bug_190_plain_big_creature_contact_stays_silent_as_on_main(fight):
+    assert _contact(fight, CreatureType.BASIC, 2.0, False) == 0

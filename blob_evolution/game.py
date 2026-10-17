@@ -1396,6 +1396,7 @@ class Game:
                         break
 
         # Player vs creatures (absorption / damage)
+        contact_landed = set()                                # BUG-190: big chargers whose contact hit landed this frame
         for creature in self.creatures:
             if not creature.active:
                 continue
@@ -1423,6 +1424,8 @@ class Game:
                         self.audio.play("hurt")
                         self._trigger_game_over()
                         return
+                    if self.player.last_hit:
+                        contact_landed.add(id(creature))
 
         # Player vs bosses (contact damage with cooldown)
         for boss in self.bosses:
@@ -1447,9 +1450,12 @@ class Game:
                         self.audio.play("hurt")
                         self._trigger_game_over()
                         return
-                    if self.player.last_hit:               # TASK-059: not every frame of an overlap while invulnerable
+                    # TASK-059: not every frame of an overlap while invulnerable; BUG-190: a charger over 1.1x the player
+                    # landed its hit through the big-contact path above, and sounds as on main
+                    landed = self.player.last_hit or id(creature) in contact_landed
+                    if landed:
                         self.audio.play("hurt", 0.8)
-                    if self.player.last_hit or not config.GFX_HITFX:
+                    if landed or not config.GFX_HITFX:
                         self._add_screen_shake(8)
 
     def _on_creature_killed(self, creature: Creature) -> None:
