@@ -1117,7 +1117,8 @@ class Game:
     def _update(self, dt: float) -> None:
         """Update game logic."""
         anim_clock.advance(dt, gameplay=self.state == GameState.PLAYING)     # animation clocks (BUG-140/144), no wall clock
-        self.hud.update(dt)
+        if self.state != GameState.PAUSED:
+            self.hud.update(dt)                            # BUG-182: notices and banners wait while paused
         self.audio.tick(dt)
         self._update_shake(dt)
         if self.boss_spawns and self.state in (GameState.MAIN_MENU, GameState.GAME_OVER, GameState.VICTORY):

@@ -92,3 +92,21 @@ def test_bug_181_a_notice_resumed_after_feedback_then_cut_by_a_banner_is_re_show
     assert [t for t, _f, _n in sp] == ["Archive: Warden of Ash", "Healed 25 HP!", "Archive: Warden of Ash", B,
                                        "Archive: Warden of Ash"]
     assert sp[4][2] in (209, 210, 211)
+
+
+# ---- BUG-182: the HUD clock stops while the game is paused ------------------------------------------------------------
+
+def test_bug_182_notices_and_a_waiting_banner_do_not_run_down_while_paused(make_game, monkeypatch):
+    """QA t57 G07: the banner reached the screen while PAUSED, its sound and plate only at unpause (+1.17 s)."""
+    from blob_evolution.utils.enums import GameState
+    g = make_game()
+    for name in ("play", "play_act_music", "play_menu_music"):
+        monkeypatch.setattr(g.audio, name, lambda *a, **k: None)
+    g.state = GameState.PAUSED
+    g.hud.show_notification("Archive: X", 3.5)
+    g.hud.show_notification(B, 2.5, priority=True)
+    t0 = g.hud.notification_timer
+    for _ in range(120):
+        g._update(DT)
+    assert g.hud.notification == "Archive: X" and g.hud.notification_timer == t0
+    assert g.hud.pending_notifications[0] == B
