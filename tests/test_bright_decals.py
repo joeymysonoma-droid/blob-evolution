@@ -104,3 +104,16 @@ WIDE_ACTS = tuple(range(10))
 def test_bug_184_bright_decal_share_holds_over_32_seeds(act):
     worst = max(_worst_share(act, s) for s in SEEDS_WIDE)
     assert worst < HELD.get(act, LIMIT), (act, round(worst, 4))
+
+
+# BUG-205 (TASK-065, Visual Designer option a): act 9 dims its vein highlight in every 32 px window over 11 % (see
+# terrain.VEIN_HL_*). Over 70 seeds (SEEDS_WIDE + 3018 + 21..59) the worst share went 12.88 % (seed 3018) -> 10.67 %
+# (seeds 3 and 123, which have no over-cap window), so the 11.15 % cap holds without a raise.
+SEEDS_70 = tuple(dict.fromkeys((*SEEDS_WIDE, 3018, *range(21, 60))))
+
+
+@pytest.mark.slow
+def test_bug_205_act_9_bright_decal_share_holds_over_70_seeds():
+    assert len(SEEDS_70) == 70
+    worst = max((_worst_share(9, s), s) for s in SEEDS_70)
+    assert worst[0] < HELD[9], (round(worst[0], 4), worst[1])
