@@ -609,8 +609,13 @@ def test_toggle_on_renders_a_different_frame_and_off_is_repeatable(monkeypatch):
 
 def test_toggle_off_uses_the_old_shot_colours_and_touches_no_cache(monkeypatch):
     monkeypatch.setattr(config, "GFX_READABILITY", False)
-    shots, xps, shadows = projectile_module.shot_sprite_count(), xp_sprite_count(), get_graphics_cache().shadow_count()
+    shots, xps = projectile_module.shot_sprite_count(), xp_sprite_count()
     assert _shot("player").color == (34, 197, 94) and _shot("enemy").color == (249, 115, 22)
+    _scene_digest()
+    assert (projectile_module.shot_sprite_count(), xp_sprite_count()) == (shots, xps)
+    # BUG-195: the shadow cache is the pre-readability one every entity draw uses, so a cold run (this test first, e.g. in
+    # reversed order) fills it once; what matters is that the off path then adds nothing on later frames.
+    shadows = get_graphics_cache().shadow_count()
     _scene_digest()
     assert (projectile_module.shot_sprite_count(), xp_sprite_count(), get_graphics_cache().shadow_count()) == (shots, xps, shadows)
 
