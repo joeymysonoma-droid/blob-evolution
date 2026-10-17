@@ -506,7 +506,9 @@ CRYSTAL_CLUSTER_RADIUS = 48  # 2 x the 24 px crystal scatter sigma
 CRYSTAL_REROLLS = 8
 CRYSTAL_REPLACE_TRIES = 24  # anywhere-on-the-map tries before a crystal is dropped
 CRYSTAL_FILLERS = 3  # dim buried crystals per act 2 cluster
-CRYSTAL_FILLER_TRIES = 24  # BUG-207: spots a filler tries in its cluster's 0.6-1.4 x radius ring before it is dropped
+CRYSTAL_FILLER_TRIES = 24  # BUG-207: random spots a filler tries in its cluster's 0.6-1.4 x radius ring
+FILLER_SCAN_RADII = 9      # BUG-225: then a deterministic scan of the ring, 9 radii (every 0.1 x radius) ...
+FILLER_SCAN_ANGLES = 64    # ... by 64 angles
 FILLER_FILL_ALPHA = 115  # 45 % (VD; all 32 act 2 seeds >= 3.3, lowest seed 7 at 3.369)
 FILLER_EDGE_ALPHA = 90
 
@@ -526,6 +528,35 @@ def _buried_crystal_sprite(radius: int, act: int) -> pygame.Surface:
         pygame.draw.polygon(big, (*outline, FILLER_EDGE_ALPHA), verts, SS)
 
     return make_sprite(size, size, draw, bg=tones[1])
+
+
+def _filler_fits(px: float, py: float, r: int, placed) -> bool:
+    """A buried filler of radius r at (px, py) clears every bright crystal and its glow disc."""
+    return all(math.hypot(px - x, py - y) >= 2.2 * q + 0.7 * r + 2 for x, y, q in placed)
+
+
+def _filler_spot(rng: random.Random, cx: float, cy: float, r: int, placed) -> Optional[Tuple[int, int]]:
+    """A spot for one act 2 filler in its cluster's 0.6-1.4 x CRYSTAL_CLUSTER_RADIUS ring, clear of every bright crystal.
+
+    CRYSTAL_FILLER_TRIES random spots first (the first 1 + CRYSTAL_REROLLS draw exactly as before BUG-207, so seeds that
+    never dropped a filler bake the same). BUG-225: if all of them touch a crystal, the ring is scanned without the rng,
+    FILLER_SCAN_RADII radii from 0.6 to 1.4 x the radius by FILLER_SCAN_ANGLES angles, and the first clear spot is taken.
+    Only a ring with no clear spot at all drops the filler (none in 2000+ seeds, tests/test_act2_crystal_counts.py).
+    """
+    for _ in range(CRYSTAL_FILLER_TRIES):
+        d, a = rng.uniform(0.6, 1.4) * CRYSTAL_CLUSTER_RADIUS, rng.uniform(0, TAU)
+        px, py = round(cx + d * math.cos(a)), round(cy + d * math.sin(a))
+        if _filler_fits(px, py, r, placed):
+            return px, py
+    for i in range(FILLER_SCAN_RADII):
+        d = (0.6 + 0.8 * i / (FILLER_SCAN_RADII - 1)) * CRYSTAL_CLUSTER_RADIUS
+        for k in range(FILLER_SCAN_ANGLES):
+            a = TAU * k / FILLER_SCAN_ANGLES
+            px, py = round(cx + d * math.cos(a)), round(cy + d * math.sin(a))
+            inside = 0.6 * CRYSTAL_CLUSTER_RADIUS <= math.hypot(px - cx, py - cy) <= 1.4 * CRYSTAL_CLUSTER_RADIUS
+            if inside and _filler_fits(px, py, r, placed):
+                return px, py
+    return None
 
 
 def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) -> None:
@@ -617,16 +648,13 @@ def decals_act_2(surface: pygame.Surface, rng: random.Random, scatter: Scatter) 
                         break
     # Fillers go in after every bright crystal and never touch one (nor its glow disc), so they cannot brighten a crystal
     # or be brightened by one: they add nothing to the bright-decal share. A spot that touches one is re-rolled within
-    # the same 0.6-1.4 x radius ring, up to CRYSTAL_FILLER_TRIES times (BUG-207), and only then dropped.
+    # the same 0.6-1.4 x radius ring, up to CRYSTAL_FILLER_TRIES times (BUG-207), then the ring is scanned (BUG-225).
     for cx, cy in centres:
         for _ in range(CRYSTAL_FILLERS):
             r = rng.randint(8, 16)
-            for _ in range(CRYSTAL_FILLER_TRIES):
-                d, a = rng.uniform(0.6, 1.4) * CRYSTAL_CLUSTER_RADIUS, rng.uniform(0, TAU)
-                px, py = round(cx + d * math.cos(a)), round(cy + d * math.sin(a))
-                if all(math.hypot(px - x, py - y) >= 2.2 * q + 0.7 * r + 2 for x, y, q in placed):
-                    stamp(surface, fillers[r], (px, py), angle=rng.uniform(0, 60))
-                    break
+            spot = _filler_spot(rng, cx, cy, r, placed)
+            if spot is not None:
+                stamp(surface, fillers[r], spot, angle=rng.uniform(0, 60))
     stamp(surface, _dais_sprite(act), (width // 2, height // 2))
 
 
