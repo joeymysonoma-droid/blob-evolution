@@ -291,3 +291,18 @@ def test_bug_192_m9_no_hurt_sound_from_boss_contact_while_invulnerable(make_game
         g._boss_touch_cooldown = 0.0
     assert sounds.count("hurt") == 0 and g.player.hp == 100.0
 
+
+# ---- BUG-193: the shake generator is reseeded from the encounter seed (mutant: seeded with None) ----------------------
+
+def test_bug_193_the_shake_phases_after_a_load_do_not_depend_on_the_generator_s_past(make_game, monkeypatch):
+    import random
+    monkeypatch.setattr(config, "GFX_HITFX", True)
+    phases = []
+    for burn in (0, 13):
+        g, node = _loaded_game(make_game, monkeypatch)
+        for _ in range(burn):
+            g.shake_fx.rng.random()
+        random.seed(5)
+        g._load_encounter(node)
+        phases.append(list(g.shake_fx.ph))
+    assert phases[0] == phases[1]
