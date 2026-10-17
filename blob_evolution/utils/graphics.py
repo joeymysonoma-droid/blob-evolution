@@ -15,8 +15,15 @@ from blob_evolution.utils.vector2 import Vector2
 Color = Tuple[int, int, int]
 
 
+# BUG-201: the contact-shadow cache has no LRU cap. Its size is bounded by the radii a real run draws (creatures, minis,
+# wardens of all ten layers): QA measured a ~1.27 MB plateau over a full session, and the documented real-run bound is
+# 1.5 MB (tests/test_shadow_cache_session.py plays a ten-layer session on one Game, without a clear, against it).
+# A new Game clears the cache (BUG-196); nothing else evicts.
+SHADOW_CACHE_REAL_RUN_BYTES = 1_500_000
+
+
 class GraphicsCache:
-    """Cache for pre-rendered circle surfaces."""
+    """Cache for pre-rendered circle surfaces and contact shadows (see SHADOW_CACHE_REAL_RUN_BYTES)."""
 
     def __init__(self) -> None:
         self._circles: Dict[Tuple[int, Color, int], pygame.Surface] = {}
