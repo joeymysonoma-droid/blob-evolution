@@ -302,3 +302,30 @@ def test_bug_212_no_hurt_sound_when_invulnerability_absorbs_a_landing(fight, mon
     b.start_attack("telegraph_strike", g.player.pos.copy(), [], kind="zone", radius=80.0, damage=13.0, warn=0.2)
     _run(g, 0.5)
     assert "hurt" in sounds
+
+
+def test_bug_213_kit_rngs_are_seeded_per_encounter_and_the_global_rng_is_untouched(make_game, monkeypatch):
+    from blob_evolution.entities.boss_telegraphs import KIT_RNG_SALT
+    from blob_evolution.systems.overworld import OverworldMap
+    from blob_evolution.utils.enums import NodeType
+    g = make_game()
+    for name in ("play", "play_act_music", "play_menu_music", "play_narration"):
+        monkeypatch.setattr(g.audio, name, lambda *a, **k: None)
+    random.seed(5)
+    g._start_new_run()
+    g.story = None
+    seeds = []
+    real_load = g.map_gen.load_map
+    monkeypatch.setattr(g.map_gen, "load_map", lambda act, seed=None: (seeds.append(seed), real_load(act, seed))[1])
+    g.overworld = OverworldMap(act_index=3, seed=4)
+    node = next(n for n in g.overworld.nodes.values() if n.node_type == NodeType.BOSS)
+    states = []
+    for _ in range(2):
+        random.seed(31)
+        g._load_encounter(node)
+        states.append(random.getstate())
+        assert g.bosses
+        for k, boss in enumerate(g.bosses):
+            assert boss.kit_rng.getstate() == random.Random((seeds[-1] ^ KIT_RNG_SALT) + 7919 * k).getstate()
+    assert states[0] == states[1]                          # the same global draws as before: seeding uses none
+

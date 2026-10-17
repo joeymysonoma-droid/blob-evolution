@@ -60,7 +60,7 @@ from blob_evolution.ui.menus import MenuRenderer
 from blob_evolution.ui.overworld_map import OverworldRenderer
 from blob_evolution.utils import boss_shapes
 from blob_evolution.utils.graphics import get_graphics_cache
-from blob_evolution.entities.boss_telegraphs import draw_telegraphs, resolve_landed
+from blob_evolution.entities.boss_telegraphs import KIT_RNG_SALT, draw_telegraphs, resolve_landed
 from blob_evolution.utils import clock as anim_clock
 from blob_evolution.utils.enums import CreatureType, Difficulty, GameState, NodeType
 from blob_evolution.utils.layers import DepthLayers
@@ -365,8 +365,9 @@ class Game:
             pos = Vector2(random.randint(300, config.WORLD_WIDTH - 300),
                           random.randint(300, config.WORLD_HEIGHT - 300))
             self.bosses.append(Boss(pos, act, diff, miniboss=True, variant=node_anchor_variant(self.overworld, node)))
-        for boss in self.bosses:
+        for k, boss in enumerate(self.bosses):
             boss.warm_art()                         # bake during the intro card, not in the first fight frame
+            boss.kit_rng.seed((seed ^ KIT_RNG_SALT) + 7919 * k)   # BUG-213: per encounter, like hitfx/shake (BUG-188)
 
         self.projectiles.clear()
         self.xp_orbs.clear()
