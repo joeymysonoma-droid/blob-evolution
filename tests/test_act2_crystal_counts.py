@@ -137,3 +137,47 @@ def test_bug_225_the_ring_scan_finds_the_last_clear_band_at_the_ring_edge():
         d = math.hypot(spot[0] - 500, spot[1] - 500)
         assert 0.6 * R - 1 <= d <= 1.4 * R + 1, (seed, round(d / R, 3))
         assert d >= 2.2 * 27 + 0.7 * 8 + 2, (seed, d)
+
+
+# --- BUG-236: the ring scan never draws from the rng ------------------------------------------------------------------
+
+def test_bug_236_the_ring_scan_draws_nothing_from_the_rng(monkeypatch):
+    import random
+    blocker = [(500.0, 500.0, 27)]                      # only the 67.0-67.2 px band is clear: the scan has to find it
+    monkeypatch.setattr(terrain, "CRYSTAL_FILLER_TRIES", 0)       # straight to the scan
+    for seed in range(20):
+        rng = random.Random(seed)
+        before = rng.getstate()
+        assert terrain._filler_spot(rng, 500.0, 500.0, 8, blocker) is not None, seed
+        assert rng.getstate() == before, seed
+
+
+def test_bug_236_after_the_random_tries_the_scan_leaves_the_rng_where_the_tries_left_it():
+    import random
+    blocker = [(500.0, 500.0, 27)]
+    R, scanned = terrain.CRYSTAL_CLUSTER_RADIUS, 0
+    for seed in range(40):
+        rng, ref = random.Random(seed), random.Random(seed)
+        spot = terrain._filler_spot(rng, 500.0, 500.0, 8, blocker)
+        assert spot is not None, seed
+        hit = False
+        for _ in range(terrain.CRYSTAL_FILLER_TRIES):   # replay the random tries: two draws each
+            d, a = ref.uniform(0.6, 1.4) * R, ref.uniform(0, terrain.TAU)
+            if terrain._filler_fits(round(500.0 + d * math.cos(a)), round(500.0 + d * math.sin(a)), 8, blocker):
+                hit = True
+                break
+        if hit:                                         # a random try landed in the band: no scan on this seed
+            continue
+        scanned += 1
+        assert rng.getstate() == ref.getstate(), seed   # the scan added no draws
+    assert scanned >= 20, scanned
+
+
+def test_bug_236_act_2_pin_on_a_seed_that_uses_the_scan():
+    """Seed 3012 places one filler by the ring scan (BUG-225); measured on 0beba4b."""
+    import hashlib
+    if pygame.display.get_surface() is None:
+        pygame.display.set_mode((1, 1))
+    th = config.MAP_THEMES[2]
+    t = generate_map_texture(config.WORLD_WIDTH, config.WORLD_HEIGHT, th["color"], th["accent"], 3012, 2)
+    assert hashlib.sha256(pygame.image.tobytes(t, "RGB")).hexdigest()[:16] == "0da8691c13f571ca"
