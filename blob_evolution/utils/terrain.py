@@ -1229,6 +1229,7 @@ VEIN_HL_WINDOW = 32        # the coverage window, centred on every pixel (x - 16
 VEIN_HL_CAP = 0.11         # max share of a window's pixels that may be highlight
 VEIN_HL_DIM_ALPHA = 0.40   # highlight alpha inside every over-cap window (BUG-205: 0.55 -> 0.40, Visual Designer, 3018 contrast)
 VEIN_HL_FALLOFF = 8        # px of linear ramp from VEIN_HL_DIM_ALPHA back to full alpha outside them
+VEIN_HL_DIM_GROW = 12      # px (Chebyshev) the over-cap area is grown at full dim before the fall-off (BUG-250, Visual Designer)
 _HL_BLOCK = 8
 _HL_TILE = 64
 
@@ -1283,6 +1284,7 @@ def _cap_vein_highlights(layer: pygame.Surface, color: Color) -> int:
     over, centres = _vein_highlight_over_cap(layer, color)
     if not centres:
         return 0
+    over = _grow_mask(over, layer.get_size())
     hl = pygame.mask.from_surface(layer, 0)
     rings = [pygame.mask.Mask((2 * k + 1, 2 * k + 1), fill=True) for k in range(VEIN_HL_FALLOFF)]
     for rect in over.get_bounding_rects():
@@ -1297,6 +1299,14 @@ def _cap_vein_highlights(layer: pygame.Surface, color: Color) -> int:
                         layer.set_at((x, y), (*color, round(255 * a)))
                         break
     return centres
+
+
+def _grow_mask(m: pygame.mask.Mask, size: Tuple[int, int]) -> pygame.mask.Mask:
+    """`m` dilated by VEIN_HL_DIM_GROW px (Chebyshev), into a mask of `size`."""
+    g = VEIN_HL_DIM_GROW
+    if not g:
+        return m
+    return m.convolve(pygame.mask.Mask((2 * g + 1, 2 * g + 1), fill=True), pygame.mask.Mask(size), (-g, -g))
 
 
 def _draw_capped_vein_highlight_full(surface: pygame.Surface, segs: List[Segment], light: Color) -> None:
@@ -1368,7 +1378,8 @@ def _draw_capped_vein_highlight(surface: pygame.Surface, segs: List[Segment], li
         _stroke(marks, segs, 1, 1)
         hl = pygame.mask.Mask((w, h))                    # highlight pixels, only on the tiles a candidate box touches
         tiles = set()                                    # each candidate box, + the fall-off reach of its windows
-        lo, far = half + VEIN_HL_FALLOFF, span - 1 - half + VEIN_HL_FALLOFF
+        reach = VEIN_HL_DIM_GROW + VEIN_HL_FALLOFF
+        lo, far = half + reach, span - 1 - half + reach
         for bx, by in blocks:
             for ty in range(max(0, by - lo) // _HL_TILE, min(h - 1, by + far) // _HL_TILE + 1):
                 for tx in range(max(0, bx - lo) // _HL_TILE, min(w - 1, bx + far) // _HL_TILE + 1):
@@ -1396,7 +1407,8 @@ def _draw_capped_vein_highlight(surface: pygame.Surface, segs: List[Segment], li
                         r = pygame.Rect(cx - half, cy - half, VEIN_HL_WINDOW, VEIN_HL_WINDOW)
                         hit = r if hit is None else hit.union(r)
             if hit is not None:
-                rects.append(hit.inflate(2 * VEIN_HL_FALLOFF, 2 * VEIN_HL_FALLOFF).clip(surface.get_rect()))
+                m = VEIN_HL_DIM_GROW + VEIN_HL_FALLOFF
+                rects.append(hit.inflate(2 * m, 2 * m).clip(surface.get_rect()))
         found = bool(rects)
     if not found:
         _stroke(surface, segs, 1, light)
@@ -1420,14 +1432,14 @@ def _draw_capped_vein_highlight(surface: pygame.Surface, segs: List[Segment], li
     under = [surface.subsurface(r).copy() for r in rects]
     _stroke(surface, segs, 1, light)
     ring = pygame.mask.Mask((3, 3), fill=True)
-    # Patches that do not touch are >= 9 px apart (each holds its windows + 8 px), more than the 7 px the fall-off
-    # reaches, so each patch's dilations only need its own over-cap pixels.
+    # Each patch holds its windows + 20 px (the 12 px grow + 8 px), more than the 19 px the grow and fall-off reach
+    # past them, so each patch's dilations only need its own over-cap pixels.
     for rect, below in zip(rects, under):
         def part(m: pygame.mask.Mask) -> pygame.mask.Mask:
             sub = pygame.mask.Mask(rect.size)
             sub.draw(m, (-rect.x, -rect.y))
             return sub
-        hl_r, g_r = part(hl), [part(over)]               # g_r[k]: within Chebyshev distance k of the over-cap area
+        hl_r, g_r = part(hl), [_grow_mask(part(over), rect.size)]   # g_r[k]: within distance k of the grown over-cap area
         for _ in range(VEIN_HL_FALLOFF - 1):
             g_r.append(g_r[-1].convolve(ring, pygame.mask.Mask(rect.size), (-1, -1)))   # 3 x 3 dilation, same size
         layer = _layer(rect.w, rect.h)

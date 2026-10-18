@@ -16,7 +16,22 @@ def _layer_with(lines):
 
 def test_constants_are_the_ruled_ones():
     assert (terrain.VEIN_HL_GREY, terrain.VEIN_HL_WINDOW, terrain.VEIN_HL_CAP, terrain.VEIN_HL_DIM_ALPHA,
-            terrain.VEIN_HL_FALLOFF) == (88, 32, 0.11, 0.40, 8)
+            terrain.VEIN_HL_FALLOFF, terrain.VEIN_HL_DIM_GROW) == (88, 32, 0.11, 0.40, 8, 12)
+
+
+def test_a_pixel_12_px_outside_an_over_cap_window_is_dimmed_and_the_ramp_starts_after_it():
+    """BUG-250: the over-cap area is grown 12 px at full dim before the 8 px fall-off."""
+    layer = _layer_with(range(90, 110, 3))
+    layer.fill((0, 0, 0, 0), (0, 0, 200, 60))
+    pygame.draw.line(layer, (*LIGHT, 255), (100, 0), (100, 89), 1)
+    over, _ = terrain._vein_highlight_over_cap(layer, LIGHT)
+    top = min(y for y in range(200) if over.get_at((100, y)))
+    assert all(not over.get_at((100, y)) for y in range(top))   # straight up from the column is outside every window
+    terrain._cap_vein_highlights(layer, LIGHT)
+    dim = round(255 * terrain.VEIN_HL_DIM_ALPHA)
+    assert layer.get_at((100, top - 12)) == (*LIGHT, dim)       # 12 px outside: still fully dimmed
+    assert layer.get_at((100, top - 13)).a == round(255 * (0.40 + 0.60 / 8))   # first fall-off step
+    assert layer.get_at((100, top - 20)).a == 255                # 12 + 8 px outside: full alpha
 
 
 def test_sparse_highlight_is_left_alone():
@@ -35,7 +50,7 @@ def test_a_window_one_pixel_over_the_cap_is_found_and_one_at_it_is_not():
         assert (terrain._vein_highlight_over_cap(layer, LIGHT)[1] > 0) is over, n
 
 
-def test_dense_highlight_is_dimmed_to_40_percent_and_ramps_back_over_8_px():
+def test_dense_highlight_is_dimmed_to_40_percent_grown_12_px_and_ramps_back_over_8_px():
     layer = _layer_with(range(90, 110, 3))              # 7 lines in 20 px: dense in the middle
     layer.fill((0, 0, 0, 0), (0, 0, 200, 60))
     pygame.draw.line(layer, (*LIGHT, 255), (100, 0), (100, 89), 1)   # a lone line running out of the dense patch
@@ -43,8 +58,8 @@ def test_dense_highlight_is_dimmed_to_40_percent_and_ramps_back_over_8_px():
     assert terrain._cap_vein_highlights(layer, LIGHT) > 0
     assert layer.get_at((100, 99)) == (*LIGHT, round(255 * 0.40))   # inside
     top = min(y for y in range(200) if over.get_at((100, y)))
-    ramp = [layer.get_at((100, top - k)).a for k in range(0, 10)]
-    assert ramp[0] == round(255 * 0.40) and ramp[-1] == 255 and ramp == sorted(ramp)
+    ramp = [layer.get_at((100, top - k)).a for k in range(0, 22)]
+    assert ramp[0] == round(255 * 0.40) and ramp[12] == ramp[0] and ramp[-1] == 255 and ramp == sorted(ramp)
     assert all(layer.get_at((x, y))[:3] == LIGHT for x, y in ((100, 99), (100, top - 4)))     # colour unchanged
 
 
