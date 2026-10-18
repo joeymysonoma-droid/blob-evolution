@@ -1227,7 +1227,7 @@ def _pustule_sprite(radius: int, act: int) -> pygame.Surface:
 VEIN_HL_GREY = 88          # a highlight pixel counts when its grey is > this (the bright-decal share test's threshold)
 VEIN_HL_WINDOW = 32        # the coverage window, centred on every pixel (x - 16 .. x + 15)
 VEIN_HL_CAP = 0.11         # max share of a window's pixels that may be highlight
-VEIN_HL_DIM_ALPHA = 0.55   # highlight alpha inside every over-cap window
+VEIN_HL_DIM_ALPHA = 0.40   # highlight alpha inside every over-cap window (BUG-205: 0.55 -> 0.40, Visual Designer, 3018 contrast)
 VEIN_HL_FALLOFF = 8        # px of linear ramp from VEIN_HL_DIM_ALPHA back to full alpha outside them
 _HL_BLOCK = 8
 _HL_TILE = 64
