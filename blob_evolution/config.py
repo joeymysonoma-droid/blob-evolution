@@ -266,6 +266,23 @@ ENEMY_ORBIT_STEPS = 12                  # orbiter satellite steps per 120 deg
 ENEMY_TENDRIL_PHASES = 8                # leech tendril frames per 0.7 Hz loop
 ENEMY_SPRITE_CACHE_MAX = 1500           # baked extras are cached lazily; the cache is cleared when it reaches this size
 ENEMY_PHASED_ALPHA = 110                # phased phantoms are drawn see-through
+# Elite tell (TASK-068, Visual Designer spec TASK-068-elite-tell.md): a static thorn crown baked per (R, grow, flash)
+ELITE_TELL = True                       # draw the crown on no_absorb elites (visual only)
+ELITE_THORNS = 6                        # thorns at k*360/6 + ELITE_THORN_OFFSET_DEG (none points straight up)
+ELITE_THORN_OFFSET_DEG = 30.0
+ELITE_THORN_HALF_DEG = 9.0              # base points +-9 deg either side of the thorn angle, at radius R+2
+ELITE_THORN_BASE_PAD = 2                # base radius R + this
+ELITE_THORN_LEN_MIN = 5                 # T = max(5, round(0.32 R))
+ELITE_THORN_LEN_FRAC = 0.32
+ELITE_THORN_FILL = (245, 240, 228)
+ELITE_THORN_EDGE = (16, 12, 20)
+ELITE_SEP_RING = (16, 12, 20, 200)      # separator ring at R+3, 2 px
+ELITE_SEP_PAD = 3
+ELITE_SEP_WIDTH = 2
+ELITE_DENY_CUE = True                   # absorb denied: thorns +3 px for 0.25 s from a cached sprite
+ELITE_DENY_GROW = 3
+ELITE_DENY_TIME = 0.25
+ELITE_DENY_GAP = 0.34                   # at most once per 0.34 s per elite (< 3 Hz)
 ENEMY_RIM_WIDTH = 2                     # light ring round every enemy body
 ENEMY_BLAST_ALPHA = (38, 120)           # bomber blast disc fill / ring alpha (shown while fuse < 1 s)
 ENEMY_LEECH_COLORS = ((205, 196, 176), (245, 240, 220))      # bone-pale; pre-046 green was (60, 160, 100) / (120, 230, 160)

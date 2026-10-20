@@ -155,7 +155,8 @@ class MapGenerator:
             return
         rng = random.Random(None if seed is None else seed ^ config.ELITE_RNG_SALT)
         for creature in creatures:
-            creature.no_absorb = rng.random() < chance
+            if rng.random() < chance:
+                creature.make_elite()
 
     def spawn_bosses(self, diff_mult: dict, seed: int | None = None) -> List[Boss]:
         """Spawn bosses for current map."""

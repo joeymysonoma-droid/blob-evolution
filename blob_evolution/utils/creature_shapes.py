@@ -224,6 +224,53 @@ def draw_telegraph(dst: pygame.Surface, sx: float, sy: float, size: float) -> No
     _blit_c(dst, _get(("ring", radius), _bake_ring, radius), sx, sy)
 
 
+def thorn_len(r: int) -> int:
+    """TASK-068: thorn length T = max(5, round(0.32 R))."""
+    return max(config.ELITE_THORN_LEN_MIN, round(config.ELITE_THORN_LEN_FRAC * r))
+
+
+def _bake_crown(r: int, grow: int) -> pygame.Surface:
+    """TASK-068 elite tell: separator ring at R+3 and six outlined thorns, tips at R+2+T+grow."""
+    half = r + config.ELITE_THORN_BASE_PAD + thorn_len(r) + grow + 4
+    s = pygame.Surface((half * 2, half * 2), pygame.SRCALPHA)
+    pygame.draw.circle(s, config.ELITE_SEP_RING, (half, half), r + config.ELITE_SEP_PAD, config.ELITE_SEP_WIDTH)
+    base, tip = r + config.ELITE_THORN_BASE_PAD, r + config.ELITE_THORN_BASE_PAD + thorn_len(r) + grow
+    hw = math.radians(config.ELITE_THORN_HALF_DEG)
+    for k in range(config.ELITE_THORNS):
+        a = math.radians(k * 360.0 / config.ELITE_THORNS + config.ELITE_THORN_OFFSET_DEG)
+        pts = [_pt(half, half, a - hw, base), _pt(half, half, a, tip), _pt(half, half, a + hw, base)]
+        pygame.draw.polygon(s, config.ELITE_THORN_FILL, pts)
+        pygame.draw.polygon(s, config.ELITE_THORN_EDGE, pts, 1)
+    return s
+
+
+def _bake_crown_flash(r: int, grow: int) -> pygame.Surface:
+    """BUG-176 flash copy of the crown: lerped 55 % to white inside the 3 px white outline (the boss flash rule)."""
+    from blob_evolution.utils import boss_shapes
+    return boss_shapes._flash_copy(_bake_crown(r, grow))
+
+
+def crown_sprite(size: float, deny: bool, flash: bool) -> Sprite:
+    """The cached crown for this body size (baked at spawn by prewarm_crown)."""
+    r = max(6, int(size))
+    grow = config.ELITE_DENY_GROW if deny else 0
+    if flash:
+        return _get(("crown_f", r, grow), _bake_crown_flash, r, grow)
+    return _get(("crown", r, grow), _bake_crown, r, grow)
+
+
+def prewarm_crown(size: float) -> None:
+    """Bake all four crown sprites (normal / absorb denied, plain / flash) for one elite at spawn."""
+    for deny in (False, True):
+        for flash in (False, True):
+            crown_sprite(size, deny, flash)
+
+
+def draw_crown(dst: pygame.Surface, sx: float, sy: float, size: float, deny: bool, flash: bool) -> None:
+    """Blit the elite thorn crown centred on the body (after the rim ring); one blit, no allocation."""
+    _blit_c(dst, crown_sprite(size, deny, flash), sx, sy)
+
+
 # ---------------------------------------------------------------- public API
 def draw_under(dst: pygame.Surface, kind: str, sx: float, sy: float, size: float, face: Vector2, vel: Vector2,
                fuse_timer: float, explosion_radius: float, flash: bool, ticks_ms: int) -> None:

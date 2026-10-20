@@ -1452,6 +1452,8 @@ class Game:
                     essence_gain = int(creature.xp_value * 0.08 * diff["xp"])
                     self.economy.add_essence(essence_gain, self._essence_multiplier())
                 elif creature.size > self.player.size * 1.1 or creature.ctype == CreatureType.LEECH or creature.no_absorb:
+                    if creature.no_absorb and self.player.size > creature.size * 1.1:
+                        creature.deny_absorb()                # TASK-068 visual: thorns grow (rate-limited)
                     dmg = creature.damage
                     if creature.ctype == CreatureType.LEECH:
                         dmg *= 0.35  # continuous siphon handled lightly per frame contact
