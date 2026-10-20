@@ -127,7 +127,8 @@ def test_bug_158_anchors_alternate_in_visit_order_along_the_path():
     """Whatever path the player takes, consecutive mini-bosses of a layer alternate, from the layer's seeded start;
     any two mini-bosses on one path are both anchors (QA t50: map order gave both only 230/344 times)."""
     two_plus = 0
-    for seed in range(60):
+    # BUG-260: seeds 0-89 (were 0-59); the shop/rest guarantee leaves fewer mini-bosses per path
+    for seed in range(90):
         for walk in range(3):
             ow = OverworldMap(act_index=2, seed=seed)
             got = _walk(ow, random.Random(seed * 10 + walk))
