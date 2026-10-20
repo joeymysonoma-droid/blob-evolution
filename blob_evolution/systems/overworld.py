@@ -96,9 +96,9 @@ class OverworldMap:
             self._connect_layers(layers[i], layers[i + 1], rng)
 
         # BUG-260: after the seed's rolls, so the RNG stream (widths, links, elites) is unchanged
-        if config.OVERWORLD_GUARANTEE_SHOP:
-            self._guarantee_on_every_path(layers, NodeType.SHOP)
-        if config.OVERWORLD_GUARANTEE_REST:
+        if config.OVERWORLD_GUARANTEE_SHOP_PER_MAP:
+            self._guarantee_one_per_map(layers, NodeType.SHOP)
+        if config.OVERWORLD_GUARANTEE_REST_PER_PATH:
             self._guarantee_on_every_path(layers, NodeType.REST)
 
         self._layout_nodes(layers)
@@ -255,61 +255,53 @@ class OverworldMap:
                     node.node_type = ntype
                     node.is_elite_marked = False
 
+    def _guarantee_one_per_map(self, layers: List[List[str]], ntype: NodeType) -> None:
+        """If the map has no `ntype` node, convert the replaceable node on the most start-to-boss paths (BUG-260).
+
+        Replaceable: FIGHT/EVENT/BLACKSMITH past row 1, not elite-marked. Ties: lower row, then lower column. No RNG.
+        """
+        if any(n.node_type == ntype for n in self.nodes.values()):
+            return
+        start_id = layers[0][0]
+        order = [nid for layer in layers for nid in layer]
+        before: Dict[str, int] = {nid: 0 for nid in order}
+        before[start_id] = 1
+        for nid in order:
+            for c in self.nodes[nid].connections:
+                before[c] += before[nid]
+        after: Dict[str, int] = {}
+        for nid in reversed(order):
+            conns = self.nodes[nid].connections
+            after[nid] = sum(after[c] for c in conns) if conns else 1
+        best = None
+        for nid in order:
+            node = self.nodes[nid]
+            if node.layer < 2 or node.node_type not in self._GUARANTEE_REPLACEABLE or node.is_elite_marked:
+                continue
+            key = (-before[nid] * after[nid], node.layer, node.col)
+            if best is None or key < best[0]:
+                best = (key, nid)
+        if best is not None:
+            self.nodes[best[1]].node_type = ntype
+
     def _assign_node_type(self, row: int, total_rows: int, rng: random.Random) -> NodeType:
-        """Assign node type based on position in the path."""
+        """Assign node type based on position in the path (odds in config.OVERWORLD_NODE_ODDS)."""
         progress = row / total_rows
         roll = rng.random()
 
         if row == 1:
             return NodeType.FIGHT if roll < 0.85 else NodeType.EVENT
 
-        if progress < 0.25:
-            if roll < 0.55:
-                return NodeType.FIGHT
-            if roll < 0.70:
-                return NodeType.EVENT
-            if roll < 0.82:
-                return NodeType.REST
-            return NodeType.SHOP
-
-        if progress < 0.55:
-            if roll < 0.30:
-                return NodeType.FIGHT
-            if roll < 0.45:
-                return NodeType.ELITE
-            if roll < 0.58:
-                return NodeType.EVENT
-            if roll < 0.70:
-                return NodeType.SHOP
-            if roll < 0.80:
-                return NodeType.REST
-            if roll < 0.90:
-                return NodeType.BLACKSMITH
-            return NodeType.MINIBOSS
-
-        if progress < 0.80:
-            if roll < 0.25:
-                return NodeType.ELITE
-            if roll < 0.42:
-                return NodeType.MINIBOSS
-            if roll < 0.58:
-                return NodeType.FIGHT
-            if roll < 0.72:
-                return NodeType.BLACKSMITH
-            if roll < 0.85:
-                return NodeType.REST
-            return NodeType.EVENT
-
-        # Last few rows before boss
-        if roll < 0.30:
-            return NodeType.ELITE
-        if roll < 0.50:
-            return NodeType.MINIBOSS
-        if roll < 0.68:
-            return NodeType.FIGHT
-        if roll < 0.82:
-            return NodeType.REST
-        return NodeType.EVENT
+        for upper, odds in config.OVERWORLD_NODE_ODDS:
+            if progress < upper:
+                break
+        total = sum(w for _, w in odds)
+        acc = 0.0
+        for name, weight in odds:
+            acc += weight / total
+            if roll < acc:
+                return NodeType(name)
+        return NodeType(odds[-1][0])
 
     def _layout_nodes(self, layers: List[List[str]]) -> None:
         """Assign screen positions for drawing."""

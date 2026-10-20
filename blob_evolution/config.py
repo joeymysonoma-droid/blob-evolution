@@ -29,8 +29,15 @@ MAX_PROJECTILES = 200
 OVERWORLD_MIN_ROWS = 6
 OVERWORLD_MAX_ROWS = 8
 OVERWORLD_LEGACY_ROWS = 8              # from_dict default for a saved map without encounter_rows (main's old MIN_ROUNDS)
-OVERWORLD_GUARANTEE_SHOP = True        # BUG-260: every start-to-boss path gets at least 1 shop
-OVERWORLD_GUARANTEE_REST = True        # BUG-260: every start-to-boss path gets at least 1 rest
+OVERWORLD_GUARANTEE_SHOP_PER_MAP = True    # BUG-260 (c): a map with no shop gets one (fewest-node repair, no RNG)
+OVERWORLD_GUARANTEE_REST_PER_PATH = True   # BUG-260 (c): every start-to-boss path gets at least 1 rest (min cut, no RNG)
+# BUG-260: node-type odds for rows 2+ on 6-8 row maps, tuned so per-path elites/fights/mini-bosses stay near
+# main's 8-11 row maps. (progress below, ((type, weight), ...)); one rng.random() per node, as before.
+OVERWORLD_NODE_ODDS = (
+    (0.34, (("fight", 52), ("elite", 14), ("miniboss", 6), ("shop", 20), ("event", 4), ("rest", 2), ("blacksmith", 2))),
+    (0.67, (("fight", 38), ("elite", 30), ("miniboss", 19), ("shop", 10), ("blacksmith", 3))),
+    (1.01, (("elite", 34), ("miniboss", 28), ("fight", 34), ("event", 4))),
+)
 
 # Progression
 XP_BASE = 50
