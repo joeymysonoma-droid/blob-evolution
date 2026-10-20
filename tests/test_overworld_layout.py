@@ -13,6 +13,7 @@ import pygame
 import pytest
 
 from blob_evolution import config
+from blob_evolution.systems import overworld
 from blob_evolution.systems.overworld import OverworldMap
 from blob_evolution.ui import style
 from blob_evolution.ui.overworld_map import OverworldRenderer
@@ -108,7 +109,7 @@ def _header(events: List[Event]) -> Tuple[int, pygame.Rect]:
     return found[0]
 
 
-@pytest.mark.parametrize("rows", [8, 11])
+@pytest.mark.parametrize("rows", [6, 8])          # TASK-069: the new shortest and tallest maps (were 8, 11)
 def test_selected_boss_ring_clears_drawn_header(record, rows: int) -> None:
     """At max pulse the boss's drawn selected rings stay within the layout's reach and below the drawn header."""
     ow = OverworldMap(act_index=0, seed=_first_seed_with_rows(rows))
@@ -134,8 +135,11 @@ def test_selected_boss_ring_clears_drawn_header(record, rows: int) -> None:
         (25, 7, "n_9_1", "n_10_1"),  # selected Mini Boss with another Mini Boss drawn above it
     ],
 )
-def test_selected_node_drawn_last_then_header(record, phase, seed, act, current, selected) -> None:
+def test_selected_node_drawn_last_then_header(record, monkeypatch, phase, seed, act, current, selected) -> None:
     """At every pulse phase the selected node draws after all other nodes, and the header after it."""
+    if seed == 25:                                       # TASK-069: this 11-row case needs main's 8-11-row generator
+        monkeypatch.setattr(overworld, "MIN_ROUNDS", 8)
+        monkeypatch.setattr(overworld, "MAX_ROUNDS", 11)
     ow = OverworldMap(act_index=act, seed=seed)
     if selected == "boss":
         selected = _boss_selectable(ow)

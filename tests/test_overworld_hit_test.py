@@ -12,9 +12,20 @@ import pygame
 import pytest
 
 from blob_evolution import config
+from blob_evolution.systems import overworld
 from blob_evolution.systems.overworld import OverworldMap
 from blob_evolution.ui.overworld_map import OverworldRenderer
 from blob_evolution.utils.enums import GameState, NodeType
+
+
+
+@pytest.fixture(autouse=True)
+def legacy_rows(monkeypatch):
+    """TASK-069: rows are 6-8 now; these repros keep main's 8-11-row generator, whose seed 25 makes the overlap
+    (an 11-row map can still be restored with OverworldMap.from_dict)."""
+    monkeypatch.setattr(overworld, "MIN_ROUNDS", 8)
+    monkeypatch.setattr(overworld, "MAX_ROUNDS", 11)
+
 
 SEED25_CLICK = (800, 207)  # bottom of Mini Boss n_11_1's disc, inside Mini Boss n_10_1's rect too
 
