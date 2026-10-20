@@ -112,8 +112,6 @@ def test_zero_allocations_300_frames_10_elites(monkeypatch):
         cs[0].hit_flash = 0.1 if n % 20 < 5 else 0.0
         if n % 30 == 0:
             cs[1].deny_absorb()
-        cs[1].deny_timer -= 1 / 60
-        cs[1].deny_gap -= 1 / 60
         for c in cs:
             c.draw(screen, CAM, NO_SHAKE)
     assert counts["other"] == 0, counts["callers"]
@@ -127,24 +125,28 @@ def fight(make_game):
     return g
 
 
-def test_absorb_denied_fires_at_most_3_per_second(fight):
+def test_absorb_denied_fires_at_most_3_per_second(fight, monkeypatch):
     """Acceptance 4: a big player held on an elite for 3 s starts the cue <= 9 times, each lasting 0.25 s."""
     g = fight
+    now = [10_000]
+    monkeypatch.setattr(anim_clock, "game_ms", lambda: now[0])
     g.player.size = 60.0
     e = Creature(Vector2(g.player.pos.x + 2, g.player.pos.y), CreatureType.BASIC, 12.0)
     e.make_elite()
     e.speed = 0.0
     g.creatures = [e]
-    starts, prev = 0, 0.0
-    for _ in range(180):
+    starts, prev, shown = 0, -1, 0
+    for n in range(180):
+        now[0] = 10_000 + n * 1000 // 60
         e.pos.set(g.player.pos.x + 2, g.player.pos.y)
         g._update_collisions()
-        if e.deny_timer > prev:
+        if e.deny_until != prev:
             starts += 1
-            assert e.deny_timer == pytest.approx(config.ELITE_DENY_TIME)
-        prev = e.deny_timer
-        e.update(1 / 60, g.player.pos, g.player.size, [])
+            assert e.deny_until - now[0] == 250
+        prev = e.deny_until
+        shown += e.deny_showing()
     assert 1 <= starts <= 9 and e.active
+    assert starts == 9 and 120 <= shown <= 140                 # every 0.34 s, 0.25 s each
 
 
 def test_small_player_touching_elite_shows_no_deny_cue(fight):
@@ -155,7 +157,7 @@ def test_small_player_touching_elite_shows_no_deny_cue(fight):
     e.make_elite()
     g.creatures = [e]
     g._update_collisions()
-    assert e.deny_timer == 0.0
+    assert not e.deny_showing() and e.deny_until == -1
 
 
 def test_cue_off_switch(fight, monkeypatch):
@@ -164,7 +166,7 @@ def test_cue_off_switch(fight, monkeypatch):
     e = make(CreatureType.BASIC, 12)
     e.make_elite()
     e.deny_absorb()
-    assert e.deny_timer == 0.0
+    assert e.deny_until == -1
 
 
 def test_hitbox_unchanged():
