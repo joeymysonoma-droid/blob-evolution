@@ -6,10 +6,11 @@ import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
+from blob_evolution import config
 from blob_evolution.utils.enums import NodeType
 
-MIN_ROUNDS = 8
-MAX_ROUNDS = 11
+MIN_ROUNDS = config.OVERWORLD_MIN_ROWS
+MAX_ROUNDS = config.OVERWORLD_MAX_ROWS
 
 
 @dataclass
@@ -45,7 +46,7 @@ class OverworldNode:
 
 
 class OverworldMap:
-    """Branching path map: start fans to 3-4 paths, converges at boss after 8-11 rounds."""
+    """Branching path map: start fans to 3-4 paths, converges at boss after 6-8 rounds (TASK-069)."""
 
     def __init__(self, act_index: int = 0, seed: Optional[int] = None) -> None:
         self.act_index = act_index
@@ -341,7 +342,7 @@ class OverworldMap:
         ow = cls.__new__(cls)
         ow.act_index = data["act_index"]
         ow.seed = data["seed"]
-        ow.encounter_rows = data.get("encounter_rows", MIN_ROUNDS)
+        ow.encounter_rows = data.get("encounter_rows", config.OVERWORLD_LEGACY_ROWS)
         ow.num_layers = data.get("num_layers", ow.encounter_rows + 2)
         ow.nodes = {}
         ow.current_node_id = data["current_node_id"]

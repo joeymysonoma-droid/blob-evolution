@@ -25,6 +25,11 @@ MAX_CREATURES = 50
 MAX_BOSSES = 5
 MAX_PROJECTILES = 200
 
+# Overworld rows (TASK-069): encounter rows per layer, rolled once per map from its seed
+OVERWORLD_MIN_ROWS = 6
+OVERWORLD_MAX_ROWS = 8
+OVERWORLD_LEGACY_ROWS = 8              # from_dict default for a saved map without encounter_rows (main's old MIN_ROUNDS)
+
 # Progression
 XP_BASE = 50
 XP_MULTIPLIER = 1.4
