@@ -38,6 +38,7 @@ Graphics are procedural. Audio is synthesized in `audio.py`, plus Director-appro
 
 - Performance caps in `config.py`: 1,200 particles, 50 creatures, 5 bosses, 200 projectiles, 60 FPS.
 - The save file (`blob_evolution_save.json`) format must stay backward compatible, or ship with a migration.
+- Contrast margin: act 1 (BUG-240, seed 18 at low HP, 3.311) and act 9 (seed 77, 3.3109) sit only ~0.011 above the 3.3 contrast floor. Any palette or darkening change to either act needs a full rerun of QA's spot scan (`/workspace/qa/t75/h/spot75.py`, all 70 seeds, both HP levels) before merge.
 - Known lore drift: act names in `systems/audio.py` comments (Rot, Echoes, Ash...) don't match `config.py` / `lore.py`.
 
 ## Team
