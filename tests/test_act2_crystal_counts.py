@@ -174,10 +174,10 @@ def test_bug_236_after_the_random_tries_the_scan_leaves_the_rng_where_the_tries_
 
 
 def test_bug_236_act_2_pin_on_a_seed_that_uses_the_scan():
-    """Seed 3012 places one filler by the ring scan (BUG-225); measured on 0beba4b."""
+    """Seed 3012 places one filler by the ring scan (BUG-225); measured on 0beba4b, re-pinned for BUG-235 (hashed start, outer radius first: was 0da8691c13f571ca)."""
     import hashlib
     if pygame.display.get_surface() is None:
         pygame.display.set_mode((1, 1))
     th = config.MAP_THEMES[2]
     t = generate_map_texture(config.WORLD_WIDTH, config.WORLD_HEIGHT, th["color"], th["accent"], 3012, 2)
-    assert hashlib.sha256(pygame.image.tobytes(t, "RGB")).hexdigest()[:16] == "0da8691c13f571ca"
+    assert hashlib.sha256(pygame.image.tobytes(t, "RGB")).hexdigest()[:16] == "7d71347eb9373f20"

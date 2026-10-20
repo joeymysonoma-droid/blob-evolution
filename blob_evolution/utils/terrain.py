@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+import zlib
 from typing import Callable, List, Optional, Tuple
 
 import pygame
@@ -538,12 +539,18 @@ def _filler_fits(px: float, py: float, r: int, placed) -> bool:
     return all(math.hypot(px - x, py - y) >= 2.2 * q + 0.7 * r + 2 for x, y, q in placed)
 
 
+def _filler_scan_start(cx: float, cy: float) -> int:
+    """BUG-235: the ring scan's first angle step for the cluster centred at (cx, cy), from a fixed hash (no rng)."""
+    return zlib.crc32(f"{round(cx)},{round(cy)}".encode()) % FILLER_SCAN_ANGLES
+
+
 def _filler_spot(rng: random.Random, cx: float, cy: float, r: int, placed) -> Optional[Tuple[int, int]]:
     """A spot for one act 2 filler in its cluster's 0.6-1.4 x CRYSTAL_CLUSTER_RADIUS ring, clear of every bright crystal.
 
     CRYSTAL_FILLER_TRIES random spots first (the first 1 + CRYSTAL_REROLLS draw exactly as before BUG-207, so seeds that
     never dropped a filler bake the same). BUG-225: if all of them touch a crystal, the ring is scanned without the rng,
-    FILLER_SCAN_RADII radii from 0.6 to 1.4 x the radius by FILLER_SCAN_ANGLES angles, and the first clear spot is taken.
+    FILLER_SCAN_RADII radii from 1.4 down to 0.6 x the radius by FILLER_SCAN_ANGLES angles, and the first clear spot is
+    taken. BUG-235: each cluster's scan starts at its own angle step, hashed from its centre (no rng draw, BUG-236).
     Only a ring with no clear spot at all drops the filler (none in 2000+ seeds, tests/test_act2_crystal_counts.py).
     """
     for _ in range(CRYSTAL_FILLER_TRIES):
@@ -551,10 +558,11 @@ def _filler_spot(rng: random.Random, cx: float, cy: float, r: int, placed) -> Op
         px, py = round(cx + d * math.cos(a)), round(cy + d * math.sin(a))
         if _filler_fits(px, py, r, placed):
             return px, py
-    for i in range(FILLER_SCAN_RADII):
-        d = (0.6 + 0.8 * i / (FILLER_SCAN_RADII - 1)) * CRYSTAL_CLUSTER_RADIUS
-        for k in range(FILLER_SCAN_ANGLES):
-            a = TAU * k / FILLER_SCAN_ANGLES
+    start = _filler_scan_start(cx, cy)
+    for k in range(FILLER_SCAN_ANGLES):
+        a = TAU * ((start + k) % FILLER_SCAN_ANGLES) / FILLER_SCAN_ANGLES
+        for i in range(FILLER_SCAN_RADII):
+            d = (1.4 - 0.8 * i / (FILLER_SCAN_RADII - 1)) * CRYSTAL_CLUSTER_RADIUS
             px, py = round(cx + d * math.cos(a)), round(cy + d * math.sin(a))
             inside = 0.6 * CRYSTAL_CLUSTER_RADIUS <= math.hypot(px - cx, py - cy) <= 1.4 * CRYSTAL_CLUSTER_RADIUS
             if inside and _filler_fits(px, py, r, placed):
