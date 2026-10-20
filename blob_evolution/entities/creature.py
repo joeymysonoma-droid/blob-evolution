@@ -79,8 +79,8 @@ class Creature:
         self.explosion_damage = self.damage * 1.8
         self.kills_awarded = False
         self.no_absorb = False                            # TASK-068: elites are never absorbed, at any player size
-        self.deny_timer = 0.0                             # ... visual only: s left of the absorb-denied thorn growth
-        self.deny_gap = 0.0                               # ... s until the cue may fire again
+        self.deny_until = -1                              # ... visual only: game ms the absorb-denied thorn growth ends
+        self.deny_next = -1                               # ... game ms from which the cue may fire again
 
     def _base_hp(self) -> float:
         return {
@@ -166,10 +166,6 @@ class Creature:
             self.hit_flash -= dt
         if self.flash_gap > 0:
             self.flash_gap -= dt
-        if self.deny_timer > 0:
-            self.deny_timer -= dt
-        if self.deny_gap > 0:
-            self.deny_gap -= dt
 
         dist = self.pos.distance_to(player_pos)
         direction = (player_pos - self.pos).copy()
@@ -319,9 +315,14 @@ class Creature:
 
     def deny_absorb(self) -> None:
         """TASK-068: the player touched it big enough to eat it; start the thorn cue (at most once per ELITE_DENY_GAP)."""
-        if config.ELITE_DENY_CUE and self.deny_gap <= 0:
-            self.deny_timer = config.ELITE_DENY_TIME
-            self.deny_gap = config.ELITE_DENY_GAP
+        now = clock.game_ms()                             # game time (BUG-140): no timer in update(), frozen while paused
+        if config.ELITE_DENY_CUE and now >= self.deny_next:
+            self.deny_until = now + int(config.ELITE_DENY_TIME * 1000)
+            self.deny_next = now + int(config.ELITE_DENY_GAP * 1000)
+
+    def deny_showing(self) -> bool:
+        """TASK-068: True while the absorb-denied thorns are grown."""
+        return clock.game_ms() < self.deny_until
 
     def draw(self, surface: pygame.Surface, camera: Vector2, shake: Vector2) -> None:
         """Draw creature (silhouette per type; the pre-046 look when GFX_ENEMY_SHAPES is False)."""
@@ -354,7 +355,7 @@ class Creature:
         pygame.draw.circle(target, (255, 255, 255) if flash else shapes.RIM.get(kind, (241, 177, 177)),
                            (int(bx), int(by)), int(self.size), config.ENEMY_RIM_WIDTH)
         if self.no_absorb and config.ELITE_TELL:
-            shapes.draw_crown(target, bx, by, self.size, self.deny_timer > 0, flash)
+            shapes.draw_crown(target, bx, by, self.size, ticks < self.deny_until, flash)
         if kind in shapes.OVER_KINDS:
             shapes.draw_over(target, kind, bx, by, self.size, self.face_dir, self.orbit_angle,
                              (self.shield_hp / self.shield_max) if self.shield_max else 0.0,
