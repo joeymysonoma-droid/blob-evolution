@@ -177,7 +177,7 @@ class Game:
         self.audio.set_narration_volume(top.number("narration_volume", NARRATION_VOLUME_DEFAULT))
         self._reduced_in_save = "reduced_motion" in data      # TASK-059: like narration_volume, written once set
         self._set_reduced_motion(top.boolean("reduced_motion", False))   # old saves have no key -> the default
-        self.checkpoint: Optional[dict] = checkpoint.read(data.get("checkpoint"))   # TASK-070: optional, old saves None
+        self.checkpoint: Optional[dict] = checkpoint.read(*([data["checkpoint"]] if "checkpoint" in data else []))   # TASK-070: optional
         if not (readable and ng_ok and perm_ok and eco.valid and top.valid):
             if readable:
                 savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
@@ -302,9 +302,19 @@ class Game:
         self.checkpoint = checkpoint.capture(self)
         self._save_game()
 
+    def _abandon_run(self) -> None:
+        """TASK-070: quitting a run to the menu abandons it; its checkpoint goes and the save drops the key."""
+        if self.checkpoint is not None:
+            self.checkpoint = None
+            self._save_game()
+
     def _resume_checkpoint(self) -> bool:
         """TASK-070: restart the saved run at its layer start; False when there is no checkpoint."""
         if self.checkpoint is None:
+            return False
+        if self.checkpoint["ng_plus_level"] != self.ng_plus.ng_plus_level:
+            savefile.warn(f"{config.SAVE_FILE} checkpoint is from NG+ {self.checkpoint['ng_plus_level']}, "
+                          f"not {self.ng_plus.ng_plus_level}; it is not resumed")
             return False
         checkpoint.restore(self, self.checkpoint)
         self.audio.play_act_music(self.overworld.act_index)
@@ -651,6 +661,7 @@ class Game:
         elif self.pause_selected == 1:
             self._start_new_run()
         elif self.pause_selected == 2:
+            self._abandon_run()
             self.audio.play_menu_music()
             self.state = GameState.MAIN_MENU
 

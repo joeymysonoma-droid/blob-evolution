@@ -32,6 +32,7 @@ def capture(game: Any) -> dict:
         "act_index": game.overworld.act_index,
         "overworld_seed": game.overworld.seed,
         "difficulty": game.difficulty.value,
+        "ng_plus_level": int(game.ng_plus.ng_plus_level),
         "maps_cleared": game.maps_cleared,
         "run_shards_earned": game.run_shards_earned,
         "seen_acts": sorted(game._seen_acts),
@@ -55,9 +56,22 @@ def capture(game: Any) -> dict:
     }
 
 
-def read(raw: object) -> Optional[dict]:
-    """Validate a saved checkpoint; None when absent (old saves) or unusable (warned, never blocks the save)."""
+# BUG-265: keys a checkpoint must carry (a missing one rejects it); player keys are under "player"
+REQUIRED_KEYS = ("version", "act_index", "overworld_seed", "difficulty", "ng_plus_level", "essence", "player")
+REQUIRED_PLAYER_KEYS = ("hp", "skills", "level", "artifacts")
+_ABSENT = object()
+
+
+def read(raw: object = _ABSENT) -> Optional[dict]:
+    """Validate a saved checkpoint; None when absent (old saves) or unusable (one warning, never blocks the save).
+
+    Call with no argument when the save has no "checkpoint" key. A present null (BUG-266), a missing required
+    field (BUG-265) or a dead player (hp <= 0) is unusable.
+    """
+    if raw is _ABSENT:
+        return None
     if raw is None:
+        savefile.warn(f"{config.SAVE_FILE} has a null checkpoint; it is ignored")
         return None
     top = savefile.SaveSection(raw)
     pl = savefile.SaveSection(top.data.get("player", None))
@@ -68,6 +82,7 @@ def read(raw: object) -> Optional[dict]:
         "act_index": top.integer("act_index", -1),
         "overworld_seed": top.integer("overworld_seed", 0),
         "difficulty": top.text("difficulty", ""),
+        "ng_plus_level": top.integer("ng_plus_level", 0),
         "maps_cleared": top.integer("maps_cleared", 0),
         "run_shards_earned": top.integer("run_shards_earned", 0),
         "seen_acts": _counts(top.data.get("seen_acts")),
@@ -92,10 +107,12 @@ def read(raw: object) -> Optional[dict]:
             "has_revived": pl.boolean("has_revived", False),
         },
     }
-    ok = all(s.valid for s in (top, pl, bon, evo))
+    ok = all(k in top.data for k in REQUIRED_KEYS) and all(k in pl.data for k in REQUIRED_PLAYER_KEYS)
+    ok = ok and all(s.valid for s in (top, pl, bon, evo))
     ok = ok and all(isinstance(v, list) for v in (top.data.get("seen_acts", []), evo.data.get("checked_levels", [])))
     ok = ok and data["version"] == VERSION and 0 <= data["act_index"] < len(config.MAP_THEMES)
     ok = ok and data["difficulty"] in {d.value for d in Difficulty}
+    ok = ok and data["player"]["hp"] > 0                     # a 0-HP checkpoint is a dead run, never resumed at 1 HP
     if not ok:
         savefile.warn(f"{config.SAVE_FILE} has an unusable checkpoint; it is ignored")
         return None
@@ -120,7 +137,7 @@ def restore(game: Any, data: dict) -> None:
     p.shop_max_hp_bonus, p.shop_size_boost = s["shop_max_hp_bonus"], s["shop_size_boost"]
     p.has_shield, p.has_revived = s["has_shield"], s["has_revived"]
     p._update_stats()
-    p.hp = min(max(1.0, s["hp"]), p.max_hp)
+    p.hp = min(s["hp"], p.max_hp)                       # read() guarantees hp > 0
     eco = game.economy
     eco.reset_run_bonuses()
     for k in RUN_BONUS_NUMBERS:
