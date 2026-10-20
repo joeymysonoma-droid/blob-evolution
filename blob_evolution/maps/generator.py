@@ -145,7 +145,17 @@ class MapGenerator:
             if elite:
                 hp_mult *= 1.35
             creatures.append(Creature(pos, ctype, size, hp_mult, diff_mult))
+        self.roll_elites(creatures, diff_mult.get("elite_chance", 0.0), seed)
         return creatures
+
+    @staticmethod
+    def roll_elites(creatures: List[Creature], chance: float, seed: int | None) -> None:
+        """Flag each creature no-absorb with probability chance, from its own rng (no draws at chance 0)."""
+        if chance <= 0:
+            return
+        rng = random.Random(None if seed is None else seed ^ config.ELITE_RNG_SALT)
+        for creature in creatures:
+            creature.no_absorb = rng.random() < chance
 
     def spawn_bosses(self, diff_mult: dict, seed: int | None = None) -> List[Boss]:
         """Spawn bosses for current map."""

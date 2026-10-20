@@ -78,6 +78,7 @@ class Creature:
         self.explosion_radius = self.size * 3.5
         self.explosion_damage = self.damage * 1.8
         self.kills_awarded = False
+        self.no_absorb = False                            # TASK-068: elites are never absorbed, at any player size
 
     def _base_hp(self) -> float:
         return {

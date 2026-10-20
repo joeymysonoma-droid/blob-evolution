@@ -25,6 +25,9 @@ MAX_CREATURES = 50
 MAX_BOSSES = 5
 MAX_PROJECTILES = 200
 
+# Elites (TASK-068): each encounter creature is an elite with the difficulty's elite_chance; elites are never absorbed
+ELITE_RNG_SALT = 0xE1173              # elite rolls use their own rng (seed ^ salt), so main's spawn stream is unchanged
+
 # Progression
 XP_BASE = 50
 XP_MULTIPLIER = 1.4

@@ -1439,7 +1439,7 @@ class Game:
             if dist < self.player.radius + creature.radius:
                 if creature.phased:
                     continue
-                if self.player.size > creature.size * 1.1:
+                if self.player.size > creature.size * 1.1 and not creature.no_absorb:   # TASK-068: elites never
                     self.player.absorb_creature(creature.size, creature.hp)
                     if config.GFX_HITFX:
                         self.hitfx.absorb(creature.pos, creature.size, self.player.pos)
@@ -1451,7 +1451,7 @@ class Game:
                     creature.active = False
                     essence_gain = int(creature.xp_value * 0.08 * diff["xp"])
                     self.economy.add_essence(essence_gain, self._essence_multiplier())
-                elif creature.size > self.player.size * 1.1 or creature.ctype == CreatureType.LEECH:
+                elif creature.size > self.player.size * 1.1 or creature.ctype == CreatureType.LEECH or creature.no_absorb:
                     dmg = creature.damage
                     if creature.ctype == CreatureType.LEECH:
                         dmg *= 0.35  # continuous siphon handled lightly per frame contact
