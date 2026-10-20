@@ -106,6 +106,17 @@ class MapGenerator:
             weights = [(ct, w + boost.get(ct, 0)) for ct, w in weights]
         return weights
 
+    def enemy_size_range(self, elite: bool = False) -> Tuple[float, float]:
+        """Min and max enemy size for the current layer (TASK-067)."""
+        grow = self.current_map_index * config.ENEMY_SIZE_PER_LAYER
+        top = config.ENEMY_ELITE_SIZE_MAX if elite else config.ENEMY_SIZE_MAX
+        return config.ENEMY_SIZE_MIN + grow, top + grow
+
+    def enemy_size(self, rng: random.Random, elite: bool = False) -> float:
+        """Roll one enemy size for the current layer; one rng draw, as before."""
+        lo, hi = self.enemy_size_range(elite)
+        return rng.uniform(lo, hi)
+
     def spawn_creatures(self, diff_mult: dict, seed: int | None = None) -> List[Creature]:
         """Spawn creatures for current map."""
         rng = random.Random(seed)
@@ -118,7 +129,7 @@ class MapGenerator:
                 rng.randint(100, config.WORLD_HEIGHT - 100),
             )
             ctype = _pick_type(rng, weights)
-            size = rng.uniform(12, 25)
+            size = self.enemy_size(rng)
             hp_mult = 1.0 + self.current_map_index * 0.1
             creatures.append(Creature(pos, ctype, size, hp_mult, diff_mult))
         return creatures
@@ -140,7 +151,7 @@ class MapGenerator:
                 rng.randint(100, config.WORLD_HEIGHT - 100),
             )
             ctype = _pick_type(rng, weights)
-            size = rng.uniform(12, 28 if elite else 25)
+            size = self.enemy_size(rng, elite)
             hp_mult = 1.0 + self.current_map_index * 0.1
             if elite:
                 hp_mult *= 1.35

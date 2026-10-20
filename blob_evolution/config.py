@@ -19,6 +19,12 @@ PLAYER_BASE_HP = 100
 PLAYER_BASE_DAMAGE = 10
 PLAYER_BASE_SIZE = 20
 
+# Enemy size (TASK-067): uniform(MIN, MAX) plus PER_LAYER for each layer (act index) below the first
+ENEMY_SIZE_MIN = 12.0
+ENEMY_SIZE_MAX = 25.0
+ENEMY_ELITE_SIZE_MAX = 28.0            # elite-node encounters roll up to this instead of ENEMY_SIZE_MAX
+ENEMY_SIZE_PER_LAYER = 2.5
+
 # Entity limits
 MAX_PARTICLES = 1200
 MAX_CREATURES = 50
