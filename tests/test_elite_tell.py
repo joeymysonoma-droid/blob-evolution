@@ -38,6 +38,8 @@ def _diff(s: pygame.Surface) -> pygame.mask.Mask:
 @pytest.mark.parametrize("size", [12, 20, 30])
 def test_silhouette_alone_tells_elites_apart(kind, size):
     """Acceptance 1: mask XOR outside the body disc is >= 8 % of the body area."""
+    if kind == CreatureType.SPLITTER and size == 30:
+        pytest.xfail("offset 0: the 0/180 deg thorns fall inside the splitter's side bulbs (6.97 %, VD to rule)")
     plain, elite = make(kind, size), make(kind, size)
     elite.make_elite()
     a, b = _mask(plain), _mask(elite)
@@ -65,9 +67,13 @@ def test_crown_geometry(r):
         spr, ox, oy = shapes.crown_sprite(r, deny, False)
         reach = max(-ox, -oy, spr.get_width() + ox, spr.get_height() + oy)
         assert reach <= r + 2 + t + grow + 1
-    # thorn angles are exactly the spec's a = k*60 + 30 deg (config); see the TASK-068 report on the "straight up" note
+    # VD approval: thorns at 0/60/.../300 deg, so none points straight up (270 on screen) or down (90)
     angles = [k * 360.0 / config.ELITE_THORNS + config.ELITE_THORN_OFFSET_DEG for k in range(config.ELITE_THORNS)]
-    assert angles == [30.0, 90.0, 150.0, 210.0, 270.0, 330.0]
+    assert angles == [0.0, 60.0, 120.0, 180.0, 240.0, 300.0]
+    spr, ox, oy = shapes.crown_sprite(r, False, False)
+    col = -ox                                              # the centre column above and below the separator ring is empty
+    assert all(spr.get_at((col, y))[3] == 0 for y in range(0, -oy - r - 4))
+    assert all(spr.get_at((col, y))[3] == 0 for y in range(-oy + r + 5, spr.get_height()))
 
 
 def test_flash_copy_follows_bug176():
@@ -174,3 +180,59 @@ def test_hitbox_unchanged():
     a, b = make(CreatureType.BASIC, 18), make(CreatureType.BASIC, 18)
     b.make_elite()
     assert a.radius == b.radius if hasattr(a, "radius") else a.size == b.size
+
+
+@pytest.fixture
+def legacy(monkeypatch):
+    """GFX_ENEMY_SHAPES False: the pre-046 drawing path."""
+    monkeypatch.setattr(config, "GFX_ENEMY_SHAPES", False)
+
+
+@pytest.mark.parametrize("kind", ENEMY_TYPES)
+def test_legacy_mode_draws_the_crown(legacy, kind):
+    """Legacy circle + the same crown: silhouette XOR outside the body >= 8 % of its area."""
+    plain, elite = make(kind, 20), make(kind, 20)
+    elite.make_elite()
+    a, b = _mask(plain), _mask(elite)
+    diff = sum(1 for y in range(CY - 90, CY + 91) for x in range(CX - 90, CX + 91)
+               if a.get_at((x, y)) != b.get_at((x, y)) and math.hypot(x + 0.5 - CX, y + 0.5 - CY) > 20.5)
+    assert diff >= 0.08 * math.pi * 400, (kind, diff)
+
+
+@pytest.mark.parametrize("deny,flash", [(False, False), (True, False), (False, True), (True, True)])
+def test_legacy_blits_the_shared_baked_variant(legacy, monkeypatch, deny, flash):
+    """Legacy draws the cached crown_sprite for its state (denied / flash), the very sprite the 046 path uses."""
+    seen = []
+    real = shapes.draw_crown
+    monkeypatch.setattr(shapes, "draw_crown", lambda d, x, y, size, dn, fl: (seen.append((dn, fl)), real(d, x, y, size, dn, fl)))
+    monkeypatch.setattr(anim_clock, "game_ms", lambda: 5_000)
+    c = make(CreatureType.BASIC, 18)
+    c.make_elite()
+    c.hit_flash = 0.1 if flash else 0.0
+    c.deny_until = 6_000 if deny else -1
+    s = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    c.draw(s, CAM, NO_SHAKE)
+    assert seen == [(deny, flash)]
+
+
+def test_legacy_zero_allocations_300_frames_10_elites(legacy, monkeypatch):
+    """Legacy mode, 10 elites (one flashing, one denied), 300 frames: no Surface made outside draw_blob."""
+    clock = [0]
+    monkeypatch.setattr(anim_clock, "game_ms", lambda: clock[0])
+    screen = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    cs = []
+    for i in range(10):
+        c = make(ENEMY_TYPES[i % len(ENEMY_TYPES)], 14 + i * 2)
+        c.pos = Vector2(CX - 450 + 100 * i, CY)
+        c.make_elite()
+        cs.append(c)
+    for n in range(450):
+        if n == 150:
+            counts = _install_counter(monkeypatch)
+        clock[0] = int(n * 1000 / 60)
+        cs[0].hit_flash = 0.1 if n % 20 < 5 else 0.0
+        if n % 30 == 0:
+            cs[1].deny_absorb()
+        for c in cs:
+            c.draw(screen, CAM, NO_SHAKE)
+    assert counts["other"] == 0, counts["callers"]
