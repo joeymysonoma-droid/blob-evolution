@@ -42,10 +42,10 @@ STAR_CENTER_MARK = (-3, 2)  # offset the star_center spy adds, so a star placed 
 # the closest star-to-plate gap per height, and the closest star-to-other-ring gap per height.
 SEEDS_BY_HEIGHT: Dict[int, Tuple[int, ...]] = {
     # TASK-069: rows are 6-8 now (were 8-11, whose tightest seeds were 8: 2, 37; 9: 3, 33; 10: 7, 5; 11: 0, 271).
-    # Placeholder picks: the first two seeds per height with >= 3 stars on both layers; QA to re-pick the tightest.
-    6: (1, 2),
-    7: (0, 7),
-    8: (5, 6),
+    # BUG-261: QA's re-pick of the tightest cases (gaps 43.42 / 33.48 / 25.55 px).
+    6: (1, 360),
+    7: (0, 173),
+    8: (5, 116),
 }
 SEEDS_PER_HEIGHT = 2
 HEIGHTS = list(range(MIN_ROUNDS, MAX_ROUNDS + 1))

@@ -95,6 +95,12 @@ class OverworldMap:
         for i in range(len(layers) - 1):
             self._connect_layers(layers[i], layers[i + 1], rng)
 
+        # BUG-260: after the seed's rolls, so the RNG stream (widths, links, elites) is unchanged
+        if config.OVERWORLD_GUARANTEE_SHOP:
+            self._guarantee_on_every_path(layers, NodeType.SHOP)
+        if config.OVERWORLD_GUARANTEE_REST:
+            self._guarantee_on_every_path(layers, NodeType.REST)
+
         self._layout_nodes(layers)
         self.current_node_id = start_id
         self.nodes[start_id].completed = True
@@ -161,6 +167,93 @@ class OverworldMap:
                 pi = min(pi, n_prev - 1)
                 if next_id not in self.nodes[prev_ids[pi]].connections:
                     self.nodes[prev_ids[pi]].connections.append(next_id)
+
+    # BUG-260 repair: types a guaranteed shop/rest replaces first (elites only as a last resort).
+    _GUARANTEE_REPLACEABLE = (NodeType.FIGHT, NodeType.EVENT, NodeType.BLACKSMITH)
+
+    def _guarantee_on_every_path(self, layers: List[List[str]], ntype: NodeType) -> None:
+        """Convert the fewest nodes so every start-to-boss path holds at least one `ntype` node (BUG-260).
+
+        A minimum vertex cut between start and boss: nodes already of `ntype` are free, replaceable
+        nodes (FIGHT, EVENT, BLACKSMITH past row 1) cost 1 each, elites/minibosses only as a last
+        resort (then unmarked), all others can't be cut.
+        A small per-row tie-break prefers early rows for shops and late rows for rests.
+        Uses no RNG, so the seed's own rolls are untouched; deterministic per seed.
+        """
+        start_id, boss_id = layers[0][0], layers[-1][0]
+        last_row = len(layers) - 2
+        big = 10 ** 9
+        unit = 1000  # one conversion; the row tie-break stays below this
+        # split each node v into v_in -> v_out with capacity = cost to "cut" it
+        cap: Dict[str, Dict[str, int]] = {}
+
+        def edge(u: str, v: str, c: int) -> None:
+            cap.setdefault(u, {})
+            cap.setdefault(v, {})
+            cap[u][v] = cap[u].get(v, 0) + c
+            cap[v].setdefault(u, 0)
+
+        for layer in layers:
+            for nid in layer:
+                node = self.nodes[nid]
+                if node.node_type == ntype:
+                    c = 0
+                elif node.layer == 1:
+                    c = big  # row 1 stays FIGHT/EVENT
+                elif node.node_type in self._GUARANTEE_REPLACEABLE and not node.is_elite_marked:
+                    row_rank = node.layer if ntype == NodeType.SHOP else last_row - node.layer
+                    c = unit + row_rank
+                elif node.node_type in (NodeType.ELITE, NodeType.MINIBOSS):
+                    c = big // 1000  # last resort only: a path made of elites/the other type
+                else:
+                    c = big
+                if nid in (start_id, boss_id):
+                    c = big
+                edge(nid + ">i", nid + ">o", c)
+                for nxt in node.connections:
+                    edge(nid + ">o", nxt + ">i", big)
+        src, sink = start_id + ">o", boss_id + ">i"
+        # Edmonds-Karp; graphs are ~40 nodes
+        flow = 0
+        while True:
+            parent = {src: None}
+            queue = [src]
+            for u in queue:
+                for v, c in cap[u].items():
+                    if c > 0 and v not in parent:
+                        parent[v] = u
+                        queue.append(v)
+                if sink in parent:
+                    break
+            if sink not in parent:
+                break
+            v, push = sink, big
+            while parent[v] is not None:
+                push = min(push, cap[parent[v]][v])
+                v = parent[v]
+            if push >= big:
+                return  # some path can't get `ntype` without replacing an elite/rest/shop node
+            v = sink
+            while parent[v] is not None:
+                u = parent[v]
+                cap[u][v] -= push
+                cap[v][u] += push
+                v = u
+            flow += push
+        # cut = split edges from the source side to the sink side
+        reach = {src}
+        queue = [src]
+        for u in queue:
+            for v, c in cap[u].items():
+                if c > 0 and v not in reach:
+                    reach.add(v)
+                    queue.append(v)
+        for layer in layers:
+            for nid in layer:
+                node = self.nodes[nid]
+                if nid + ">i" in reach and nid + ">o" not in reach and node.node_type != ntype:
+                    node.node_type = ntype
+                    node.is_elite_marked = False
 
     def _assign_node_type(self, row: int, total_rows: int, rng: random.Random) -> NodeType:
         """Assign node type based on position in the path."""

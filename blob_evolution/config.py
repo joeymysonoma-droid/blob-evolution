@@ -29,6 +29,8 @@ MAX_PROJECTILES = 200
 OVERWORLD_MIN_ROWS = 6
 OVERWORLD_MAX_ROWS = 8
 OVERWORLD_LEGACY_ROWS = 8              # from_dict default for a saved map without encounter_rows (main's old MIN_ROUNDS)
+OVERWORLD_GUARANTEE_SHOP = True        # BUG-260: every start-to-boss path gets at least 1 shop
+OVERWORLD_GUARANTEE_REST = True        # BUG-260: every start-to-boss path gets at least 1 rest
 
 # Progression
 XP_BASE = 50
