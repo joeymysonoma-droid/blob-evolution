@@ -340,7 +340,9 @@ def test_cached_sprites_are_cropped_to_their_visible_pixels():
     assert shapes.cache_size() > 10
     for key, (spr, ox, oy) in shapes._cache.items():
         assert spr.get_bounding_rect(1).size == spr.get_size(), key
-        assert abs(ox) <= 3.6 * 30 + 10 and abs(oy) <= 3.6 * 30 + 10        # the blast disc is the widest (3.5 size)
+        # the blast disc is the widest (3.5 size); TASK-067: enemies reach ENEMY_ELITE_SIZE_MAX + 9 layers of growth (was 30)
+        top = max(30.0, config.ENEMY_ELITE_SIZE_MAX + (len(config.MAP_THEMES) - 1) * config.ENEMY_SIZE_PER_LAYER)
+        assert abs(ox) <= 3.6 * top + 10 and abs(oy) <= 3.6 * top + 10
 
 
 # ---- 8. cull ------------------------------------------------------------------------------------------------------------------
