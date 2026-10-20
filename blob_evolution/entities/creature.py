@@ -410,6 +410,8 @@ class Creature:
             look=look, variant=variant, rotation=self.wander_timer + self.orbit_angle,
             eyes=alpha_eyes, glow=self.ctype == CreatureType.PHANTOM and self.phased,
         )
+        if self.no_absorb and config.ELITE_TELL:               # TASK-068: the same crown round the legacy circle
+            shapes.draw_crown(surface, sx, sy, self.size, clock.game_ms() < self.deny_until, self.hit_flash > 0)
 
         if self.ctype == CreatureType.SHIELDER and self.shield_hp > 0:
             ang = self.face_dir.angle()

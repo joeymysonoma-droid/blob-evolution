@@ -268,8 +268,8 @@ ENEMY_SPRITE_CACHE_MAX = 1500           # baked extras are cached lazily; the ca
 ENEMY_PHASED_ALPHA = 110                # phased phantoms are drawn see-through
 # Elite tell (TASK-068, Visual Designer spec TASK-068-elite-tell.md): a static thorn crown baked per (R, grow, flash)
 ELITE_TELL = True                       # draw the crown on no_absorb elites (visual only)
-ELITE_THORNS = 6                        # thorns at k*360/6 + ELITE_THORN_OFFSET_DEG (none points straight up)
-ELITE_THORN_OFFSET_DEG = 30.0
+ELITE_THORNS = 6                        # thorns at k*360/6 + ELITE_THORN_OFFSET_DEG
+ELITE_THORN_OFFSET_DEG = 0.0            # VD: 0/60/120/180/240/300 deg, none straight up or down
 ELITE_THORN_HALF_DEG = 9.0              # base points +-9 deg either side of the thorn angle, at radius R+2
 ELITE_THORN_BASE_PAD = 2                # base radius R + this
 ELITE_THORN_LEN_MIN = 5                 # T = max(5, round(0.32 R))
