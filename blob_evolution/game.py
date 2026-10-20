@@ -40,6 +40,7 @@ from blob_evolution.entities.projectile import Projectile
 from blob_evolution.maps.generator import MapGenerator
 from blob_evolution.systems import savefile
 from blob_evolution.systems import hitfx
+from blob_evolution.systems import boss_shots
 from blob_evolution.systems.ambient import AmbientField
 from blob_evolution.systems.artifacts import ARTIFACT_DEFINITIONS, ArtifactManager
 from blob_evolution.systems.audio import (
@@ -131,6 +132,7 @@ class Game:
         self._phase_banners: Dict[int, list] = {}   # BUG-147: id(boss) -> [waiting (text, phase, name) deque, s to next, text shown,
         #                                             handed to the HUD, not on screen yet (BUG-167)]
         self.projectiles: List[Projectile] = []
+        self.reflectors: List[boss_shots.Reflector] = []     # F4: crystal pillars etc.; nothing places one yet
         self.xp_orbs: List[XPOrb] = []
 
         self.camera = Vector2()
@@ -1344,6 +1346,7 @@ class Game:
         for proj in self.projectiles:
             if proj.active:
                 proj.update(dt)
+        boss_shots.reflect_shots(self.projectiles, self.reflectors)     # F4: no kit places a reflector yet
 
         # Player hit by enemy projectiles
         if self.player:
@@ -1356,6 +1359,8 @@ class Game:
                         elif self.player.last_hit:         # TASK-059: not on shots absorbed while invulnerable
                             self.audio.play("hurt", 0.7)
                         proj.active = False
+                        if self.player.last_hit:
+                            boss_shots.on_hit(proj, self.player)    # F4 hook; no shot carries an effect yet
                         if self.player.last_hit or not config.GFX_HITFX:
                             self._add_screen_shake(5)
 
