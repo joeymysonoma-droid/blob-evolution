@@ -41,6 +41,7 @@ from blob_evolution.maps.generator import MapGenerator
 from blob_evolution.systems import savefile
 from blob_evolution.systems import hitfx
 from blob_evolution.systems import boss_shots
+from blob_evolution.systems import checkpoint
 from blob_evolution.systems.ambient import AmbientField
 from blob_evolution.systems.artifacts import ARTIFACT_DEFINITIONS, ArtifactManager
 from blob_evolution.systems.audio import (
@@ -176,6 +177,7 @@ class Game:
         self.audio.set_narration_volume(top.number("narration_volume", NARRATION_VOLUME_DEFAULT))
         self._reduced_in_save = "reduced_motion" in data      # TASK-059: like narration_volume, written once set
         self._set_reduced_motion(top.boolean("reduced_motion", False))   # old saves have no key -> the default
+        self.checkpoint: Optional[dict] = checkpoint.read(data.get("checkpoint"))   # TASK-070: optional, old saves None
         if not (readable and ng_ok and perm_ok and eco.valid and top.valid):
             if readable:
                 savefile.warn(f"{config.SAVE_FILE} has invalid data; using defaults for those parts")
@@ -200,6 +202,8 @@ class Game:
             data["narration_volume"] = self.audio.narration_volume
         if self._reduced_in_save or config.REDUCED_MOTION:
             data["reduced_motion"] = bool(config.REDUCED_MOTION)
+        if getattr(self, "checkpoint", None) is not None:
+            data["checkpoint"] = self.checkpoint                   # TASK-070: only while a run has one
         savefile.write_save(config.SAVE_FILE, data)
 
     def _diff_mult(self) -> dict:
@@ -288,9 +292,24 @@ class Game:
         self.economy.reset_run_bonuses()
         self.overworld = OverworldMap(act_index=0)
         self.overworld_selected = 0
+        self._write_checkpoint()
         self.audio.play_act_music(0)  # the first act's music starts under the opening cards
         opening = build_pilgrimage_pages() + build_act_descent_pages(0)
         self._start_story(opening, GameState.OVERWORLD, list(OPENING_CLIPS))
+
+    def _write_checkpoint(self) -> None:
+        """TASK-070: save the run as this layer begins."""
+        self.checkpoint = checkpoint.capture(self)
+        self._save_game()
+
+    def _resume_checkpoint(self) -> bool:
+        """TASK-070: restart the saved run at its layer start; False when there is no checkpoint."""
+        if self.checkpoint is None:
+            return False
+        checkpoint.restore(self, self.checkpoint)
+        self.audio.play_act_music(self.overworld.act_index)
+        self.state = GameState.OVERWORLD
+        return True
 
     def _essence_multiplier(self) -> float:
         """Combined essence gain multiplier for the current run."""
@@ -974,6 +993,7 @@ class Game:
             next_act = self.overworld.act_index + 1
             self.overworld = OverworldMap(act_index=next_act)
             self.overworld_selected = 0
+            self._write_checkpoint()
             self.audio.play_act_music(next_act)  # crossfade into the new layer's music on the descent
             if next_act not in self._seen_acts:
                 self._seen_acts.add(next_act)
@@ -1672,6 +1692,7 @@ class Game:
         for art_id in self.player.artifacts.collected:
             self.permanent.unlock_artifact_lore(art_id)
         self.core_choice_selected = 0
+        self.checkpoint = None                                  # TASK-070: the run is over; the next save drops it
         self.state = GameState.CORE_CHOICE
 
     def _trigger_victory(self, ending: str = "reopen") -> None:
