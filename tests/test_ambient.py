@@ -323,7 +323,8 @@ def test_the_field_is_not_saved(game, isolated_save):
     game._save_game()
     text = isolated_save.read_text()
     assert "ambient" not in text and "mote" not in text
-    assert set(json.loads(text)) <= {"ng_plus", "permanent", "economy", "audio_enabled", "narration_volume"}
+    assert set(json.loads(text)) <= {"ng_plus", "permanent", "economy", "audio_enabled", "narration_volume",
+                                     "checkpoint"}   # TASK-070: the layer-start checkpoint of the run in progress
 
 
 def test_the_hud_is_drawn_after_the_motes(game):

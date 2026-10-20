@@ -479,7 +479,8 @@ def test_layers_are_not_saved(game, isolated_save):
     game._save_game()
     text = isolated_save.read_text()
     assert "fog" not in text and "layers" not in text and "vignette" not in text
-    assert set(json.loads(text)) <= {"ng_plus", "permanent", "economy", "audio_enabled", "narration_volume"}
+    assert set(json.loads(text)) <= {"ng_plus", "permanent", "economy", "audio_enabled", "narration_volume",
+                                     "checkpoint"}   # TASK-070: the layer-start checkpoint of the run in progress
 
 
 def test_draw_order_is_fog_then_motes_then_overlay_then_entities_then_player_then_hud(game):
