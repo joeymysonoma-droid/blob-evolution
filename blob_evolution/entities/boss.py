@@ -12,6 +12,7 @@ from blob_evolution import config
 from blob_evolution.data.bosses import (CADENCE, TELEGRAPH, MINI, STATS, AnchorDef, BossDef, PhaseDef, anchor_def, mini_phases,
                                          warden_def)
 from blob_evolution.data.lore import get_act_lore, get_boss_name
+from blob_evolution.systems.boss_shots import cap_new_boss_shots
 from blob_evolution.entities.boss_attacks import BASIC_SHOTS, MOVERS, SPECIALS, BasicShot, Mover, Special, _proj
 from blob_evolution.entities.boss_spawns import SpawnRequest
 from blob_evolution.entities.boss_telegraphs import ATTACKS, Attack, BossContext, Telegraph
@@ -204,6 +205,12 @@ class Boss:
         """Advance timers, move, and fire the basic shot and the special when their cooldowns run out."""
         if not self.active:
             return
+        start = len(projectiles)
+        self._fire_and_move(dt, player_pos, projectiles)
+        cap_new_boss_shots(projectiles, start)          # F4: past BOSS_SHOT_CAP new shots are skipped, never culled
+
+    def _fire_and_move(self, dt: float, player_pos: Vector2, projectiles: List[Projectile]) -> None:
+        """One frame of timers, movement and attacks (update minus the shot cap)."""
         self._look_at = player_pos                      # draw-only (eyes / aimed sprites face the player)
         self.pulse_time += dt
         if self.hit_flash > 0:

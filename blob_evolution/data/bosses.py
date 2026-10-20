@@ -101,6 +101,7 @@ class TelegraphTimings:
 
 
 # F3 telegraph kit: default warning per Telegraph kind (an Attack may override it with `warn=`)
+REFLECT_HURTS_PLAYER = True    # F4, Director (question 7): shots a reflector turns back hurt the player, yours too
 TELEGRAPH_WARN = {"zone": 1.0, "lane": 0.9, "mark": 0.8, "fan": 0.6, "ring": 0.8, "safe": 1.2}
 
 STATS = BossStats()

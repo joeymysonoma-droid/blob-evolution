@@ -340,3 +340,10 @@ BOSS_PLATE_LIFT = 1.72                  # VD r2: bar top at sy - (1.72 R + 18), 
 BOSS_PLATE_GAP = 4                      # px between bar and name, and name and pips
 BOSS_PLATE_TOP_MIN = 6                  # the plate (pips or name) never starts above this screen y
 BOSS_PLATE_TITLES = {9: "Warden of the Divide"}    # BOSS-ROSTER.md plate / card title where it differs from lore
+
+# F4 boss-shot behaviours (BOSS-FEASIBILITY.md; provisional defaults, Producer ruling). Unused by today's kits.
+BOSS_SHOT_CAP = 120                     # live boss shots; new ones past it are skipped, never culled (MAX_PROJECTILES stays the total)
+BOSS_HOMING_TURN_DEG = 90.0             # deg/s a homing shot turns
+BOSS_LOB_TIME = 0.8                     # s a lobbed shot flies
+BOSS_LOB_PEAK = 120.0                   # px peak height of the lob arc
+BOSS_SHOT_FADE = 0.25                   # s a fading shot takes to vanish at the end of its lifetime

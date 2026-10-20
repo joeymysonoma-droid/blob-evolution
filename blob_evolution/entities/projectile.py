@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import pygame
 
 from blob_evolution import config
+from blob_evolution.systems import boss_shots
 from blob_evolution.utils.graphics import _shade
 from blob_evolution.utils.vector2 import Vector2
 
@@ -71,6 +72,7 @@ class Projectile:
     __slots__ = (
         "pos", "vel", "damage", "radius", "color", "active",
         "from_player", "piercing", "lifetime", "kind",
+        "behaviour", "element", "effect", "fade", "reflected",      # F4 (systems/boss_shots.py); all off by default
     )
 
     def __init__(
@@ -101,12 +103,21 @@ class Projectile:
         self.from_player = from_player
         self.piercing = piercing
         self.lifetime = 3.0
+        self.behaviour = None
+        self.element: Optional[str] = None
+        self.effect = None
+        self.fade = False
+        self.reflected = False
 
     def update(self, dt: float) -> None:
         """Move projectile and check bounds."""
         if not self.active:
             return
-        self.pos.add(self.vel * dt)
+        if self.behaviour is None:
+            self.pos.add(self.vel * dt)
+        elif not self.behaviour.step(self, dt):
+            self.active = False
+            return
         self.lifetime -= dt
         if self.lifetime <= 0:
             self.active = False
@@ -124,6 +135,10 @@ class Projectile:
         sy = int(self.pos.y - camera.y + config.SCREEN_HEIGHT // 2 + shake.y)
         if config.GFX_READABILITY:
             sprite = get_shot_sprite(self.kind, self.color)
+            if self.fade:
+                alpha = boss_shots.fade_alpha(self)
+                if alpha < 255:
+                    sprite = boss_shots.faded_sprite(sprite, alpha)
             surface.blit(sprite, (sx - sprite.get_width() // 2, sy - sprite.get_height() // 2))
             return
         glow = pygame.Surface((self.radius * 5, self.radius * 5), pygame.SRCALPHA)
@@ -136,6 +151,8 @@ class Projectile:
         pygame.draw.circle(surface, (255, 255, 255), (sx - 1, sy - 1), max(1, self.radius // 3))
 
     def collides_with(self, other_pos: Vector2, other_radius: float) -> bool:
-        """Check circle collision."""
+        """Check circle collision (a lobbed shot still in the air hits nothing)."""
+        if self.behaviour is not None and getattr(self.behaviour, "airborne", False):
+            return False
         dist = self.pos.distance_to(other_pos)
         return dist < self.radius + other_radius
