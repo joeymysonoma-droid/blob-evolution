@@ -38,8 +38,6 @@ def _diff(s: pygame.Surface) -> pygame.mask.Mask:
 @pytest.mark.parametrize("size", [12, 20, 30])
 def test_silhouette_alone_tells_elites_apart(kind, size):
     """Acceptance 1: mask XOR outside the body disc is >= 8 % of the body area."""
-    if kind == CreatureType.SPLITTER and size == 30:
-        pytest.xfail("offset 0: the 0/180 deg thorns fall inside the splitter's side bulbs (6.97 %, VD to rule)")
     plain, elite = make(kind, size), make(kind, size)
     elite.make_elite()
     a, b = _mask(plain), _mask(elite)
@@ -56,6 +54,35 @@ def test_thorn_fill_contrast_on_every_light_ground():
     """Acceptance 2: thorn fill >= 3:1 against every act's LIGHT ground (spec measures 6.39)."""
     worst = min(contrast(config.ELITE_THORN_FILL, ramp[2]) for ramp in config.GROUND_RAMPS)
     assert worst >= 6.38
+
+
+@pytest.mark.parametrize("size", [12, 20, 22, 25, 28, pytest.param(30), pytest.param(40, marks=pytest.mark.xfail(
+    reason="TASK-067: re-check elite splitter silhouette at size 40, currently 6.88%; fallback (ii) splitter T=0.36R, measured first.",
+    strict=True))])
+def test_splitter_silhouette_every_size(size):
+    """VD option (a): the splitter's crown at 30 deg clears its side bulbs; XOR outside the body >= 8 % per size."""
+    plain, elite = make(CreatureType.SPLITTER, size), make(CreatureType.SPLITTER, size)
+    elite.make_elite()
+    a, b = _mask(plain), _mask(elite)
+    diff = sum(1 for y in range(CY - 90, CY + 91) for x in range(CX - 90, CX + 91)
+               if a.get_at((x, y)) != b.get_at((x, y)) and math.hypot(x + 0.5 - CX, y + 0.5 - CY) > size + 0.5)
+    assert diff >= 0.08 * math.pi * size * size, (size, diff)
+
+
+def test_crown_offset_per_type():
+    """Splitter 30 deg, every other type the 0 deg default; the two bake to different sprites."""
+    assert shapes.crown_offset("SPLITTER") == 30.0
+    assert all(shapes.crown_offset(k.name) == 0.0 for k in ENEMY_TYPES if k != CreatureType.SPLITTER)
+    assert shapes.crown_sprite(20, False, False, "SPLITTER")[0] is not shapes.crown_sprite(20, False, False, "BASIC")[0]
+
+
+def test_splitter_elite_bakes_its_own_crowns_at_spawn():
+    """make_elite on a splitter bakes the four 30 deg crowns."""
+    shapes._cache.clear()
+    c = make(CreatureType.SPLITTER, 23)
+    c.make_elite()
+    assert {k for k in shapes._cache if k[0].startswith("crown")} == {
+        ("crown", 23, 0, 30.0), ("crown", 23, 3, 30.0), ("crown_f", 23, 0, 30.0), ("crown_f", 23, 3, 30.0)}
 
 
 @pytest.mark.parametrize("r", [6, 12, 20, 30, 50])
@@ -93,7 +120,7 @@ def test_crown_is_baked_at_spawn():
     c = make(CreatureType.BASIC, 23)
     c.make_elite()
     assert {k for k in shapes._cache if k[0].startswith("crown")} == {
-        ("crown", 23, 0), ("crown", 23, 3), ("crown_f", 23, 0), ("crown_f", 23, 3)}
+        ("crown", 23, 0, 0.0), ("crown", 23, 3, 0.0), ("crown_f", 23, 0, 0.0), ("crown_f", 23, 3, 0.0)}
 
 
 def test_zero_allocations_300_frames_10_elites(monkeypatch):
@@ -204,7 +231,7 @@ def test_legacy_blits_the_shared_baked_variant(legacy, monkeypatch, deny, flash)
     """Legacy draws the cached crown_sprite for its state (denied / flash), the very sprite the 046 path uses."""
     seen = []
     real = shapes.draw_crown
-    monkeypatch.setattr(shapes, "draw_crown", lambda d, x, y, size, dn, fl: (seen.append((dn, fl)), real(d, x, y, size, dn, fl)))
+    monkeypatch.setattr(shapes, "draw_crown", lambda d, x, y, size, dn, fl, kind="": (seen.append((dn, fl)), real(d, x, y, size, dn, fl, kind)))
     monkeypatch.setattr(anim_clock, "game_ms", lambda: 5_000)
     c = make(CreatureType.BASIC, 18)
     c.make_elite()
