@@ -311,7 +311,7 @@ class Creature:
         """TASK-068: flag this creature no-absorb and bake its thorn crown now (never in a frame)."""
         self.no_absorb = True
         if config.ELITE_TELL:
-            shapes.prewarm_crown(self.size)
+            shapes.prewarm_crown(self.size, self.ctype.name)
 
     def deny_absorb(self) -> None:
         """TASK-068: the player touched it big enough to eat it; start the thorn cue (at most once per ELITE_DENY_GAP)."""
@@ -355,7 +355,7 @@ class Creature:
         pygame.draw.circle(target, (255, 255, 255) if flash else shapes.RIM.get(kind, (241, 177, 177)),
                            (int(bx), int(by)), int(self.size), config.ENEMY_RIM_WIDTH)
         if self.no_absorb and config.ELITE_TELL:
-            shapes.draw_crown(target, bx, by, self.size, ticks < self.deny_until, flash)
+            shapes.draw_crown(target, bx, by, self.size, ticks < self.deny_until, flash, kind)
         if kind in shapes.OVER_KINDS:
             shapes.draw_over(target, kind, bx, by, self.size, self.face_dir, self.orbit_angle,
                              (self.shield_hp / self.shield_max) if self.shield_max else 0.0,
@@ -411,7 +411,8 @@ class Creature:
             eyes=alpha_eyes, glow=self.ctype == CreatureType.PHANTOM and self.phased,
         )
         if self.no_absorb and config.ELITE_TELL:               # TASK-068: the same crown round the legacy circle
-            shapes.draw_crown(surface, sx, sy, self.size, clock.game_ms() < self.deny_until, self.hit_flash > 0)
+            shapes.draw_crown(surface, sx, sy, self.size, clock.game_ms() < self.deny_until, self.hit_flash > 0,
+                             self.ctype.name)
 
         if self.ctype == CreatureType.SHIELDER and self.shield_hp > 0:
             ang = self.face_dir.angle()
